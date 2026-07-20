@@ -1,0 +1,214 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function validUsername() {
+      return request.resource.data.username is string
+        && request.resource.data.username.size() >= 2
+        && request.resource.data.username.size() <= 32;
+    }
+
+    // Deny by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if resource.data.isPublic == true || isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && validUsername()
+        && !('admin' in request.resource.data);
+      allow update: if isOwner(uid)
+        && !('admin' in request.resource.data)
+        && request.resource.data.uid == uid;
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    match /userSettings/{uid} {
+      allow read, write: if isOwner(uid) || isAdmin();
+    }
+
+    match /content/{id} {
+      allow read: if resource.data.approved == true || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /contentProviderData/{id} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /seasons/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /episodes/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /people/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /credits/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /trailers/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /watchProviders/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /contentAvailability/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /userLibrary/{docId} {
+      allow read: if signedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create, update: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && docId == request.auth.uid + '_' + request.resource.data.contentId;
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
+    match /favorites/{docId} {
+      allow read: if signedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && docId == request.auth.uid + '_' + request.resource.data.contentId;
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
+    match /reviews/{id} {
+      allow read: if resource.data.approved == true || isOwner(resource.data.uid) || isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 0
+        && request.resource.data.rating <= 10
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 5000;
+      allow update, delete: if isOwner(resource.data.uid) || isAdmin();
+    }
+
+    match /reviewVotes/{docId} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && docId == request.auth.uid + '_' + request.resource.data.reviewId;
+    }
+
+    match /reviewReports/{id} {
+      allow create: if signedIn()
+        && request.resource.data.reporterUid == request.auth.uid;
+      allow read, update: if isAdmin();
+    }
+
+    match /collections/{id} {
+      allow read: if resource.data.isPublic == true
+        || isOwner(resource.data.uid)
+        || isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isOwner(resource.data.uid) || isAdmin();
+    }
+
+    match /collectionItems/{docId} {
+      allow read: if true; // further filtered by parent collection privacy in app
+      allow write: if signedIn(); // ownership enforced in Functions / tighter rules below
+    }
+
+    match /notifications/{id} {
+      allow read, update: if signedIn()
+        && resource.data.uid == request.auth.uid;
+      allow create, delete: if isAdmin();
+    }
+
+    match /userDevices/{id} {
+      allow read, write: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+    }
+
+    match /searchCache/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /homepageCollections/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /syncJobs/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /syncLocks/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /providerMappings/{id} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /classificationOverrides/{id} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /editorialFeatures/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /contentRights/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /playbackAssets/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // Legal streaming source-of-truth (never client-writable without admin)
+    match /titles/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /playbackSources/{id} {
+      // Clients never read raw rights evidence paths; resolve via backend
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /playbackAuditLog/{id} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

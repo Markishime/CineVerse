@@ -1,0 +1,47 @@
+﻿{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "hosting": [
+    {
+      "target": "cineverse-live",
+      "source": ".",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**",
+        "functions/**",
+        "e2e/**",
+        "docs/**",
+        "hosting-dist/**",
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "frameworksBackend": {
+        "region": "us-central1"
+      }
+    },
+    {
+      "target": "default",
+      "source": ".",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**",
+        "functions/**",
+        "e2e/**",
+        "docs/**",
+        "hosting-dist/**",
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "frameworksBackend": {
+        "region": "us-central1"
+      }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    function under5mb() {
+      return request.resource.size < 5 * 1024 * 1024;
+    }
+    function under50mb() {
+      return request.resource.size < 50 * 1024 * 1024;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{uid}/avatars/{fileName} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == uid
+        && isImage()
+        && under5mb();
+    }
+
+    match /users/{uid}/collection-covers/{fileName} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == uid
+        && isImage()
+        && under5mb();
+    }
+
+    match /admin/editorial/{fileName} {
+      allow read: if true;
+      allow write: if isAdmin() && isImage() && under5mb();
+    }
+
+    match /rights/{contentId}/{fileName} {
+      allow read, write: if isAdmin();
+    }
+
+    match /licensed-media/{contentId}/{fileName} {
+      allow read, write: if isAdmin();
+      // Public playback URLs are issued via signed URLs from Cloud Functions
+      // after server-side rights checks — not via open Storage rules.
+    }
+
+    match /licensed-captions/{contentId}/{fileName} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

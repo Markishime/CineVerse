@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "original-mesh-469112-t3"
+  },
+  "targets": {
+    "original-mesh-469112-t3": {
+      "hosting": {
+        "cineverse-live": [
+          "cineverse-live"
+        ],
+        "default": [
+          "original-mesh-469112-t3"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
