@@ -1,247 +1,544 @@
 /**
- * Third-party embed video providers for CineVerse streaming.
+ * Streaming embed providers for CineVerse.
  *
- * Each provider maps TMDb IDs to embeddable iframe URLs.
- * Default order: autoembed (best anime support) → vidsrc.to → vidcore → multiembed → others.
+ * Architecture:
+ * - Metadata: AniList + MAL + TMDB (catalog layer)
+ * - Playback: multi-provider fallback chain (not a single hard-coded host)
  *
- * Subtitle support is handled via the provider's built-in subtitle selector
- * inside the player iframe. No iframe reload needed for subtitle changes.
+ * Anime uses dedicated backends (AniList/MAL-aware). Movies/series/K-drama use
+ * TMDB-based general embeds.
  */
 
 export type EmbedProviderId =
+  // General — movies / series
+  | "vidlink"
+  | "vidfast"
   | "autoembed"
-  | "vidsrc.to"
-  | "vidsrc.mov"
+  | "vidsrc"
   | "vidcore"
-  | "multiembed"
   | "2embed"
-  | "vidapi";
+  | "2embedskin"
+  | "moviesapi"
+  | "smashystream"
+  | "vidphantom"
+  | "superembed"
+  // Anime-only backends
+  | "cinezo"
+  | "animepahe"
+  | "screenscape"
+  | "dropfile"
+  | "ezvidapi"
+  | "supaplay"
+  // Asian-drama backends (K/C/J/Thai)
+  | "dramaplay"
+  | "kisskh"
+  | "nontongo"
+  | "frembed";
+
+export interface EmbedUrlOpts {
+  autoplay?: boolean;
+  /** ISO 639-1 language — used as audio preference (ja→sub, en→dub when applicable) */
+  language?: string;
+  /** Prefer dubbed audio when the backend supports it */
+  dub?: boolean;
+}
+
+export interface AnimeStreamIds {
+  title: string;
+  anilist?: number;
+  mal?: number;
+  tmdb?: number;
+  tmdbMediaType?: "movie" | "tv";
+  /** Absolute episode number (1 for anime movies / OVAs treated as single unit) */
+  episode?: number;
+  season?: number;
+  animeFormat?: string;
+  language?: string;
+  dub?: boolean;
+}
 
 export interface EmbedProvider {
   id: EmbedProviderId;
   name: string;
-  /** Whether this provider supports TV episodes */
   supportsTv: boolean;
-  /** Build the embed URL for a movie */
+  /** Anime-only providers are excluded from movie/series/kdrama chains */
+  animeOnly?: boolean;
+  /** Asian-drama-only providers (K/C/J/Thai) — excluded from other chains */
+  dramaOnly?: boolean;
   movieUrl: (tmdbId: number, opts?: EmbedUrlOpts) => string;
-  /** Build the embed URL for a TV episode */
-  tvUrl: (tmdbId: number, season: number, episode: number, opts?: EmbedUrlOpts) => string;
+  tvUrl: (
+    tmdbId: number,
+    season: number,
+    episode: number,
+    opts?: EmbedUrlOpts,
+  ) => string;
+  /** Optional anime-native URL builder (AniList / MAL / episode) */
+  animeUrl?: (ids: AnimeStreamIds) => string | null;
+  /** Needs async server resolve before iframe can load (e.g. AnimePahe sessions) */
+  needsResolve?: boolean;
 }
 
-export interface EmbedUrlOpts {
-  /** Auto-start playback */
-  autoplay?: boolean;
-  /** ISO 639-1 language code (e.g. "en", "ko", "ja") — used to set the default audio track */
-  language?: string;
+function qs(
+  base: string,
+  params: Record<string, string | undefined | boolean | number>,
+): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === false || v === "") continue;
+    sp.set(k, String(v === true ? "1" : v));
+  }
+  const s = sp.toString();
+  if (!s) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}${s}`;
 }
 
-/** Default provider order — autoembed first (best anime), then vidsrc.to, vidcore, multiembed, others */
-export const EMBED_PROVIDERS: EmbedProvider[] = [
+function preferDub(opts?: EmbedUrlOpts, ids?: AnimeStreamIds): boolean {
+  if (ids?.dub != null) return ids.dub;
+  if (opts?.dub != null) return opts.dub;
+  const lang = (ids?.language ?? opts?.language ?? "ja").toLowerCase();
+  return lang === "en" || lang.startsWith("en-");
+}
+
+/**
+ * General TMDB providers (movies / series / kdrama).
+ * Ordered by reliability and content coverage:
+ * VidLink → VidFast → AutoEmbed → VidSrc → VidCore → 2Embed → 2Embed.skin → MoviesAPI → SmashyStream → VidPhantom → SuperEmbed
+ */
+export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
+  {
+    id: "vidlink",
+    name: "VidLink",
+    supportsTv: true,
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://vidlink.pro/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay,
+      }),
+  },
+  {
+    id: "vidfast",
+    name: "VidFast",
+    supportsTv: true,
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://vidfast.vc/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay,
+      }),
+  },
   {
     id: "autoembed",
     name: "AutoEmbed",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) => {
-      const base = `https://autoembed.co/movie/tmdb/${tmdbId}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
-    tvUrl: (tmdbId, season, episode, opts) => {
-      const base = `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://autoembed.co/movie/tmdb/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+        lang: opts?.language,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`, {
+        autoplay: opts?.autoplay,
+        lang: opts?.language,
+      }),
   },
   {
-    id: "vidsrc.to",
+    id: "vidsrc",
     name: "VidSrc",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) => {
-      const base = `https://vidsrc.to/embed/movie/${tmdbId}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
-    tvUrl: (tmdbId, season, episode, opts) => {
-      const base = `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
-  },
-  {
-    id: "vidsrc.mov",
-    name: "VidSrc Mirror",
-    supportsTv: true,
-    movieUrl: (tmdbId, opts) => {
-      const base = `https://vidsrc.mov/embed/movie/${tmdbId}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
-    tvUrl: (tmdbId, season, episode, opts) => {
-      const base = `https://vidsrc.mov/embed/tv/${tmdbId}/${season}/${episode}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://vidsrc.to/embed/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay,
+      }),
   },
   {
     id: "vidcore",
     name: "VidCore",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) => {
-      const base = `https://vidcore.org/embed/movie/${tmdbId}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
-    tvUrl: (tmdbId, season, episode, opts) => {
-      const base = `https://vidcore.org/embed/tv/${tmdbId}/${season}/${episode}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
-  },
-  {
-    id: "multiembed",
-    name: "MultiEmbed",
-    supportsTv: true,
-    movieUrl: (tmdbId, opts) => {
-      const base = `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}&${qs}` : base;
-    },
-    tvUrl: (tmdbId, season, episode, opts) => {
-      const base = `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${season}&e=${episode}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}&${qs}` : base;
-    },
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://vidcore.org/embed/movie/${tmdbId}/`, {
+        autoplay: opts?.autoplay,
+        lang: opts?.language,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://vidcore.org/embed/tv/${tmdbId}/${season}/${episode}/`, {
+        autoplay: opts?.autoplay,
+        lang: opts?.language,
+      }),
   },
   {
     id: "2embed",
     name: "2Embed",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) => {
-      const base = `https://www.2embed.online/embed/movie/${tmdbId}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
-    tvUrl: (tmdbId, season, episode, opts) => {
-      const base = `https://www.2embed.online/embed/tv/${tmdbId}/${season}/${episode}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://www.2embed.online/embed/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+        lang: opts?.language,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://www.2embed.online/embed/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay,
+        lang: opts?.language,
+      }),
   },
   {
-    id: "vidapi",
-    name: "VidAPI",
+    id: "2embedskin",
+    name: "2Embed Skin",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) => {
-      const base = `https://vidapi.qzz.io/movie/${tmdbId}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
-    tvUrl: (tmdbId, season, episode, opts) => {
-      const base = `https://vidapi.qzz.io/tv/${tmdbId}/${season}/${episode}`;
-      const params = new URLSearchParams();
-      if (opts?.autoplay) params.set("autoplay", "1");
-      if (opts?.language) params.set("lang", opts.language);
-      const qs = params.toString();
-      return qs ? `${base}?${qs}` : base;
-    },
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://www.2embed.skin/embed/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://www.2embed.skin/embed/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay,
+      }),
+  },
+  {
+    id: "moviesapi",
+    name: "MoviesAPI",
+    supportsTv: true,
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://moviesapi.to/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://moviesapi.to/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay,
+      }),
+  },
+  {
+    id: "smashystream",
+    name: "SmashyStream",
+    supportsTv: true,
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://player.smashy.stream/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://player.smashy.stream/tv/${tmdbId}`, {
+        s: season,
+        e: episode,
+        autoplay: opts?.autoplay,
+      }),
+  },
+  {
+    id: "vidphantom",
+    name: "VidPhantom",
+    supportsTv: true,
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://vidphantom.com/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://vidphantom.com/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay,
+      }),
+  },
+  {
+    id: "superembed",
+    name: "SuperEmbed",
+    supportsTv: true,
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://multiembed.mov/`, {
+        video_id: tmdbId,
+        tmdb: 1,
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://multiembed.mov/`, {
+        video_id: tmdbId,
+        tmdb: 1,
+        s: season,
+        e: episode,
+        autoplay: opts?.autoplay,
+      }),
   },
 ];
 
 /**
- * Get all providers that support the given media type,
- * ordered by default preference (autoembed first).
+ * Anime-only streaming backends.
+ * Prefer AniList/MAL metadata pairing over a single hard-coded host.
+ *
+ * Order prioritizes fast, currently-reachable hosts first:
+ * Cinezo (AniList) → ScreenScape (TMDB) → AnimePahe (async) → DropFile → ezvidapi → SupaPlay
  */
+export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
+  {
+    id: "cinezo",
+    name: "Cinezo",
+    supportsTv: true,
+    animeOnly: true,
+    // Cinezo also supports TMDB movie/tv, but we only use it for anime
+    movieUrl: (tmdbId) => `https://player.cinezo.live/embed/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://player.cinezo.live/embed/tv/${tmdbId}/${season}/${episode}`,
+    animeUrl: (ids) => {
+      if (!ids.anilist) return null;
+      const ep = Math.max(1, ids.episode ?? 1);
+      const dub = preferDub(undefined, ids);
+      return qs(
+        `https://player.cinezo.live/embed/anime/${ids.anilist}/${ep}`,
+        { dub: dub ? "true" : "false", autoplay: true, poster: true },
+      );
+    },
+  },
+  {
+    id: "screenscape",
+    name: "ScreenScape",
+    supportsTv: true,
+    animeOnly: true,
+    // Official API: /embed?tmdb=&type=movie|tv&s=&e=
+    movieUrl: (tmdbId) =>
+      qs("https://flix.screenscape.me/embed", {
+        tmdb: tmdbId,
+        type: "movie",
+      }),
+    tvUrl: (tmdbId, season, episode) =>
+      qs("https://flix.screenscape.me/embed", {
+        tmdb: tmdbId,
+        type: "tv",
+        s: season,
+        e: episode,
+      }),
+    animeUrl: (ids) => {
+      // Anime as TV (or movie) on TMDB when available
+      if (!ids.tmdb) return null;
+      if (ids.tmdbMediaType === "movie" || ids.animeFormat === "MOVIE") {
+        return qs("https://flix.screenscape.me/embed", {
+          tmdb: ids.tmdb,
+          type: "movie",
+        });
+      }
+      const s = Math.max(1, ids.season ?? 1);
+      const e = Math.max(1, ids.episode ?? 1);
+      return qs("https://flix.screenscape.me/embed", {
+        tmdb: ids.tmdb,
+        type: "tv",
+        s,
+        e,
+      });
+    },
+  },
+  {
+    id: "animepahe",
+    name: "AnimePahe",
+    supportsTv: true,
+    animeOnly: true,
+    needsResolve: true,
+    movieUrl: () => "",
+    tvUrl: () => "",
+    // Resolved client-side via /api/v1/playback/anime-embed
+    animeUrl: () => null,
+  },
+  {
+    id: "dropfile",
+    name: "DropFile",
+    supportsTv: true,
+    animeOnly: true,
+    movieUrl: () => "",
+    tvUrl: () => "",
+    animeUrl: (ids) => {
+      // Prefer MAL id (stable anime catalog key); fall back to AniList
+      const id = ids.mal ?? ids.anilist;
+      if (!id) return null;
+      const ep = Math.max(1, ids.episode ?? 1);
+      const dub = preferDub(undefined, ids);
+      // DropFile public embed: /embed/{mal|anilist}/{episode}
+      return qs(`https://dropfile.cc/embed/${id}/${ep}`, {
+        type: ids.mal ? "mal" : "anilist",
+        anilist: ids.anilist,
+        mal: ids.mal,
+        dub: dub ? "1" : "0",
+        sub: dub ? "0" : "1",
+      });
+    },
+  },
+  {
+    id: "ezvidapi",
+    name: "ezvidapi",
+    supportsTv: true,
+    animeOnly: true,
+    movieUrl: (tmdbId) => `https://ezvidapi.com/embed/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://ezvidapi.com/embed/tv/${tmdbId}/${season}/${episode}`,
+    animeUrl: (ids) => {
+      // Multi-provider backend — TMDB paths; AniList when no TMDB
+      if (ids.tmdb) {
+        if (ids.tmdbMediaType === "movie" || ids.animeFormat === "MOVIE") {
+          return `https://ezvidapi.com/embed/movie/${ids.tmdb}`;
+        }
+        const s = Math.max(1, ids.season ?? 1);
+        const e = Math.max(1, ids.episode ?? 1);
+        return `https://ezvidapi.com/embed/tv/${ids.tmdb}/${s}/${e}`;
+      }
+      if (ids.anilist) {
+        const ep = Math.max(1, ids.episode ?? 1);
+        return qs(`https://ezvidapi.com/embed/anime/${ids.anilist}/${ep}`, {
+          dub: preferDub(undefined, ids) ? "true" : "false",
+        });
+      }
+      return null;
+    },
+  },
+  {
+    id: "supaplay",
+    name: "SupaPlay",
+    supportsTv: true,
+    animeOnly: true,
+    // Classic /stream/s-2 needs HiAnime/Anikoto episode IDs (async resolve)
+    needsResolve: true,
+    movieUrl: () => "",
+    tvUrl: () => "",
+    animeUrl: () => null,
+  },
+];
+
+/**
+ * Asian-drama streaming backends (K-Drama / C-Drama / J-Drama / Thai Drama).
+ * These hosts carry subtitled Asian dramas that general TMDB embeds often miss.
+ *
+ * Order: DramaPlay → KissKH → NontonGo → Frembed → general fallbacks
+ */
+export const DRAMA_EMBED_PROVIDERS: EmbedProvider[] = [
+  {
+    id: "dramaplay",
+    name: "DramaPlay",
+    supportsTv: true,
+    dramaOnly: true,
+    // https://www.dramaplay.one — TMDB movie/tv embeds with built-in subtitles.
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://www.dramaplay.one/embed/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+        sub: opts?.language ?? "en",
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(
+        `https://www.dramaplay.one/embed/tv/${tmdbId}/${season}/${episode}`,
+        {
+          autoplay: opts?.autoplay,
+          sub: opts?.language ?? "en",
+        },
+      ),
+  },
+  {
+    id: "kisskh",
+    name: "KissKH",
+    supportsTv: true,
+    dramaOnly: true,
+    // https://kisskh.megaplay.su — KissKH episode embed keyed by TMDB id.
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://kisskh.megaplay.su/embed/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(
+        `https://kisskh.megaplay.su/embed/tv/${tmdbId}/${season}/${episode}`,
+        {
+          autoplay: opts?.autoplay,
+        },
+      ),
+  },
+  {
+    id: "nontongo",
+    name: "NontonGo",
+    supportsTv: true,
+    dramaOnly: true,
+    // https://www.nontongo.win — Indonesian-focused, strong K/C/J-drama coverage.
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://www.nontongo.win/embed/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(
+        `https://www.nontongo.win/embed/tv/${tmdbId}/${season}/${episode}`,
+        {
+          autoplay: opts?.autoplay,
+        },
+      ),
+  },
+  {
+    id: "frembed",
+    name: "Frembed",
+    supportsTv: true,
+    dramaOnly: true,
+    // https://frembed.asia — French-origin, multilingual subs, good Asian drama coverage.
+    // TV uses "serie" (not "tv") + query params sa/epi.
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://frembed.asia/embed/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://frembed.asia/embed/serie/${tmdbId}`, {
+        sa: season,
+        epi: episode,
+        autoplay: opts?.autoplay,
+      }),
+  },
+];
+
+/** All providers (general + anime + drama) */
+export const EMBED_PROVIDERS: EmbedProvider[] = [
+  ...GENERAL_EMBED_PROVIDERS,
+  ...ANIME_EMBED_PROVIDERS,
+  ...DRAMA_EMBED_PROVIDERS,
+];
+
 export function getProvidersForMediaType(
   mediaType: "movie" | "tv",
 ): EmbedProvider[] {
-  if (mediaType === "movie") {
-    return EMBED_PROVIDERS;
-  }
-  return EMBED_PROVIDERS.filter((p) => p.supportsTv);
+  const list = GENERAL_EMBED_PROVIDERS;
+  if (mediaType === "movie") return list;
+  return list.filter((p) => p.supportsTv);
 }
 
+/** Asian-drama content types that use the dedicated drama backends. */
+const DRAMA_CONTENT_TYPES = new Set([
+  "kdrama",
+  "cdrama",
+  "jdrama",
+  "thaidrama",
+]);
+
 /**
- * Get providers ordered by content type.
- * For anime: autoembed → vidsrc.to → vidcore → multiembed → others.
- * For series/kdrama: vidsrc.to → autoembed → vidcore → others.
- * For movies: default order.
+ * Content-type aware provider chain.
+ * Anime: Cinezo → ScreenScape → AnimePahe → DropFile → ezvidapi → SupaPlay
+ *         (+ TMDB general fallbacks when a TMDB id exists)
+ * Drama (K/C/J/Thai): DramaPlay → KissKH → NontonGo → Frembed → VidLink → VidFast → AutoEmbed → VidSrc → VidCore → 2Embed → ...
+ * Others: VidLink → VidFast → AutoEmbed → VidSrc → VidCore → 2Embed → 2Embed.skin → MoviesAPI → SmashyStream → VidPhantom → SuperEmbed
  */
 export function getProvidersForContentType(
   contentType: string,
   mediaType: "movie" | "tv" = "tv",
 ): EmbedProvider[] {
-  const all = mediaType === "movie"
-    ? EMBED_PROVIDERS
-    : EMBED_PROVIDERS.filter((p) => p.supportsTv);
-
   if (contentType === "anime") {
-    // Anime-optimized: autoembed first, then vidsrc, vidcore, multiembed
-    const animeOrder: EmbedProviderId[] = [
-      "autoembed", "vidsrc.to", "vidsrc.mov", "vidcore",
-      "multiembed", "2embed", "vidapi",
+    return [
+      ...ANIME_EMBED_PROVIDERS,
+      // General TMDB embeds as last resort when tmdbId is present
+      ...GENERAL_EMBED_PROVIDERS,
     ];
-    return animeOrder
-      .map((id) => all.find((p) => p.id === id))
-      .filter(Boolean) as EmbedProvider[];
   }
 
-  if (contentType === "kdrama") {
-    // K-drama: vidsrc first (best Korean audio), then autoembed
-    const kdramaOrder: EmbedProviderId[] = [
-      "vidsrc.to", "vidsrc.mov", "autoembed", "vidcore",
-      "multiembed", "2embed", "vidapi",
+  if (DRAMA_CONTENT_TYPES.has(contentType)) {
+    return [
+      // Dedicated Asian-drama hosts first (subtitles, better drama coverage)
+      ...DRAMA_EMBED_PROVIDERS,
+      // General TMDB embeds as fallback
+      ...getProvidersForMediaType(mediaType),
     ];
-    return kdramaOrder
-      .map((id) => all.find((p) => p.id === id))
-      .filter(Boolean) as EmbedProvider[];
   }
 
-  // Default: autoembed first (reliable for all types)
-  return all;
+  return getProvidersForMediaType(mediaType);
 }
 
-/**
- * Build the embed URL for a specific provider + media type.
- */
 export function buildEmbedUrl(
   providerId: EmbedProviderId,
   tmdbId: number,
@@ -252,11 +549,57 @@ export function buildEmbedUrl(
 ): string | null {
   const provider = EMBED_PROVIDERS.find((p) => p.id === providerId);
   if (!provider) return null;
-
-  if (mediaType === "movie") {
-    return provider.movieUrl(tmdbId, opts);
+  if (provider.animeOnly && !provider.movieUrl(tmdbId) && mediaType === "movie") {
+    // anime-only providers without movieUrl still handled via buildAnimeEmbedUrl
   }
 
+  if (mediaType === "movie") {
+    const url = provider.movieUrl(tmdbId, opts);
+    return url || null;
+  }
   if (!season || !episode) return null;
-  return provider.tvUrl(tmdbId, season, episode, opts);
+  const url = provider.tvUrl(tmdbId, season, episode, opts);
+  return url || null;
+}
+
+/** Build anime-native embed URL (preferred for contentType=anime) */
+export function buildAnimeEmbedUrl(
+  providerId: EmbedProviderId,
+  ids: AnimeStreamIds,
+  opts?: EmbedUrlOpts,
+): string | null {
+  const provider = EMBED_PROVIDERS.find((p) => p.id === providerId);
+  if (!provider) return null;
+
+  const merged: AnimeStreamIds = {
+    ...ids,
+    language: ids.language ?? opts?.language,
+    dub: ids.dub ?? opts?.dub ?? preferDub(opts, ids),
+  };
+
+  if (provider.animeUrl) {
+    const anime = provider.animeUrl(merged);
+    if (anime) return anime;
+  }
+
+  // Fallback to TMDB paths when anime-native URL unavailable
+  if (merged.tmdb) {
+    if (
+      merged.tmdbMediaType === "movie" ||
+      merged.animeFormat === "MOVIE"
+    ) {
+      const url = provider.movieUrl(merged.tmdb, opts);
+      return url || null;
+    }
+    const s = Math.max(1, merged.season ?? 1);
+    const e = Math.max(1, merged.episode ?? 1);
+    const url = provider.tvUrl(merged.tmdb, s, e, opts);
+    return url || null;
+  }
+
+  return null;
+}
+
+export function getProviderName(id: EmbedProviderId): string {
+  return EMBED_PROVIDERS.find((p) => p.id === id)?.name ?? id;
 }

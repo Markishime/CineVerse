@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -20,7 +20,7 @@ import {
 import type { Content, ContentType } from "@/types/content";
 import {
   fetchAnime,
-  fetchKdrama,
+  fetchDrama,
   fetchMovies,
   fetchSeries,
 } from "@/lib/api/content";
@@ -40,6 +40,8 @@ import {
 import { easeOutExpo } from "@/lib/motion";
 import { useAuthStore } from "@/stores/auth-store";
 import { APP_REGION } from "@/lib/user/region";
+import { EmptyState } from "@/components/layout/empty-state";
+import { Chip } from "@/components/ui/chip";
 
 export type CatalogSort =
   | "popularity"
@@ -70,25 +72,43 @@ const meta: Record<
 > = {
   movie: {
     title: "Movies",
-    subtitle: "Stream instantly with Watch Now",
+    subtitle: "Discover movies from around the world",
     theme: "movies",
     className: "projector-light",
   },
   series: {
     title: "Series",
-    subtitle: "Stream instantly with Watch Now",
+    subtitle: "Binge-worthy TV series",
     theme: "series",
     className: "",
   },
   anime: {
     title: "Anime",
-    subtitle: "Stream instantly with Watch Now",
+    subtitle: "Japanese animation collection",
     theme: "anime",
     className: "neon-edge rounded-2xl",
   },
   kdrama: {
     title: "K-Drama",
-    subtitle: "Stream instantly with Watch Now",
+    subtitle: "Korean drama series",
+    theme: "kdrama",
+    className: "rain-glass",
+  },
+  cdrama: {
+    title: "C-Drama",
+    subtitle: "Chinese drama series",
+    theme: "kdrama",
+    className: "rain-glass",
+  },
+  jdrama: {
+    title: "J-Drama",
+    subtitle: "Japanese drama series",
+    theme: "kdrama",
+    className: "rain-glass",
+  },
+  thaidrama: {
+    title: "Thai Drama",
+    subtitle: "Thai drama series",
     theme: "kdrama",
     className: "rain-glass",
   },
@@ -101,6 +121,8 @@ async function load(
   mature: boolean,
   watchNowOnly: boolean,
   region: string,
+  country?: string,
+  animeFormat?: "movie" | "series",
 ) {
   const params = {
     page,
@@ -109,6 +131,7 @@ async function load(
     mature,
     playable: watchNowOnly || undefined,
     region,
+    country,
   };
   switch (type) {
     case "movie":
@@ -116,13 +139,29 @@ async function load(
     case "series":
       return fetchSeries(params);
     case "anime":
-      return fetchAnime(params);
+      return fetchAnime({ ...params, format: animeFormat });
     case "kdrama":
-      return fetchKdrama(params);
+    case "cdrama":
+    case "jdrama":
+    case "thaidrama":
+      return fetchDrama(type, params);
   }
 }
 
-export function CatalogPage({ type }: { type: ContentType }) {
+export function CatalogPage({
+  type,
+  country,
+  animeFormat,
+  title,
+  subtitle,
+}: {
+  type: ContentType;
+  country?: string;
+  /** Anime-only: narrow to films or series (TV/OVA/ONA/…). */
+  animeFormat?: "movie" | "series";
+  title?: string;
+  subtitle?: string;
+}) {
   const m = meta[type];
   const user = useAuthStore((s) => s.user);
   const settings = useAuthStore((s) => s.settings);
@@ -160,17 +199,23 @@ export function CatalogPage({ type }: { type: ContentType }) {
   const [watchNowOnly, setWatchNowOnly] = useState(false);
 
   const { data, isLoading, isError, isFetching } = useQuery({
-    queryKey: ["catalog", type, page, sort, mature, watchNowOnly, region],
-    queryFn: () => load(type, page, sort, mature, watchNowOnly, region),
+    queryKey: [
+      "catalog",
+      type,
+      page,
+      sort,
+      mature,
+      watchNowOnly,
+      region,
+      country,
+      animeFormat,
+    ],
+    queryFn: () =>
+      load(type, page, sort, mature, watchNowOnly, region, country, animeFormat),
     staleTime: 20_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
-
-  const sortLabel = useMemo(
-    () => SORT_OPTIONS.find((s) => s.id === sort)?.label ?? sort,
-    [sort],
-  );
 
   return (
     <div data-theme={m.theme} className="min-h-dvh pt-24">
@@ -183,98 +228,80 @@ export function CatalogPage({ type }: { type: ContentType }) {
           )}
         >
           <header>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]">
-            CineVerse catalog · live
-          </p>
           <h1 className="font-display text-3xl font-bold text-white sm:text-4xl">
-            {m.title}
+            {title ?? m.title}
           </h1>
           <p className="max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
-            {m.subtitle}
-            {data?.total != null ? ` · ${data.total} titles` : ""}
-            {` · sorted by ${sortLabel}`}
-            {" · United States"}
-            {mature ? " · 18+ mature on" : ""}
-            {isFetching ? " · live refresh…" : ""}
+            {subtitle ?? m.subtitle}
+            {mature ? " · 18+ mature content" : ""}
           </p>
           {mature && (
             <Badge tone="accent" className="mt-2">
               18+ mature content enabled
             </Badge>
           )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Chip
+              active={watchNowOnly}
               onClick={() => {
                 setWatchNowOnly(true);
                 setPage(1);
               }}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition",
+              className={
                 watchNowOnly
-                  ? "watch-now-cta bg-[var(--gold)] !text-black shadow-lg"
-                  : "bg-white/10 text-[var(--text-secondary)] hover:bg-white/15",
-              )}
+                  ? "watch-now-cta !bg-[var(--gold)] !text-black font-semibold"
+                  : undefined
+              }
             >
-              <Play className="h-4 w-4 fill-current" />
+              <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
               Watch Now
-            </button>
-            <button
-              type="button"
+            </Chip>
+            <Chip
+              active={!watchNowOnly}
               onClick={() => {
                 setWatchNowOnly(false);
                 setPage(1);
               }}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition",
-                !watchNowOnly
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-white/10 text-[var(--text-secondary)] hover:bg-white/15",
-              )}
             >
               All {m.title.toLowerCase()}
-            </button>
+            </Chip>
           </div>
           </header>
         </Reveal>
 
         {/* Toolbar: sort + view */}
-        <Reveal delay={0.05} inView={false} className="mb-6 flex flex-col gap-3 rounded-2xl surface-card p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+        <Reveal delay={0.05} inView={false} className="mb-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
               Sort
             </span>
             {SORT_OPTIONS.map((opt) => {
               const Icon = opt.icon;
               const active = sort === opt.id;
               return (
-                <button
+                <Chip
                   key={opt.id}
-                  type="button"
+                  active={active}
                   onClick={() => {
                     setSort(opt.id);
                     setPage(1);
                   }}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition",
-                    active
-                      ? "bg-[var(--primary)] text-white shadow-[var(--glow-primary)]"
-                      : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white",
-                  )}
+                  className="text-xs"
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Icon className="h-3.5 w-3.5" aria-hidden />
                   {opt.label}
-                </button>
+                </Chip>
               );
             })}
           </div>
-          <div className="flex items-center gap-1 rounded-xl bg-black/30 p-1">
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-[var(--background)] p-1">
             <button
               type="button"
               aria-label="Grid view"
+              aria-pressed={view === "grid"}
               onClick={() => setView("grid")}
               className={cn(
-                "rounded-lg p-2 transition",
+                "flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                 view === "grid"
                   ? "bg-[var(--primary)] text-white"
                   : "text-[var(--text-muted)] hover:text-white",
@@ -285,9 +312,10 @@ export function CatalogPage({ type }: { type: ContentType }) {
             <button
               type="button"
               aria-label="List view"
+              aria-pressed={view === "list"}
               onClick={() => setView("list")}
               className={cn(
-                "rounded-lg p-2 transition",
+                "flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                 view === "list"
                   ? "bg-[var(--primary)] text-white"
                   : "text-[var(--text-muted)] hover:text-white",
@@ -307,7 +335,11 @@ export function CatalogPage({ type }: { type: ContentType }) {
         )}
 
         {isError && (
-          <p className="text-[var(--danger)]">Failed to load catalog.</p>
+          <EmptyState
+            title="Failed to load catalog"
+            description="Something went wrong. Try again shortly."
+            actions={[{ href: "/", label: "Go home", variant: "secondary" }]}
+          />
         )}
 
         {data && view === "grid" && (
@@ -384,9 +416,11 @@ export function CatalogPage({ type }: { type: ContentType }) {
         )}
 
         {data && data.items.length === 0 && (
-          <p className="text-[var(--text-muted)]">
-            No titles in this collection yet.
-          </p>
+          <EmptyState
+            title="No titles in this collection yet"
+            description="Try clearing the Watch Now filter or pick a different sort."
+            actions={[{ href: "/discover", label: "Discover", variant: "secondary" }]}
+          />
         )}
       </div>
     </div>
@@ -417,11 +451,11 @@ function CatalogListRow({
   const showTrailer = hasOfficialTrailer(item);
 
   return (
-    <li className="surface-card overflow-hidden transition hover:ring-1 hover:ring-[var(--primary)]/40">
+    <li className="overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] transition-colors hover:border-white/18">
       <div className="flex gap-3 p-3 sm:gap-4 sm:p-4">
         <Link
           href={watchHref}
-          className="relative h-[120px] w-[80px] shrink-0 overflow-hidden rounded-lg bg-[var(--surface-elevated)] sm:h-[140px] sm:w-[94px]"
+          className="relative h-[120px] w-[80px] shrink-0 overflow-hidden rounded-lg bg-[var(--surface-elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:h-[140px] sm:w-[94px]"
         >
           {poster ? (
             <Image

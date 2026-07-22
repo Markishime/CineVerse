@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   const region = (
     request.nextUrl.searchParams.get("region") ?? "US"
   ).toUpperCase();
+  const country = request.nextUrl.searchParams.get("country") ?? undefined;
   return json(
     await catalog.byType(
       "series",
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
       includeMature,
       playableOnly,
       region,
+      country,
     ),
   );
 }

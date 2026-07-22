@@ -3,16 +3,18 @@
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { fetchHome } from "@/lib/api/content";
 import { ContentRow } from "@/components/content/content-row";
 import { ContinueWatchingRow } from "@/components/content/continue-watching-row";
 import { HeroCarousel } from "./hero-carousel";
-import { Reveal } from "@/components/motion/reveal";
+import { Reveal, RevealItem, RevealStagger } from "@/components/motion/reveal";
 import { usePerformanceStore } from "@/stores/performance-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { Badge } from "@/components/ui/badge";
 import { APP_REGION } from "@/lib/user/region";
+import { landingSection } from "@/lib/motion";
 
 const HeroOrbits = dynamic(
   () => import("./hero-orbits").then((m) => m.HeroOrbits),
@@ -21,6 +23,7 @@ const HeroOrbits = dynamic(
 
 export function HomePage() {
   const effective = usePerformanceStore((s) => s.effective);
+  const reduce = useReducedMotion();
   const user = useAuthStore((s) => s.user);
   const settings = useAuthStore((s) => s.settings);
   const settingsMature = Boolean(settings?.matureContent);
@@ -52,7 +55,7 @@ export function HomePage() {
   const mature = settingsMature || deviceMature;
   const region = APP_REGION;
 
-  const { data, isLoading, isError, dataUpdatedAt, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["home", mature, region],
     queryFn: () => fetchHome(region, mature),
     staleTime: 15_000,
@@ -62,19 +65,39 @@ export function HomePage() {
     refetchIntervalInBackground: false,
   });
 
-  // Align client poll with server 90s featured rotation window
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      void refetch();
-    }, 90_000);
-    return () => window.clearInterval(id);
-  }, [refetch, region]);
+  const carouselItems = useMemo(() => {
+    if (!data) return [];
+    return (
+      data.featuredCarousel?.length
+        ? data.featuredCarousel
+        : [data.featured, ...data.trending].filter(Boolean)
+    )
+      .filter(Boolean)
+      .slice(0, 12) as NonNullable<typeof data.featured>[];
+  }, [data]);
 
   if (isLoading) {
     return (
-      <div className="space-y-8 px-4 pt-24 sm:px-6">
-        <div className="h-[70dvh] skeleton rounded-2xl" />
-        <div className="h-48 skeleton rounded-xl" />
+      <div className="overflow-x-hidden bg-[var(--background)]">
+        <div className="relative min-h-[100dvh] w-full">
+          <div className="absolute inset-0 skeleton opacity-40" />
+          <div className="relative z-10 mx-auto flex h-[100dvh] max-w-7xl items-end px-4 pb-28 sm:items-center sm:px-6">
+            <div className="w-full max-w-xl space-y-4">
+              <div className="h-4 w-40 skeleton rounded-full" />
+              <div className="h-12 w-full skeleton rounded-xl" />
+              <div className="h-12 w-4/5 skeleton rounded-xl" />
+              <div className="h-20 w-full skeleton rounded-xl" />
+              <div className="flex gap-3 pt-2">
+                <div className="h-11 w-32 skeleton rounded-full" />
+                <div className="h-11 w-32 skeleton rounded-full" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="mx-auto max-w-7xl space-y-10 px-4 py-12 sm:px-6">
+          <div className="h-48 skeleton rounded-xl" />
+          <div className="h-48 skeleton rounded-xl" />
+        </div>
       </div>
     );
   }
@@ -86,24 +109,18 @@ export function HomePage() {
           Couldn&apos;t load the cosmos
         </h1>
         <p className="mt-2 text-[var(--text-secondary)]">
-          The catalog API is temporarily unavailable. Try again shortly.
+          Something went wrong. Try again shortly.
         </p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className="mt-6 rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-medium text-white transition-transform hover:scale-105 active:scale-95"
+        >
+          Retry
+        </button>
       </div>
     );
   }
-
-  // Featured hero = popular & trending today only (movies · series · anime · kdrama)
-  const carouselItems = (
-    data.featuredCarousel?.length
-      ? data.featuredCarousel
-      : [data.featured, ...data.trending].filter(Boolean)
-  )
-    .filter(Boolean)
-    .slice(0, 12) as NonNullable<typeof data.featured>[];
-
-  const featuredStamp =
-    data.featuredUpdatedAt ??
-    (dataUpdatedAt ? new Date(dataUpdatedAt).toISOString() : "0");
 
   return (
     <div className="overflow-x-hidden bg-[var(--background)]">
@@ -113,16 +130,28 @@ export function HomePage() {
             <HeroOrbits />
           </div>
         )}
-        <div className="relative z-10">
+        <div className="hero-vignette relative z-10">
           <HeroCarousel
-            key={`hero-${featuredStamp}-${carouselItems.map((c) => c?.id).join(",")}`}
             items={carouselItems}
             liveLabel="Popular & trending today"
           />
         </div>
       </div>
 
-      <div className="relative z-10 mx-auto max-w-7xl space-y-14 px-4 pb-24 pt-10 sm:px-6">
+      {/* Cinematic fade from hero into catalog */}
+      <div
+        className="hero-cinematic-fade pointer-events-none relative z-[5] -mt-[7.5rem]"
+        aria-hidden
+      />
+
+      <motion.div
+        id="home-catalog"
+        className="landing-row-enter relative z-10 mx-auto max-w-7xl space-y-12 px-4 pb-28 pt-2 sm:space-y-14 sm:px-6"
+        initial={reduce ? false : "hidden"}
+        whileInView={reduce ? undefined : "visible"}
+        viewport={{ once: true, amount: 0.02, margin: "0px 0px -40px 0px" }}
+        variants={reduce ? undefined : landingSection}
+      >
         <ContinueWatchingRow />
 
         <ContentRow
@@ -153,65 +182,165 @@ export function HomePage() {
           subtitle="Top Korean series"
           items={data.trendingKdramas}
         />
-        {mature && (data.matureMovies?.length || data.matureSeries?.length || data.matureAnime?.length) ? (
+        <ContentRow
+          title="Popular Korean movies today"
+          subtitle="Top Korean cinema"
+          items={data.koreanMovies}
+          wide
+        />
+        {(data.koreanSeries?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Korean series today"
+            subtitle="Korean TV beyond K-drama"
+            items={data.koreanSeries}
+          />
+        )}
+        {(data.japaneseMovies?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Japanese movies today"
+            subtitle="Top Japanese cinema"
+            items={data.japaneseMovies}
+            wide
+          />
+        )}
+        {(data.japaneseSeries?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Japanese series today"
+            subtitle="Japanese TV beyond J-drama"
+            items={data.japaneseSeries}
+          />
+        )}
+        {(data.chineseMovies?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Chinese movies today"
+            subtitle="Top Chinese cinema"
+            items={data.chineseMovies}
+            wide
+          />
+        )}
+        {(data.chineseSeries?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Chinese series today"
+            subtitle="Chinese TV beyond C-drama"
+            items={data.chineseSeries}
+          />
+        )}
+        {(data.thaiMovies?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Thai movies today"
+            subtitle="Top Thai cinema"
+            items={data.thaiMovies}
+          />
+        )}
+        {(data.thaiSeries?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Thai series today"
+            subtitle="Thai TV beyond drama"
+            items={data.thaiSeries}
+          />
+        )}
+        {(data.filipinoMovies?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Filipino movies today"
+            subtitle="Top Filipino cinema"
+            items={data.filipinoMovies}
+          />
+        )}
+        {(data.filipinoSeries?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Filipino series today"
+            subtitle="Top Filipino TV"
+            items={data.filipinoSeries}
+          />
+        )}
+        <div className="cinematic-glow relative">
+          <ContentRow
+            title="Popular J-dramas today"
+            subtitle="Top Japanese series"
+            items={data.trendingJdramas}
+          />
+          <ContentRow
+            title="Popular C-dramas today"
+            subtitle="Top Chinese series"
+            items={data.trendingCdramas}
+          />
+          <ContentRow
+            title="Popular Thai dramas today"
+            subtitle="Top Thai series"
+            items={data.trendingThaidramas}
+          />
+        </div>
+        {mature &&
+        (data.matureMovies?.length ||
+          data.matureSeries?.length ||
+          data.matureAnime?.length) ? (
           <>
             {(data.matureMovies?.length ?? 0) > 0 && (
-              <ContentRow
-                title="18+ Movies"
-                items={data.matureMovies!}
-              />
+              <ContentRow title="18+ Movies" items={data.matureMovies!} />
             )}
             {(data.matureSeries?.length ?? 0) > 0 && (
-              <ContentRow
-                title="18+ Series"
-                items={data.matureSeries!}
-              />
+              <ContentRow title="18+ Series" items={data.matureSeries!} />
             )}
             {(data.matureAnime?.length ?? 0) > 0 && (
+              <ContentRow title="18+ Anime" items={data.matureAnime!} />
+            )}
+            {(data.matureKdramas?.length ?? 0) > 0 && (
               <ContentRow
-                title="18+ Anime"
-                items={data.matureAnime!}
+                title="18+ K-Drama"
+                subtitle="Explicit & nudity Korean dramas"
+                items={data.matureKdramas!}
               />
             )}
           </>
         ) : null}
 
+        <div className="cinematic-divider" />
         <Reveal className="space-y-4">
           <h2 className="font-display text-xl font-semibold text-white sm:text-2xl">
             Explore by mood
           </h2>
-          <div className="flex flex-wrap gap-2">
+          <RevealStagger className="flex flex-wrap gap-2">
             {data.moods.map((m) => (
-              <Link key={m.id} href={`/discover?mood=${m.id}`}>
-                <Badge tone="primary" className="px-3 py-1.5 text-sm">
-                  {m.emoji} {m.label}
-                </Badge>
-              </Link>
+              <RevealItem key={m.id}>
+                <Link
+                  href={`/discover?mood=${m.id}`}
+                  className="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                >
+                  <Badge
+                    tone="primary"
+                    className="px-3 py-1.5 text-sm transition-colors duration-150 hover:brightness-110"
+                  >
+                    {m.emoji} {m.label}
+                  </Badge>
+                </Link>
+              </RevealItem>
             ))}
-          </div>
+          </RevealStagger>
         </Reveal>
 
         <Reveal className="space-y-4 pb-8">
           <h2 className="font-display text-xl font-semibold text-white sm:text-2xl">
             Explore by genre
           </h2>
-          <div className="flex flex-wrap gap-2">
+          <RevealStagger className="flex flex-wrap gap-2">
             {data.genres.map((g) => (
-              <Link
-                key={g.id}
-                href={`/discover?genre=${encodeURIComponent(g.name)}`}
-              >
-                <Badge
-                  tone="muted"
-                  className="px-3 py-1.5 text-sm hover:bg-white/10"
+              <RevealItem key={g.id}>
+                <Link
+                  href={`/discover?genre=${encodeURIComponent(g.name)}`}
+                  className="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 >
-                  {g.name}
-                </Badge>
-              </Link>
+                  <Badge
+                    tone="muted"
+                    className="px-3 py-1.5 text-sm transition-colors duration-150 hover:bg-white/12"
+                  >
+                    {g.name}
+                  </Badge>
+                </Link>
+              </RevealItem>
             ))}
-          </div>
+          </RevealStagger>
         </Reveal>
-      </div>
+      </motion.div>
     </div>
   );
 }

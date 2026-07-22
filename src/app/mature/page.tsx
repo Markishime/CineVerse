@@ -8,6 +8,7 @@ import { fetchMatureLibrary } from "@/lib/api/content";
 import { ContentCard } from "@/components/content/content-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import { PinGateModal } from "@/components/content/pin-gate";
 import { isMatureEnabledClient } from "@/lib/user/local-profile";
 import {
@@ -187,21 +188,21 @@ export default function MaturePage() {
 
       <div className="mt-6 flex flex-wrap gap-2">
         {tabs.map((t) => (
-          <button
+          <Chip
             key={t.id}
-            type="button"
+            active={tab === t.id}
             onClick={() => {
               setTab(t.id);
               setPage(1);
             }}
-            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+            className={
               tab === t.id
-                ? "bg-[var(--danger)] text-white"
-                : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white"
-            }`}
+                ? "!bg-[var(--danger)] text-white"
+                : undefined
+            }
           >
             {t.label}
-          </button>
+          </Chip>
         ))}
       </div>
 

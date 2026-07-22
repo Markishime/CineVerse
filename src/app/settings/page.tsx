@@ -67,10 +67,15 @@ export default function SettingsPage() {
   if (!user) {
     return (
       <div className="mx-auto max-w-2xl px-4 pb-24 pt-24 sm:px-6">
-        <h1 className="font-display text-3xl font-bold text-white">Settings</h1>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]">
+          Account
+        </p>
+        <h1 className="mt-1 font-display text-3xl font-bold text-white">
+          Settings
+        </h1>
         <p className="mt-2 text-[var(--text-secondary)]">
-          Sign in free to manage profile, parental PIN, region (for legal watch
-          providers), and preferences. CineVerse is unlimited for every member.
+          Sign in free to manage profile, parental PIN, region, and preferences.
+          CineVerse is unlimited for every member.
         </p>
         <div className="mt-6 flex gap-3">
           <Link href="/login">
@@ -273,12 +278,17 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 pb-24 pt-24 sm:px-6">
-      <h1 className="font-display text-3xl font-bold text-white">Settings</h1>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]">
+        Account
+      </p>
+      <h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-white">
+        Settings
+      </h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         Free unlimited account. Cinematic presentation is always on.
       </p>
 
-      <section className="mt-8 space-y-3 surface-card p-5">
+      <section className="mt-8 space-y-4 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
           Profile
         </h2>
@@ -288,7 +298,7 @@ export default function SettingsPage() {
         <label className="block text-sm text-[var(--text-secondary)]">
           Display name
           <Input
-            className="mt-1"
+            className="mt-1.5 h-11"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
           />
@@ -296,7 +306,7 @@ export default function SettingsPage() {
         <label className="block text-sm text-[var(--text-secondary)]">
           Username
           <Input
-            className="mt-1"
+            className="mt-1.5 h-11"
             value={username}
             onChange={(e) =>
               setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24))
@@ -306,7 +316,7 @@ export default function SettingsPage() {
         <label className="block text-sm text-[var(--text-secondary)]">
           Bio
           <textarea
-            className="mt-1 w-full rounded-xl border border-[var(--border)] bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[var(--primary)]"
+            className="field-textarea mt-1.5"
             rows={3}
             value={bio}
             onChange={(e) => setBio(e.target.value.slice(0, 280))}
@@ -322,7 +332,7 @@ export default function SettingsPage() {
         )}
       </section>
 
-      <section className="mt-6 space-y-3 surface-card p-5">
+      <section className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
           Parental PIN
         </h2>
@@ -357,24 +367,24 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="mt-6 space-y-3 surface-card p-5">
+      <section className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
           Watching preferences
         </h2>
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+        <div className="rounded-xl border border-white/10 bg-[var(--background-secondary)] px-4 py-3">
           <p className="text-sm font-medium text-white">Region</p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
             CineVerse is{" "}
             <span className="font-semibold text-[var(--primary-light)]">
               United States (US)
             </span>{" "}
-            only — featured, Movies, and legal providers use the US market.
+            only. Featured, Movies, and legal providers use the US market.
           </p>
         </div>
         <label className="block text-sm text-[var(--text-secondary)]">
           Anime title language
           <select
-            className="mt-1 w-full rounded-xl border border-[var(--border)] bg-black/30 px-3 py-2 text-sm text-white"
+            className="field-select mt-1.5"
             value={animePref}
             onChange={(e) =>
               setAnimePref(e.target.value as AnimeTitlePreference)
@@ -387,18 +397,18 @@ export default function SettingsPage() {
         </label>
       </section>
 
-      <section className="mt-6 space-y-3 surface-card p-5">
+      <section className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
           Audio language
         </h2>
         <p className="text-xs text-[var(--text-secondary)]">
           Default audio language when playing content. The player uses these
-          unless the embed source doesn't support the language.
+          unless the embed source does not support the language.
         </p>
         <label className="block text-sm text-[var(--text-secondary)]">
           Anime
           <select
-            className="mt-1 w-full rounded-xl border border-[var(--border)] bg-black/30 px-3 py-2 text-sm text-white"
+            className="field-select mt-1.5"
             value={animeAudioLang}
             onChange={(e) => setAnimeAudioLang(e.target.value)}
           >
@@ -423,7 +433,7 @@ export default function SettingsPage() {
         <label className="block text-sm text-[var(--text-secondary)]">
           K-drama / Korean
           <select
-            className="mt-1 w-full rounded-xl border border-[var(--border)] bg-black/30 px-3 py-2 text-sm text-white"
+            className="field-select mt-1.5"
             value={kdramaAudioLang}
             onChange={(e) => setKdramaAudioLang(e.target.value)}
           >
@@ -448,7 +458,7 @@ export default function SettingsPage() {
         <label className="block text-sm text-[var(--text-secondary)]">
           Movies / Series / Other
           <select
-            className="mt-1 w-full rounded-xl border border-[var(--border)] bg-black/30 px-3 py-2 text-sm text-white"
+            className="field-select mt-1.5"
             value={generalAudioLang}
             onChange={(e) => setGeneralAudioLang(e.target.value)}
           >
@@ -480,7 +490,7 @@ export default function SettingsPage() {
         </label>
       </section>
 
-      <section className="mt-6 space-y-3 surface-card p-5">
+      <section className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
           Parental controls
         </h2>

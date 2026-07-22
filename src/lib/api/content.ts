@@ -28,6 +28,19 @@ export interface HomePayload {
   popularSeries: Content[];
   airingAnime: Content[];
   trendingKdramas: Content[];
+  trendingCdramas: Content[];
+  trendingJdramas: Content[];
+  trendingThaidramas: Content[];
+  koreanMovies: Content[];
+  koreanSeries: Content[];
+  japaneseMovies: Content[];
+  japaneseSeries: Content[];
+  chineseMovies: Content[];
+  chineseSeries: Content[];
+  thaiMovies: Content[];
+  thaiSeries: Content[];
+  filipinoMovies: Content[];
+  filipinoSeries: Content[];
   newReleases: Content[];
   comingSoon: Content[];
   topRated: Content[];
@@ -37,12 +50,17 @@ export interface HomePayload {
   matureMovies?: Content[];
   matureSeries?: Content[];
   matureAnime?: Content[];
+  matureKdramas?: Content[];
   communityFavorites: Content[];
   editorial: Content[];
   continueWatching?: Content[];
   becauseYouWatched?: Recommendation[];
   moods: Array<{ id: string; label: string; emoji: string }>;
   genres: Array<{ id: string; name: string; contentType?: string }>;
+  /** Trakt trending shows + movies */
+  traktTrending?: Content[];
+  /** Free Thai dramas from GMMTV official YouTube */
+  gmmtvDramas?: Content[];
 }
 
 export function fetchHome(region?: string, mature?: boolean) {
@@ -62,6 +80,7 @@ export function fetchMovies(params: {
   /** Only titles with free full legal playback (Watch Now) */
   playable?: boolean;
   region?: string;
+  country?: string;
 }) {
   return apiFetch<Paginated<Content>>(
     `/movies${buildQuery({
@@ -69,6 +88,7 @@ export function fetchMovies(params: {
       mature: params.mature ? "1" : undefined,
       playable: params.playable ? "1" : undefined,
       region: params.region,
+      country: params.country,
     })}`,
   );
 }
@@ -82,6 +102,7 @@ export function fetchSeries(params: {
   mature?: boolean;
   playable?: boolean;
   region?: string;
+  country?: string;
 }) {
   return apiFetch<Paginated<Content>>(
     `/series${buildQuery({
@@ -89,6 +110,7 @@ export function fetchSeries(params: {
       mature: params.mature ? "1" : undefined,
       playable: params.playable ? "1" : undefined,
       region: params.region,
+      country: params.country,
     })}`,
   );
 }
@@ -128,6 +150,29 @@ export function fetchMatureLibrary(params: {
   );
 }
 
+export function fetchDrama(
+  type: "kdrama" | "cdrama" | "jdrama" | "thaidrama",
+  params: {
+    page?: number;
+    pageSize?: number;
+    sort?: string;
+    mature?: boolean;
+    genre?: string;
+    status?: string;
+    playable?: boolean;
+    region?: string;
+  },
+) {
+  return apiFetch<Paginated<Content>>(
+    `/${type}${buildQuery({
+      ...params,
+      mature: params.mature ? "1" : undefined,
+      playable: params.playable ? "1" : undefined,
+      region: params.region,
+    })}`,
+  );
+}
+
 export function fetchKdrama(params: {
   page?: number;
   pageSize?: number;
@@ -138,14 +183,7 @@ export function fetchKdrama(params: {
   playable?: boolean;
   region?: string;
 }) {
-  return apiFetch<Paginated<Content>>(
-    `/kdrama${buildQuery({
-      ...params,
-      mature: params.mature ? "1" : undefined,
-      playable: params.playable ? "1" : undefined,
-      region: params.region,
-    })}`,
-  );
+  return fetchDrama("kdrama", params);
 }
 
 export function fetchDiscover(params: Record<string, string | number | undefined>) {

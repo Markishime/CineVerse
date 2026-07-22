@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 
 type TabId = "overview" | "library" | "favorites";
 
+/** Profile chrome uses shared product tokens; tab chips mirror site Chip pattern. */
 export default function ProfilePage({
   params,
 }: {
@@ -318,10 +319,10 @@ export default function ProfilePage({
       <div className="pointer-events-none absolute inset-x-0 top-24 h-64 bg-[radial-gradient(ellipse_50%_40%_at_80%_20%,rgba(92,228,255,0.12),transparent_55%)]" />
 
       <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6">
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-6 shadow-[var(--glow-primary)] backdrop-blur-xl sm:p-8">
+        <section className="overflow-hidden rounded-2xl border border-white/10 bg-[var(--surface)] p-6 shadow-[0_24px_64px_-20px_rgba(0,0,0,0.55)] sm:p-8">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
             <div className="relative mx-auto sm:mx-0">
-              <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-[var(--primary)] via-[var(--secondary)] to-[var(--accent)] text-3xl font-bold text-white shadow-2xl ring-4 ring-white/10 sm:h-28 sm:w-28">
+              <div className="flex h-24 w-24 items-center justify-center rounded-full bg-[var(--primary)] text-3xl font-bold text-white shadow-xl ring-4 ring-white/10 sm:h-28 sm:w-28">
                 {(profile.displayName || "?").slice(0, 1).toUpperCase()}
               </div>
               {isOwn && (
@@ -452,10 +453,11 @@ export default function ProfilePage({
                   key={id}
                   type="button"
                   onClick={() => setTab(id)}
+                  aria-pressed={tab === id}
                   className={cn(
-                    "rounded-full px-4 py-2 text-sm font-medium transition",
+                    "inline-flex min-h-9 items-center rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                     tab === id
-                      ? "bg-[var(--primary)] text-white shadow-[var(--glow-primary)]"
+                      ? "bg-[var(--primary)] text-white"
                       : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white",
                   )}
                 >

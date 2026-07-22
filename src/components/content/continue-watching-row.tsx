@@ -54,7 +54,7 @@ export function ContinueWatchingRow({
     };
     window.addEventListener("focus", onFocus);
     window.addEventListener("storage", onStorage);
-    const id = window.setInterval(refresh, 30_000);
+    const id = window.setInterval(refresh, 60_000);
     return () => {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("storage", onStorage);

@@ -34,6 +34,8 @@ export const COLLECTIONS = {
   contentRights: "contentRights",
   playbackAssets: "playbackAssets",
   playbackAuditLog: "playbackAuditLog",
+  /** Cached regional platform deep links */
+  regionalLinks: "regionalLinks",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

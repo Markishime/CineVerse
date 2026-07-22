@@ -1,11 +1,19 @@
 /**
  * Mature / 18+ content rules for CineVerse.
  *
- * Mature library (and mature home rows) show ONLY explicit sexual content:
- *   nudity, sex, erotica, hentai — NOT violence-only, crime TV-MA, or soft ecchi.
+ * Two distinct concepts — do not conflate them:
  *
- * When settings.matureContent is OFF, the same explicit titles are hidden
- * from home, catalogs, search, and discover.
+ * 1. `isExplicitSexualContent` — ONLY explicit sexual content (nudity, sex,
+ *    erotica, hentai). Powers the dedicated 18+ *library* rows/tabs, which are
+ *    curated to sexual material specifically.
+ *
+ * 2. `isAdultRestricted` / `isMatureContent` — ANY title an adult-only audience
+ *    is intended for: 18+ / R18 / R18+ / R+ / NC-17 age ratings, provider adult
+ *    flags (AniList isAdult, TMDB adult), hentai, AND adults-only anime such as
+ *    ecchi rated 18+ (e.g. "Overflow"). This is the GATE used to HIDE titles
+ *    everywhere (home, catalogs, search, discover, recommendations) when the
+ *    user's 18+ toggle is OFF. When the toggle is off, nothing adult-rated shows
+ *    — sexual or not.
  */
 
 import type { Content, ContentType } from "@/types/content";
@@ -144,9 +152,85 @@ export function isExplicitSexualContent(
   return false;
 }
 
+/** Age ratings that are adults-only across every content type. */
+const ADULT_AGE_RATING =
+  /^(18\+?|R18\+?|R\+|NC-?17|X|XXX|AO|TV-?MA-?A|Rx)$/i;
+
+/** Tags that mark adults-only content (broader than sexual — includes ecchi 18+). */
+const ADULT_ONLY_TAGS = new Set([
+  "18+",
+  "r18",
+  "r18+",
+  "r+",
+  "rx",
+  "nc-17",
+  "adults-only",
+  "adult-only",
+  "adults only",
+  "adult",
+  "adult-anime",
+  "anilist-adult",
+  "jikan-rx",
+  "tmdb-adult",
+  "hentai",
+]);
+
+/**
+ * True for ANY adults-only title — the gate used to hide content when the
+ * 18+ toggle is OFF. Broader than `isExplicitSexualContent`: this also catches
+ * adults-only anime that is rated 18+/R18 without being outright hentai
+ * (ecchi like "Overflow"), plus NC-17 films and provider adult flags.
+ */
+export function isAdultRestricted(
+  c:
+    | Pick<
+        Content,
+        "mature" | "ageRating" | "tags" | "contentType" | "overview" | "title"
+      >
+    | null
+    | undefined,
+): boolean {
+  if (!c) return false;
+
+  // Explicit sexual content is always adult-restricted.
+  if (isExplicitSexualContent(c)) return true;
+
+  const tags = tagList(c);
+  const rating = (c.ageRating ?? "").trim();
+
+  // Provider adult flags / adults-only tags (any content type).
+  if (tags.some((t) => ADULT_ONLY_TAGS.has(t))) return true;
+
+  // Adults-only age ratings (18+, R18, R18+, R+, NC-17, Rx, X…).
+  if (rating && ADULT_AGE_RATING.test(rating)) return true;
+
+  // Anime: AniList/MAL adults-only signals. AniList `isAdult` is mapped to the
+  // `anilist-adult` tag upstream; Rx / R18+ ratings and adult-anime tags also
+  // mark hentai/adult ecchi that must hide when 18+ is off.
+  if (c.contentType === "anime") {
+    if (/(^|[^a-z])(rx|r18\+?|r\s*-?\s*17\+|18\+)([^a-z]|$)/i.test(rating)) {
+      return true;
+    }
+    if (
+      tags.includes("anilist-adult") ||
+      tags.includes("adult-anime") ||
+      tags.includes("jikan-rx") ||
+      tags.includes("hentai")
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Gate for hiding titles when 18+ is OFF.
- * Same as explicit sexual content — we only restrict real adult material.
+ *
+ * NOTE: intentionally broader than `isExplicitSexualContent`. When the toggle
+ * is off we hide EVERYTHING adults-only (18+/R18/NC-17/provider-adult/hentai/
+ * ecchi-18+), not only sexual titles. Use `isExplicitSexualContent` for the
+ * curated 18+ *library* rows instead.
  */
 export function isMatureContent(
   c:
@@ -157,7 +241,7 @@ export function isMatureContent(
     | null
     | undefined,
 ): boolean {
-  return isExplicitSexualContent(c);
+  return isAdultRestricted(c);
 }
 
 /** @deprecated use isExplicitSexualContent */
@@ -175,7 +259,7 @@ export function isAccurateAdultAnime(
   return isExplicitSexualContent(c);
 }
 
-/** Drop every explicit title when includeMature is false. */
+/** Drop every adults-only title when includeMature is false. */
 export function filterByMatureFlag<
   T extends Pick<
     Content,
@@ -183,12 +267,16 @@ export function filterByMatureFlag<
   >,
 >(items: T[], includeMature: boolean): T[] {
   if (includeMature) return items;
-  return items.filter((c) => !isExplicitSexualContent(c));
+  return items.filter((c) => !isAdultRestricted(c));
 }
 
 /**
- * Normalize flags: only mark mature when sexual/explicit signals exist.
- * Strips false positives (violence-only R / TV-MA / dark fantasy).
+ * Normalize flags:
+ *  - explicit sexual → mark mature + explicit tags
+ *  - adults-only-by-rating (18+/R18/NC-17/provider-adult/ecchi-18+) → mark
+ *    mature + 18+ so the OFF gate hides it, WITHOUT the explicit-sexual tags
+ *  - everything else (violence-only R / TV-MA / dark fantasy) → strip false
+ *    mature flags so it stays visible when 18+ is off
  */
 export function applyMatureFlag(c: Content): Content {
   if (isExplicitSexualContent(c)) {
@@ -205,6 +293,18 @@ export function applyMatureFlag(c: Content): Content {
           ...(c.contentType === "anime" ? ["adult-anime", "anime"] : []),
         ]),
       ),
+    };
+  }
+
+  // Adults-only by rating / provider flag (not explicitly sexual) — e.g. ecchi
+  // rated 18+ like "Overflow", NC-17 films, AniList isAdult. Keep it flagged so
+  // it disappears when 18+ is off, but don't tag it as explicit sexual content.
+  if (isAdultRestricted(c)) {
+    return {
+      ...c,
+      mature: true,
+      ageRating: c.ageRating || "18+",
+      tags: Array.from(new Set([...(c.tags ?? []), "18+", "mature"])),
     };
   }
 

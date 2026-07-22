@@ -8,8 +8,19 @@ import { searchContent } from "@/lib/api/content";
 import { ContentCard } from "@/components/content/content-card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { PageHeader } from "@/components/layout/page-header";
+import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
 import { isMatureEnabledClient } from "@/lib/user/local-profile";
+
+const TYPE_FILTERS = [
+  { id: "", label: "All" },
+  { id: "movie", label: "Movies" },
+  { id: "series", label: "Series" },
+  { id: "anime", label: "Anime" },
+  { id: "kdrama", label: "K-Drama" },
+] as const;
 
 function SearchInner() {
   const sp = useSearchParams();
@@ -25,6 +36,10 @@ function SearchInner() {
     setDeviceMature(isMatureEnabledClient(user?.uid));
   }, [user?.uid, settings?.matureContent]);
 
+  useEffect(() => {
+    setQ(initial);
+  }, [initial]);
+
   const mature = Boolean(settings?.matureContent) || deviceMature;
 
   const { data, isFetching, isFetched } = useQuery({
@@ -38,77 +53,107 @@ function SearchInner() {
     enabled: initial.length >= 1,
   });
 
+  const push = (nextQ: string, nextType: string) => {
+    const params = new URLSearchParams();
+    if (nextQ.trim()) params.set("q", nextQ.trim());
+    if (nextType) params.set("type", nextType);
+    router.push(`/search?${params.toString()}`);
+  };
+
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-24 pt-24 sm:px-6">
-      <h1 className="font-display text-3xl font-bold">Search</h1>
-      <p className="mt-2 text-sm text-[var(--text-muted)]">
-        Unified search: original, Korean, Romaji, and native titles. Exact
-        matches rank first.
-      </p>
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="Find anything"
+        title="Search"
+        description="Unified search across original, Korean, Romaji, and native titles. Exact matches rank first."
+      />
 
       <form
-        className="mt-6 flex gap-2"
+        className="mt-8 flex flex-col gap-2 sm:flex-row"
         onSubmit={(e) => {
           e.preventDefault();
-          const params = new URLSearchParams();
-          if (q.trim()) params.set("q", q.trim());
-          if (type) params.set("type", type);
-          router.push(`/search?${params.toString()}`);
+          push(q, type);
         }}
+        role="search"
       >
         <div className="relative flex-1">
-          <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+          <SearchIcon
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]"
+            aria-hidden
+          />
           <Input
-            className="pl-10"
+            className="h-12 pl-10"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search movies, series, anime, K-drama, people…"
+            placeholder="Search movies, series, anime, K-drama…"
             autoFocus
+            aria-label="Search query"
           />
         </div>
-        <Button type="submit">Search</Button>
+        <Button type="submit" className="h-12 px-6 sm:w-auto">
+          Search
+        </Button>
       </form>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {["", "movie", "series", "anime", "kdrama"].map((t) => (
-          <button
-            key={t || "all"}
-            type="button"
-            className={`rounded-full px-3 py-1 text-xs ${
-              type === t
-                ? "bg-[var(--primary)] text-white"
-                : "bg-white/5 text-[var(--text-muted)]"
-            }`}
-            onClick={() => {
-              const params = new URLSearchParams();
-              if (q.trim()) params.set("q", q.trim());
-              if (t) params.set("type", t);
-              router.push(`/search?${params.toString()}`);
-            }}
+      <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Type filter">
+        {TYPE_FILTERS.map((t) => (
+          <Chip
+            key={t.id || "all"}
+            active={type === t.id}
+            onClick={() => push(q, t.id)}
           >
-            {t || "All"}
-          </button>
+            {t.label}
+          </Chip>
         ))}
       </div>
 
       {isFetching && (
-        <p className="mt-8 text-sm text-[var(--text-muted)]">Searching…</p>
-      )}
-
-      {isFetched && data && (
         <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {data.items.map((item) => (
-            <ContentCard
-              key={item.id}
-              content={item}
-              className="w-full min-w-0"
-            />
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="aspect-[2/3] skeleton rounded-xl" />
           ))}
         </div>
       )}
 
+      {isFetched && data && data.items.length > 0 && (
+        <>
+          <p className="mt-8 text-sm text-[var(--text-muted)]">
+            {data.items.length} result{data.items.length === 1 ? "" : "s"}
+            {initial ? ` for “${initial}”` : ""}
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {data.items.map((item) => (
+              <ContentCard
+                key={item.id}
+                content={item}
+                className="w-full min-w-0"
+              />
+            ))}
+          </div>
+        </>
+      )}
+
       {isFetched && data?.items.length === 0 && (
-        <p className="mt-8 text-[var(--text-muted)]">No results for “{initial}”.</p>
+        <EmptyState
+          className="mt-10"
+          icon={SearchIcon}
+          title={`No results for “${initial}”`}
+          description="Try a shorter title, switch type filters, or browse Discover."
+          actions={[
+            { href: "/discover", label: "Discover" },
+            { href: "/movies", label: "Movies", variant: "secondary" },
+          ]}
+        />
+      )}
+
+      {!initial && !isFetched && (
+        <EmptyState
+          className="mt-10"
+          icon={SearchIcon}
+          title="Start typing to search"
+          description="Find movies, series, anime, and K-dramas across the live catalog."
+          actions={[{ href: "/discover", label: "Browse Discover", variant: "secondary" }]}
+        />
       )}
     </div>
   );
@@ -116,7 +161,13 @@ function SearchInner() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="pt-24 h-40 skeleton mx-4 rounded-xl" />}>
+    <Suspense
+      fallback={
+        <div className="page-shell">
+          <div className="h-40 skeleton rounded-2xl" />
+        </div>
+      }
+    >
       <SearchInner />
     </Suspense>
   );

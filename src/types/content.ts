@@ -1,7 +1,60 @@
 import { z } from "zod";
 
-export const ContentTypeSchema = z.enum(["movie", "series", "anime", "kdrama"]);
+export const ContentTypeSchema = z.enum([
+  "movie",
+  "series",
+  "anime",
+  "kdrama",
+  "cdrama",
+  "jdrama",
+  "thaidrama",
+]);
 export type ContentType = z.infer<typeof ContentTypeSchema>;
+
+/** Asian-drama content types (country-specific scripted series). */
+export const DRAMA_CONTENT_TYPES = [
+  "kdrama",
+  "cdrama",
+  "jdrama",
+  "thaidrama",
+] as const satisfies readonly ContentType[];
+
+export type DramaContentType = (typeof DRAMA_CONTENT_TYPES)[number];
+
+export function isDramaType(t?: ContentType | string | null): boolean {
+  return (DRAMA_CONTENT_TYPES as readonly string[]).includes(t ?? "");
+}
+
+/** Origin metadata for each drama type: label + ISO country codes + languages. */
+export const DRAMA_META: Record<
+  DramaContentType,
+  { label: string; short: string; countries: string[]; languages: string[] }
+> = {
+  kdrama: {
+    label: "K-Drama",
+    short: "KR",
+    countries: ["KR", "KOR"],
+    languages: ["ko"],
+  },
+  cdrama: {
+    label: "C-Drama",
+    short: "CN",
+    countries: ["CN", "CHN", "TW", "TWN", "HK", "HKG"],
+    languages: ["zh", "cn", "zh-cn", "zh-tw", "zh-hk", "cmn", "yue"],
+  },
+  jdrama: {
+    label: "J-Drama",
+    short: "JP",
+    countries: ["JP", "JPN"],
+    languages: ["ja"],
+  },
+  thaidrama: {
+    label: "Thai Drama",
+    short: "TH",
+    countries: ["TH", "THA"],
+    languages: ["th"],
+  },
+};
 
 export const ContentStatusSchema = z.enum([
   "rumored",
@@ -35,8 +88,12 @@ export const ProviderIdsSchema = z.object({
   anilist: z.number().optional(),
   tvmaze: z.number().optional(),
   imdb: z.string().optional(),
-  /** MyAnimeList id (via Jikan) */
+  /** MyAnimeList id (official API or Jikan fallback) */
   mal: z.number().optional(),
+  /** Trakt slug or numeric id */
+  trakt: z.union([z.string(), z.number()]).optional(),
+  /** OMDb title key (used for ratings enrichment) */
+  omdb: z.string().optional(),
 });
 export type ProviderIds = z.infer<typeof ProviderIdsSchema>;
 
@@ -55,7 +112,7 @@ export const GenreSchema = z.object({
 export type Genre = z.infer<typeof GenreSchema>;
 
 export const ProviderScoreSchema = z.object({
-  source: z.enum(["tmdb", "anilist", "cineverse"]),
+  source: z.enum(["tmdb", "anilist", "cineverse", "trakt", "omdb", "imdb", "rotten_tomatoes", "metacritic"]),
   score: z.number(),
   count: z.number().optional(),
 });
@@ -81,6 +138,15 @@ export const WatchProviderSchema = z.object({
   link: z.string().url().nullable().optional(),
 });
 export type WatchProvider = z.infer<typeof WatchProviderSchema>;
+
+export const RegionalPlatformSchema = z.object({
+  name: z.string(),
+  slug: z.string(),
+  deepLink: z.string().url(),
+  type: z.enum(["flatrate", "free", "rent", "buy", "ads"]),
+  logoPath: z.string().nullable().optional(),
+});
+export type RegionalPlatform = z.infer<typeof RegionalPlatformSchema>;
 
 export const ContentSchema = z.object({
   id: z.string(),
@@ -109,6 +175,7 @@ export const ContentSchema = z.object({
   popularity: z.number().default(0),
   trailer: TrailerSchema.nullable().optional(),
   watchProviders: z.array(WatchProviderSchema).default([]),
+  regionalPlatforms: z.array(RegionalPlatformSchema).optional(),
   providerIds: ProviderIdsSchema.default({}),
   animeFormat: AnimeFormatSchema.optional(),
   studios: z.array(z.string()).default([]),

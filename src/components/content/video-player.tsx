@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -13,9 +13,12 @@ import {
 } from "lucide-react";
 import {
   type EmbedProviderId,
+  type AnimeStreamIds,
   EMBED_PROVIDERS,
   getProvidersForContentType,
   buildEmbedUrl,
+  buildAnimeEmbedUrl,
+  getProviderName,
 } from "@/lib/embed/providers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,13 +26,19 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 
 interface VideoPlayerProps {
-  tmdbId: number;
+  tmdbId?: number;
   mediaType: "movie" | "tv";
   season?: number;
   episode?: number;
   title: string;
   originalLanguage?: string;
   contentType?: string;
+  /** AniList media id — preferred for anime backends */
+  anilistId?: number;
+  /** MyAnimeList id */
+  malId?: number;
+  animeFormat?: string;
+  year?: number | null;
   autoPlay?: boolean;
   className?: string;
   onProviderLoad?: (providerId: EmbedProviderId) => void;
@@ -39,11 +48,10 @@ interface VideoPlayerProps {
 type PlayerStatus = "loading" | "loaded" | "error" | "all_failed";
 
 /**
- * Smart video player with:
- * - Automatic fallback between 7 providers (anime-optimized: autoembed → vidsrc → vidcore → multiembed)
- * - Server switcher for manual provider selection
- * - 8-second load timeout per provider before auto-advancing
- * - Content-type aware provider ordering (anime-first for anime content)
+ * Smart video player with multi-provider fallback.
+ * Anime: Cinezo → ScreenScape → AnimePahe → DropFile → ezvidapi → SupaPlay
+ *         (+ TMDB general embeds when a TMDB id exists)
+ * Others: AutoEmbed → VidCore → 2Embed
  */
 export function VideoPlayer({
   tmdbId,
@@ -53,41 +61,229 @@ export function VideoPlayer({
   title,
   originalLanguage,
   contentType = "series",
+  anilistId,
+  malId,
+  animeFormat,
+  year,
   autoPlay = true,
   className,
   onProviderLoad,
   onAllFailed,
 }: VideoPlayerProps) {
   const settings = useAuthStore((s) => s.settings);
-  const availableProviders = getProvidersForContentType(contentType, mediaType);
+  const isAnime = contentType === "anime";
+
+  // Auto-detect drama type from original language when not already set.
+  // This ensures regional movies/series use drama-specific embed providers
+  // (DramaPlay, KissKH) even when the caller passes contentType="movie".
+  const resolvedContentType = (() => {
+    if (isAnime || contentType === "anime") return contentType;
+    if (
+      contentType !== "movie" &&
+      contentType !== "series" &&
+      contentType !== "kdrama" &&
+      contentType !== "cdrama" &&
+      contentType !== "jdrama" &&
+      contentType !== "thaidrama"
+    ) {
+      return contentType;
+    }
+    // Already a drama type — keep it
+    if (
+      contentType === "kdrama" ||
+      contentType === "cdrama" ||
+      contentType === "jdrama" ||
+      contentType === "thaidrama"
+    ) {
+      return contentType;
+    }
+    // Detect from language
+    const lang = (originalLanguage ?? "").toLowerCase();
+    if (lang === "ko") return "kdrama";
+    if (lang === "zh" || lang === "cn") return "cdrama";
+    if (lang === "ja") return "jdrama";
+    if (lang === "th") return "thaidrama";
+    return contentType;
+  })();
+
+  const availableProviders = getProvidersForContentType(resolvedContentType, mediaType);
   const [activeIndex, setActiveIndex] = useState(0);
   const [status, setStatus] = useState<PlayerStatus>("loading");
   const [showMenu, setShowMenu] = useState(false);
   const [triedProviders, setTriedProviders] = useState<EmbedProviderId[]>([]);
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const loadTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const activeProvider = availableProviders[activeIndex];
 
-  // Determine the effective language: originalLanguage > user preference by content type > "en"
   const effectiveLanguage = (() => {
+    // The user's audio-language setting is an explicit preference and must win
+    // over the content's original language (otherwise picking "English dub"
+    // for anime does nothing because originalLanguage is always "ja").
+    const ct = resolvedContentType.toLowerCase();
+    if (settings) {
+      if (ct.includes("anime")) {
+        return settings.animeAudioLanguage || originalLanguage || "ja";
+      }
+      if (
+        ct.includes("kdrama") ||
+        ct.includes("cdrama") ||
+        ct.includes("jdrama") ||
+        ct.includes("thaidrama") ||
+        ct.includes("korean")
+      ) {
+        return settings.kdramaAudioLanguage || originalLanguage || "ko";
+      }
+      return settings.generalAudioLanguage || originalLanguage || "en";
+    }
+    // No settings loaded yet — fall back to the content's own language.
     if (originalLanguage) return originalLanguage;
-    if (!settings) return "en";
-    const ct = contentType.toLowerCase();
-    if (ct.includes("anime")) return settings.animeAudioLanguage ?? "ja";
-    if (ct.includes("kdrama") || ct.includes("korean"))
-      return settings.kdramaAudioLanguage ?? "ko";
-    return settings.generalAudioLanguage ?? "en";
+    return isAnime ? "ja" : "en";
   })();
 
-  const embedUrl =
-    activeProvider && season && episode
-      ? buildEmbedUrl(activeProvider.id, tmdbId, mediaType, season, episode, { language: effectiveLanguage })
-      : activeProvider
-        ? buildEmbedUrl(activeProvider.id, tmdbId, mediaType, undefined, undefined, { language: effectiveLanguage })
-        : null;
+  const preferDub =
+    effectiveLanguage === "en" || effectiveLanguage.startsWith("en-");
 
-  // Load timeout: auto-advance if iframe doesn't fire onLoad within 8s
+  const animeIds: AnimeStreamIds = {
+    title,
+    anilist: anilistId,
+    mal: malId,
+    tmdb: tmdbId,
+    tmdbMediaType: mediaType,
+    episode:
+      animeFormat === "MOVIE" || mediaType === "movie"
+        ? 1
+        : Math.max(1, episode ?? 1),
+    season: Math.max(1, season ?? 1),
+    animeFormat,
+    language: effectiveLanguage,
+    dub: preferDub,
+  };
+
+  // Sync embed URL (or null when provider needs async resolve)
+  const staticEmbedUrl = (() => {
+    if (!activeProvider) return null;
+    if (isAnime) {
+      if (activeProvider.needsResolve) return null;
+      return buildAnimeEmbedUrl(activeProvider.id, animeIds, {
+        language: effectiveLanguage,
+        dub: preferDub,
+        autoplay: autoPlay,
+      });
+    }
+    if (!tmdbId) return null;
+    if (mediaType === "tv" && season && episode) {
+      return buildEmbedUrl(
+        activeProvider.id,
+        tmdbId,
+        "tv",
+        season,
+        episode,
+        { language: effectiveLanguage },
+      );
+    }
+    return buildEmbedUrl(activeProvider.id, tmdbId, "movie", undefined, undefined, {
+      language: effectiveLanguage,
+    });
+  })();
+
+  const embedUrl = resolvedUrl ?? staticEmbedUrl;
+
+  // Async resolve for AnimePahe / SupaPlay
+  useEffect(() => {
+    setResolvedUrl(null);
+    if (!activeProvider?.needsResolve || !isAnime) return;
+
+    let cancelled = false;
+    setStatus("loading");
+
+    (async () => {
+      try {
+        if (activeProvider.id === "animepahe") {
+          const params = new URLSearchParams({
+            provider: "animepahe",
+            title,
+            episode: String(animeIds.episode ?? 1),
+          });
+          if (year) params.set("year", String(year));
+          if (anilistId) params.set("anilist", String(anilistId));
+          const res = await fetch(
+            `/api/v1/playback/anime-embed?${params.toString()}`,
+          );
+          if (!res.ok) throw new Error("resolve failed");
+          const data = (await res.json()) as { ok?: boolean; url?: string };
+          if (!cancelled && data.url) {
+            setResolvedUrl(data.url);
+            return;
+          }
+        }
+        // SupaPlay and other session-based backends: skip if unresolved
+        if (!cancelled) {
+          setStatus("error");
+          setTriedProviders((prev) =>
+            prev.includes(activeProvider.id)
+              ? prev
+              : [...prev, activeProvider.id],
+          );
+          setActiveIndex((prev) => {
+            const next = prev + 1;
+            if (next >= availableProviders.length) {
+              onAllFailed?.();
+              return prev;
+            }
+            return next;
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus("error");
+          setTriedProviders((prev) =>
+            prev.includes(activeProvider.id)
+              ? prev
+              : [...prev, activeProvider.id],
+          );
+          setActiveIndex((prev) => {
+            const next = prev + 1;
+            if (next >= availableProviders.length) {
+              onAllFailed?.();
+              return prev;
+            }
+            return next;
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProvider?.id, isAnime, title, anilistId, animeIds.episode, year]);
+
+  // When static URL is missing (and not resolving), advance
+  useEffect(() => {
+    if (!activeProvider) return;
+    if (activeProvider.needsResolve) return;
+    if (staticEmbedUrl) return;
+    setTriedProviders((prev) =>
+      prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
+    );
+    setActiveIndex((prev) => {
+      const next = prev + 1;
+      if (next >= availableProviders.length) {
+        onAllFailed?.();
+        return prev;
+      }
+      return next;
+    });
+  }, [
+    activeProvider,
+    staticEmbedUrl,
+    availableProviders.length,
+    onAllFailed,
+  ]);
+
   useEffect(() => {
     if (status !== "loading" || !embedUrl) return;
 
@@ -107,14 +303,20 @@ export function VideoPlayer({
       setStatus(() =>
         activeIndex + 1 >= availableProviders.length ? "all_failed" : "loading",
       );
-    }, 8000);
+    }, 10_000);
 
     return () => {
       if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
     };
-  }, [status, embedUrl, activeProvider?.id, activeIndex, availableProviders.length, onAllFailed]);
+  }, [
+    status,
+    embedUrl,
+    activeProvider?.id,
+    activeIndex,
+    availableProviders.length,
+    onAllFailed,
+  ]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     if (!showMenu) return;
     function handleClick(e: MouseEvent) {
@@ -126,7 +328,7 @@ export function VideoPlayer({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showMenu]);
 
-  const handleIframeLoad = () => {
+  const handleIframeLoad = useCallback(() => {
     if (loadTimerRef.current) {
       clearTimeout(loadTimerRef.current);
       loadTimerRef.current = null;
@@ -136,7 +338,7 @@ export function VideoPlayer({
       prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
     );
     onProviderLoad?.(activeProvider.id);
-  };
+  }, [activeProvider?.id, onProviderLoad]);
 
   const handleIframeError = () => {
     if (loadTimerRef.current) {
@@ -164,10 +366,12 @@ export function VideoPlayer({
     if (index === activeIndex) return;
     setActiveIndex(index);
     setStatus("loading");
+    setResolvedUrl(null);
     setShowMenu(false);
   };
 
   const retry = () => {
+    setResolvedUrl(null);
     setStatus("loading");
   };
 
@@ -175,12 +379,16 @@ export function VideoPlayer({
     setActiveIndex(0);
     setStatus("loading");
     setTriedProviders([]);
+    setResolvedUrl(null);
   };
+
+  const iframeSrc = embedUrl
+    ? `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}${autoPlay ? "autoplay=1&" : ""}rd=0`
+    : null;
 
   return (
     <div className={cn("relative", className)}>
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
-        {/* Loading overlay */}
         {status === "loading" && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90">
             <Loader2 className="h-10 w-10 animate-spin text-[var(--primary)]" />
@@ -193,11 +401,11 @@ export function VideoPlayer({
             </p>
             <p className="text-xs text-[var(--text-muted)]">
               Provider {activeIndex + 1} of {availableProviders.length}
+              {isAnime ? " · anime sources" : ""}
             </p>
           </div>
         )}
 
-        {/* All providers failed */}
         {status === "all_failed" && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-black/95 to-[var(--surface)]/90 p-6 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--danger)]/15">
@@ -223,22 +431,16 @@ export function VideoPlayer({
             </div>
             <p className="mt-2 text-xs text-[var(--text-muted)]">
               Attempted:{" "}
-              {triedProviders
-                .map(
-                  (id) =>
-                    EMBED_PROVIDERS.find((p) => p.id === id)?.name ?? id,
-                )
-                .join(", ")}
+              {triedProviders.map((id) => getProviderName(id)).join(", ")}
             </p>
           </div>
         )}
 
-        {/* Embed iframe — provider change triggers reload */}
-        {embedUrl && (
+        {iframeSrc && (
           <iframe
-            key={`${activeProvider?.id}-${tmdbId}-${season}-${episode}`}
+            key={`${activeProvider?.id}-${tmdbId}-${anilistId}-${season}-${episode}-${iframeSrc}`}
             title={title}
-            src={`${embedUrl}${embedUrl.includes("?") ? "&" : "?"}${autoPlay ? "autoplay=1&" : ""}rd=0&tm=1`}
+            src={iframeSrc}
             className="absolute inset-0 h-full w-full"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
             allowFullScreen
@@ -250,7 +452,6 @@ export function VideoPlayer({
         )}
       </div>
 
-      {/* Controls bar */}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {status === "loaded" && (
@@ -267,92 +468,63 @@ export function VideoPlayer({
           )}
           {status === "error" && (
             <Badge tone="accent">
-              <AlertTriangle className="mr-1 h-3 w-3" />
-              {activeProvider?.name} failed
+              <X className="mr-1 h-3 w-3" />
+              Switching server…
             </Badge>
           )}
-          {status === "all_failed" && (
-            <Badge tone="accent">
-              <X className="mr-1 h-3 w-3" />
-              All servers down
+          {isAnime && (
+            <Badge tone="muted">
+              {animeFormat === "MOVIE" ? "Anime film" : "Anime"}
             </Badge>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {(status === "error" || status === "all_failed") && (
-            <Button size="sm" variant="secondary" onClick={retry}>
-              <RefreshCw className="h-3.5 w-3.5" />
-              Retry
-            </Button>
-          )}
-
-          {/* Server switcher dropdown */}
-          <div className="relative" ref={menuRef}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowMenu(!showMenu)}
-            >
-              <Server className="h-3.5 w-3.5" />
-              Change Server
-              <ChevronDown
-                className={cn(
-                  "h-3.5 w-3.5 transition-transform",
-                  showMenu && "rotate-180",
-                )}
-              />
-            </Button>
-            {showMenu && (
-              <div className="absolute right-0 z-50 mt-1 w-56 overflow-hidden rounded-xl border border-white/10 bg-[var(--surface-elevated)] shadow-2xl">
-                <div className="border-b border-white/10 px-3 py-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                    Streaming Servers
-                  </p>
-                </div>
-                {availableProviders.map((provider, i) => {
-                  const isActive = i === activeIndex;
-                  const wasTried = triedProviders.includes(provider.id);
-                  return (
-                    <button
-                      key={provider.id}
-                      type="button"
-                      onClick={() => switchTo(i)}
-                      className={cn(
-                        "flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors",
-                        isActive
-                          ? "bg-[var(--primary)]/15 text-[var(--primary-light)]"
-                          : "text-white hover:bg-white/5",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-                          isActive
-                            ? "bg-[var(--primary)] text-white"
-                            : wasTried
-                              ? "bg-white/10 text-[var(--text-muted)]"
-                              : "bg-white/5 text-white",
-                        )}
-                      >
-                        {isActive ? (
-                          <Check className="h-3.5 w-3.5" />
-                        ) : (
-                          i + 1
-                        )}
+        <div className="relative" ref={menuRef}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowMenu((v) => !v)}
+            aria-expanded={showMenu}
+          >
+            <Server className="h-4 w-4" />
+            Servers
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+          {showMenu && (
+            <div className="absolute right-0 z-20 mt-1 min-w-[12rem] overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] py-1 shadow-xl">
+              {availableProviders.map((p, i) => {
+                const tried = triedProviders.includes(p.id);
+                const active = i === activeIndex;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                      active
+                        ? "bg-[var(--primary)]/20 text-white"
+                        : "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
+                    )}
+                    onClick={() => switchTo(i)}
+                  >
+                    {active ? (
+                      <Check className="h-3.5 w-3.5 text-[var(--primary-light)]" />
+                    ) : tried ? (
+                      <X className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                    ) : (
+                      <span className="w-3.5" />
+                    )}
+                    {p.name}
+                    {p.animeOnly && (
+                      <span className="ml-auto text-[10px] text-[var(--text-muted)]">
+                        anime
                       </span>
-                      <span className="flex-1">{provider.name}</span>
-                      {isActive && (
-                        <Badge tone="primary" className="text-[10px]">
-                          Active
-                        </Badge>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

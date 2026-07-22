@@ -45,6 +45,14 @@ export function deduplicateContent(items: Content[]): Content[] {
     for (const key of keys) {
       const hit = byKey.get(key);
       if (hit) {
+        // A title-only collision is NOT proof of the same title. Two distinct
+        // works can share a slugified English title + year (remakes, generic
+        // titles, or a foreign film whose TMDB English title matches a Western
+        // one). If BOTH sides carry a provider id and those ids differ, they
+        // are different titles — do not merge, or the wrong movie plays.
+        if (isProviderConflict(item, hit)) {
+          continue;
+        }
         existing = hit;
         existingKey = key;
         break;
@@ -53,7 +61,13 @@ export function deduplicateContent(items: Content[]): Content[] {
 
     if (!existing) {
       for (const key of keys) {
-        byKey.set(key, item);
+        // Never let a title-only key overwrite an entry already claimed by a
+        // different title (keep the first — provider-keyed entries still win
+        // via their own keys). This stops a later same-title film from
+        // hijacking an earlier one's slot.
+        if (!byKey.has(key)) {
+          byKey.set(key, item);
+        }
       }
       continue;
     }
@@ -82,6 +96,39 @@ export function deduplicateContent(items: Content[]): Content[] {
     }
   }
   return Array.from(byId.values());
+}
+
+/**
+ * True when two items each carry a strong provider id and those ids prove they
+ * are DIFFERENT works — so a shared title/year key must NOT merge them.
+ *
+ * - Different TMDB ids of the same media type → different titles.
+ * - Different AniList ids → different titles.
+ * - Different IMDb ids → different titles.
+ * If neither side has a comparable id, we can't prove a conflict (allow merge).
+ */
+function isProviderConflict(a: Content, b: Content): boolean {
+  const at = a.providerIds?.tmdb;
+  const bt = b.providerIds?.tmdb;
+  if (at != null && bt != null) {
+    const am = a.providerIds?.tmdbMediaType ?? "any";
+    const bm = b.providerIds?.tmdbMediaType ?? "any";
+    // Same media type but different id → definitely different titles.
+    if (at !== bt && (am === bm || am === "any" || bm === "any")) return true;
+  }
+  const aa = a.providerIds?.anilist;
+  const ba = b.providerIds?.anilist;
+  if (aa != null && ba != null && aa !== ba) return true;
+
+  const ai = a.providerIds?.imdb;
+  const bi = b.providerIds?.imdb;
+  if (ai && bi && ai !== bi) return true;
+
+  // Different content types with different provider identity aren't the same.
+  if (a.contentType !== b.contentType && (at ?? aa) !== (bt ?? ba)) {
+    if ((at != null || aa != null) && (bt != null || ba != null)) return true;
+  }
+  return false;
 }
 
 function collectKeys(item: Content): string[] {

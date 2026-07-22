@@ -6,8 +6,10 @@ import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import YouTube, { type YouTubeEvent, type YouTubeProps } from "react-youtube";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Bookmark,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Play,
@@ -26,6 +28,7 @@ import {
   getWatchHref,
   hasOfficialTrailer,
 } from "@/lib/content/watch-href";
+import { heroCopyContainer, heroCopyItem } from "@/lib/motion";
 
 const SOUND_PREF_KEY = "cineverse_hero_trailer_sound";
 
@@ -43,41 +46,38 @@ type YtPlayer = {
   getPlayerState?: () => number;
 };
 
-/**
- * Cinematic trailer background with optional audio.
- * Browsers require muted autoplay — we start muted, then unMute when
- * the user enables sound (or has a saved preference + clicks the page).
- */
 function HeroTrailerBg({
   trailerKey,
   title,
   poster,
   active,
+  nearActive,
   soundOn,
+  reduceMotion,
 }: {
   trailerKey: string | null;
   title: string;
   poster: string | null;
   active: boolean;
+  nearActive: boolean;
   soundOn: boolean;
+  reduceMotion: boolean;
 }) {
   const validKey =
     trailerKey && isValidYoutubeKey(trailerKey) ? trailerKey.trim() : null;
   const [showPlayer, setShowPlayer] = useState(false);
   const playerRef = useRef<YtPlayer | null>(null);
 
-  // Mount player only on the active slide
   useEffect(() => {
     playerRef.current = null;
     if (!active || !validKey) {
       const t = window.setTimeout(() => setShowPlayer(false), 0);
       return () => window.clearTimeout(t);
     }
-    const t = window.setTimeout(() => setShowPlayer(true), 350);
+    const t = window.setTimeout(() => setShowPlayer(true), 380);
     return () => window.clearTimeout(t);
   }, [validKey, active]);
 
-  // Apply mute / volume when preference changes or slide becomes active
   useEffect(() => {
     const p = playerRef.current;
     if (!p || !active) return;
@@ -101,7 +101,6 @@ function HeroTrailerBg({
       host: "https://www.youtube.com",
       playerVars: {
         autoplay: 1,
-        // Always start muted so autoplay is allowed; we unMute via API
         mute: 1,
         controls: 0,
         rel: 0,
@@ -113,7 +112,6 @@ function HeroTrailerBg({
         disablekb: 1,
         fs: 0,
         cc_load_policy: 0,
-        // Official trailers only are passed in as keys
       },
     }),
     [validKey],
@@ -126,7 +124,6 @@ function HeroTrailerBg({
       try {
         p.playVideo?.();
         if (soundOn) {
-          // May be blocked until a user gesture — toggle still works after click
           p.unMute?.();
           p.setVolume?.(72);
         } else {
@@ -141,9 +138,7 @@ function HeroTrailerBg({
 
   const onStateChange = useCallback(
     (event: YouTubeEvent<number>) => {
-      // If playback pauses while active, nudge play (keep cinematic loop)
       if (!active) return;
-      // YT.PlayerState.PAUSED = 2, ENDED = 0, CUED = 5
       if (event.data === 0 || event.data === 2 || event.data === 5) {
         try {
           event.target.playVideo?.();
@@ -158,43 +153,40 @@ function HeroTrailerBg({
     [active, soundOn],
   );
 
-  const thumb = validKey
-    ? `https://i.ytimg.com/vi/${validKey}/maxresdefault.jpg`
-    : null;
+  const shouldMountPlayer = active || nearActive;
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-[var(--background)]">
-      {poster ? (
-        <Image
-          src={poster}
-          alt=""
-          fill
-          priority={active}
-          sizes="100vw"
-          className="object-cover object-center"
-          unoptimized
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[var(--primary)]/35 via-[var(--background)] to-[var(--secondary)]/20" />
-      )}
+      <div
+        className={cn(
+          "absolute inset-0",
+          active && !reduceMotion && "hero-kenburns",
+        )}
+      >
+        {poster ? (
+          <Image
+            src={poster}
+            alt=""
+            fill
+            priority={active}
+            loading={active ? undefined : "lazy"}
+            sizes="100vw"
+            className="object-cover object-center"
+            unoptimized
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-[var(--primary)]/35 via-[var(--background)] to-[var(--secondary)]/20" />
+        )}
+      </div>
 
-      {thumb ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={thumb}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          onError={(e) => {
-            const el = e.currentTarget;
-            if (validKey && !el.src.includes("hqdefault")) {
-              el.src = `https://i.ytimg.com/vi/${validKey}/hqdefault.jpg`;
-            }
-          }}
-        />
-      ) : null}
-
-      {showPlayer && validKey && active ? (
-        <div className="absolute inset-0 z-[1] overflow-hidden" aria-hidden>
+      <div
+        className={cn(
+          "absolute inset-0 z-[1] overflow-hidden transition-opacity duration-700",
+          showPlayer && validKey && active ? "opacity-100" : "opacity-0",
+        )}
+        aria-hidden
+      >
+        {shouldMountPlayer && validKey ? (
           <div className="absolute left-1/2 top-1/2 aspect-video h-[56.25vw] min-h-full w-[177.78vh] min-w-full -translate-x-1/2 -translate-y-1/2">
             <YouTube
               key={`yt-hero-${validKey}`}
@@ -207,17 +199,147 @@ function HeroTrailerBg({
               title={`${title} official trailer`}
             />
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
-      {/* Slightly lighter vignette when audio is on so picture stays readable */}
       <div
         className={cn(
-          "pointer-events-none absolute inset-0 z-[2] transition-colors",
+          "pointer-events-none absolute inset-0 z-[2] transition-colors duration-500",
           soundOn ? "bg-black/20" : "bg-black/25",
         )}
       />
     </div>
+  );
+}
+
+function HeroCopy({
+  item,
+  liveLabel,
+  soundOn,
+  isActive,
+  animated,
+}: {
+  item: Content;
+  liveLabel?: string;
+  soundOn: boolean;
+  isActive: boolean;
+  animated: boolean;
+}) {
+  const title = displayTitle(item);
+  const score = primaryScore(item);
+  const trailerKey =
+    item.trailer?.site === "youtube" && isValidYoutubeKey(item.trailer.key)
+      ? item.trailer.key.trim()
+      : null;
+  const watchHref = getWatchHref(item);
+  const trailerHref = getTrailerHref(item);
+  const detailsHref = getDetailsHref(item);
+  const showTrailer = hasOfficialTrailer(item) || Boolean(trailerKey);
+
+  const Wrap = animated ? motion.div : "div";
+  const Item = animated ? motion.div : "div";
+  const Title = animated ? motion.h1 : "h1";
+  const P = animated ? motion.p : "p";
+
+  const itemProps = animated ? { variants: heroCopyItem } : {};
+  const containerProps = animated
+    ? {
+        variants: heroCopyContainer,
+        initial: "hidden" as const,
+        animate: "visible" as const,
+        exit: "exit" as const,
+      }
+    : {};
+
+  return (
+    <Wrap
+      className="text-scrim max-w-xl rounded-2xl p-5 sm:max-w-2xl sm:p-8"
+      {...containerProps}
+    >
+      <P
+        className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]"
+        {...itemProps}
+      >
+        <Sparkles className="h-3.5 w-3.5" />
+        {liveLabel || "Popular & trending today"}
+      </P>
+
+      <Item className="mb-3 flex flex-wrap gap-2" {...itemProps}>
+        <Badge
+          tone={
+            item.contentType === "movie"
+              ? "primary"
+              : item.contentType === "series"
+                ? "cyan"
+                : item.contentType === "anime"
+                  ? "accent"
+                  : "gold"
+          }
+        >
+          {item.contentType}
+        </Badge>
+        {item.year && <Badge tone="muted">{item.year}</Badge>}
+        {score != null && (
+          <Badge tone="gold">★ {formatScore(score)}</Badge>
+        )}
+        {trailerKey && (
+          <Badge tone="primary">
+            {soundOn && isActive ? "Trailer · audio" : "Trailer"}
+          </Badge>
+        )}
+      </Item>
+
+      <Title
+        className="font-display text-3xl font-bold leading-[1.1] tracking-tight text-white sm:text-5xl md:text-6xl"
+        {...itemProps}
+      >
+        {title}
+      </Title>
+
+      {item.overview && (
+        <P
+          className="mt-4 line-clamp-3 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base"
+          {...itemProps}
+        >
+          {item.overview}
+        </P>
+      )}
+
+      <Item className="mt-7 flex flex-wrap gap-3" {...itemProps}>
+        <Link href={watchHref} className="watch-now-cta">
+          <Button
+            size="lg"
+            variant="gold"
+            className="watch-now-cta !text-black shadow-lg shadow-[var(--gold)]/25 transition-transform duration-300 hover:scale-[1.03] active:scale-[0.98]"
+          >
+            <Play className="h-4 w-4 !text-black" />
+            Watch Now
+          </Button>
+        </Link>
+        {showTrailer && (
+          <Link href={trailerHref}>
+            <Button
+              size="lg"
+              variant="secondary"
+              className="transition-transform duration-300 hover:scale-[1.03] active:scale-[0.98]"
+            >
+              <Play className="h-4 w-4" />
+              Watch Trailer
+            </Button>
+          </Link>
+        )}
+        <Link href={detailsHref}>
+          <Button
+            size="lg"
+            variant="secondary"
+            className="transition-transform duration-300 hover:scale-[1.03] active:scale-[0.98]"
+          >
+            <Bookmark className="h-4 w-4" />
+            Details
+          </Button>
+        </Link>
+      </Item>
+    </Wrap>
   );
 }
 
@@ -228,6 +350,8 @@ export function HeroCarousel({
   items: Content[];
   liveLabel?: string;
 }) {
+  const reduceMotion = useReducedMotion() ?? false;
+
   const slides = useMemo(() => {
     const seen = new Set<string>();
     const out: Content[] = [];
@@ -253,9 +377,9 @@ export function HeroCarousel({
     return out.slice(0, 12);
   }, [items]);
 
-  // Cinematic audio preference (session)
   const [soundOn, setSoundOn] = useState(false);
   const [soundHint, setSoundHint] = useState(true);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     try {
@@ -272,21 +396,22 @@ export function HeroCarousel({
     }
   }, []);
 
+  const autoplayDelay = soundOn ? 28_000 : 12_000;
+
   const autoplayPlugin = useMemo(
     () =>
       Autoplay({
-        // Longer dwell when audio is on so trailers feel immersive
-        delay: soundOn ? 28_000 : 12_000,
+        delay: autoplayDelay,
         stopOnInteraction: false,
         stopOnMouseEnter: true,
       }),
-    [soundOn],
+    [autoplayDelay],
   );
 
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {
       loop: slides.length > 1,
-      duration: 28,
+      duration: reduceMotion ? 18 : 36,
       align: "start",
       containScroll: false,
       skipSnaps: false,
@@ -298,6 +423,7 @@ export function HeroCarousel({
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
     setIndex(emblaApi.selectedScrollSnap());
+    setProgress(0);
   }, [emblaApi]);
 
   useEffect(() => {
@@ -312,16 +438,28 @@ export function HeroCarousel({
     };
   }, [emblaApi, onSelect]);
 
-  // Reset autoplay timer when sound mode changes
   useEffect(() => {
     if (!emblaApi) return;
     try {
-      const ap = emblaApi.plugins()?.autoplay;
-      ap?.reset?.();
+      emblaApi.plugins()?.autoplay?.reset?.();
     } catch {
       /* ignore */
     }
   }, [emblaApi, soundOn]);
+
+  useEffect(() => {
+    if (reduceMotion || slides.length < 2) return;
+    setProgress(0);
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / autoplayDelay);
+      setProgress(t);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [index, autoplayDelay, reduceMotion, slides.length]);
 
   const toggleSound = useCallback(() => {
     setSoundOn((prev) => {
@@ -335,6 +473,18 @@ export function HeroCarousel({
     });
     setSoundHint(false);
   }, []);
+
+  const scrollToCatalog = useCallback(() => {
+    const el = document.getElementById("home-catalog");
+    if (el) {
+      el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
+      return;
+    }
+    window.scrollTo({
+      top: window.innerHeight * 0.92,
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+  }, [reduceMotion]);
 
   const activeHasTrailer = Boolean(
     slides[index]?.trailer?.site === "youtube" &&
@@ -355,18 +505,14 @@ export function HeroCarousel({
         <div className="flex h-full">
           {slides.map((item, i) => {
             const title = displayTitle(item);
-            const score = primaryScore(item);
             const isActive = i === index;
+            const nearActive = Math.abs(i - index) <= 1;
             const trailerKey =
               item.trailer?.site === "youtube" &&
               isValidYoutubeKey(item.trailer.key)
                 ? item.trailer.key.trim()
                 : null;
             const poster = item.backdrop?.url || item.poster?.url || null;
-            const watchHref = getWatchHref(item);
-            const trailerHref = getTrailerHref(item);
-            const detailsHref = getDetailsHref(item);
-            const showTrailer = hasOfficialTrailer(item) || Boolean(trailerKey);
 
             return (
               <div
@@ -378,81 +524,47 @@ export function HeroCarousel({
                   title={title}
                   poster={poster}
                   active={isActive}
+                  nearActive={nearActive}
                   soundOn={soundOn}
+                  reduceMotion={reduceMotion}
                 />
 
                 <div className="absolute inset-0 z-[3] bg-gradient-to-t from-[var(--background)] via-[var(--background)]/65 to-black/30" />
                 <div className="absolute inset-y-0 left-0 z-[3] w-full bg-gradient-to-r from-[var(--background)] via-[var(--background)]/80 to-transparent md:w-[70%]" />
 
-                <div className="relative z-10 mx-auto flex h-full max-w-7xl items-end px-4 pb-28 pt-28 sm:items-center sm:px-6 sm:pb-24">
-                  <div className="text-scrim max-w-xl rounded-2xl p-5 sm:max-w-2xl sm:p-8">
-                    <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      {liveLabel || "Popular & trending today"}
-                    </p>
-
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      <Badge
-                        tone={
-                          item.contentType === "movie"
-                            ? "primary"
-                            : item.contentType === "series"
-                              ? "cyan"
-                              : item.contentType === "anime"
-                                ? "accent"
-                                : "gold"
-                        }
-                      >
-                        {item.contentType}
-                      </Badge>
-                      {item.year && <Badge tone="muted">{item.year}</Badge>}
-                      {score != null && (
-                        <Badge tone="gold">★ {formatScore(score)}</Badge>
-                      )}
-                      {trailerKey && (
-                        <Badge tone="primary">
-                          {soundOn && isActive ? "Trailer · audio" : "Trailer"}
-                        </Badge>
-                      )}
+                <div className="relative z-10 mx-auto flex h-full max-w-7xl items-end px-4 pb-32 pt-28 sm:items-center sm:px-6 sm:pb-28">
+                  {isActive ? (
+                    reduceMotion ? (
+                      <HeroCopy
+                        item={item}
+                        liveLabel={liveLabel}
+                        soundOn={soundOn}
+                        isActive
+                        animated={false}
+                      />
+                    ) : (
+                      <AnimatePresence mode="wait">
+                        <HeroCopy
+                          key={item.id}
+                          item={item}
+                          liveLabel={liveLabel}
+                          soundOn={soundOn}
+                          isActive
+                          animated
+                        />
+                      </AnimatePresence>
+                    )
+                  ) : (
+                    <div className="pointer-events-none opacity-0" aria-hidden>
+                      <HeroCopy
+                        item={item}
+                        liveLabel={liveLabel}
+                        soundOn={false}
+                        isActive={false}
+                        animated={false}
+                      />
                     </div>
-
-                    <h1 className="font-display text-3xl font-bold leading-[1.1] tracking-tight text-white sm:text-5xl md:text-6xl">
-                      {title}
-                    </h1>
-
-                    {item.overview && (
-                      <p className="mt-4 line-clamp-3 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
-                        {item.overview}
-                      </p>
-                    )}
-
-                    <div className="mt-7 flex flex-wrap gap-3">
-                      <Link href={watchHref} className="watch-now-cta">
-                        <Button
-                          size="lg"
-                          variant="gold"
-                          className="watch-now-cta !text-black shadow-lg shadow-[var(--gold)]/25"
-                        >
-                          <Play className="h-4 w-4 !text-black" />
-                          Watch Now
-                        </Button>
-                      </Link>
-                      {showTrailer && (
-                        <Link href={trailerHref}>
-                          <Button size="lg" variant="secondary">
-                            <Play className="h-4 w-4" />
-                            Watch Trailer
-                          </Button>
-                        </Link>
-                      )}
-                      <Link href={detailsHref}>
-                        <Button size="lg" variant="secondary">
-                          <Bookmark className="h-4 w-4" />
-                          Details
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             );
@@ -460,14 +572,25 @@ export function HeroCarousel({
         </div>
       </div>
 
-      {/* Sound + carousel controls */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-8 z-20 flex items-center justify-between gap-3 px-4 sm:px-8">
+      {!reduceMotion && slides.length > 1 && (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-30 h-[2px] bg-white/5"
+          aria-hidden
+        >
+          <div
+            className="h-full origin-left bg-[var(--primary-light)]"
+            style={{ transform: `scaleX(${progress})` }}
+          />
+        </div>
+      )}
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-10 z-20 flex items-center justify-between gap-3 px-4 sm:bottom-12 sm:px-8">
         <div className="pointer-events-auto flex items-center gap-2">
           <Button
             variant="secondary"
             size="icon"
             aria-label="Previous"
-            className="border border-white/15 bg-black/55 backdrop-blur-md"
+            className="border border-white/15 bg-black/55 backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
             onClick={() => emblaApi?.scrollPrev()}
           >
             <ChevronLeft className="h-5 w-5" />
@@ -476,7 +599,7 @@ export function HeroCarousel({
             variant="secondary"
             size="icon"
             aria-label="Next"
-            className="border border-white/15 bg-black/55 backdrop-blur-md"
+            className="border border-white/15 bg-black/55 backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
             onClick={() => emblaApi?.scrollNext()}
           >
             <ChevronRight className="h-5 w-5" />
@@ -489,7 +612,7 @@ export function HeroCarousel({
               aria-pressed={soundOn}
               aria-label={soundOn ? "Mute trailer" : "Unmute trailer"}
               className={cn(
-                "border border-white/15 backdrop-blur-md",
+                "border border-white/15 backdrop-blur-md transition-transform hover:scale-105 active:scale-95",
                 !soundOn && "bg-black/55",
               )}
               onClick={toggleSound}
@@ -523,15 +646,38 @@ export function HeroCarousel({
               aria-label={`Go to slide ${i + 1}`}
               onClick={() => emblaApi?.scrollTo(i)}
               className={cn(
-                "h-1.5 rounded-full transition-all",
+                "relative h-1.5 overflow-hidden rounded-full transition-all duration-300",
                 i === index
-                  ? "w-6 bg-[var(--primary-light)]"
+                  ? "w-8 bg-white/25"
                   : "w-1.5 bg-white/35 hover:bg-white/55",
               )}
-            />
+            >
+              {i === index && (
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full bg-[var(--primary-light)]"
+                  style={{
+                    width: reduceMotion ? "100%" : `${progress * 100}%`,
+                  }}
+                />
+              )}
+            </button>
           ))}
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={scrollToCatalog}
+        className="pointer-events-auto absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1 text-[var(--text-secondary)] transition-colors hover:text-white sm:bottom-4"
+        aria-label="Scroll to catalog"
+      >
+        <span className="text-[10px] font-medium uppercase tracking-[0.22em] opacity-80">
+          Browse
+        </span>
+        <ChevronDown
+          className={cn("h-5 w-5", !reduceMotion && "hero-scroll-cue")}
+        />
+      </button>
     </section>
   );
 }

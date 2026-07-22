@@ -27,8 +27,9 @@ export const usePerformanceStore = create<PerformanceState>((set) => ({
 export function resolveCinematicDefault(opts: {
   reducedMotion: boolean;
   webgl: boolean;
-}): "cinematic" | "performance" {
+}): "cinematic" | "balanced" | "performance" {
   if (opts.reducedMotion || !opts.webgl) return "performance";
+  if (isLowEndDevice()) return "balanced";
   return "cinematic";
 }
 

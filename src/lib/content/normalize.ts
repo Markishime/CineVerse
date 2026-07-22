@@ -1,6 +1,7 @@
 import { slugify } from "@/lib/utils";
 import {
   ContentSchema,
+  isDramaType,
   type AnimeFormat,
   type Content,
   type ContentStatus,
@@ -10,7 +11,7 @@ import {
   type WatchProvider,
 } from "@/types/content";
 import {
-  isKDrama,
+  classifyDrama,
   isValidAnime,
   normalizeAnimeFormat,
   resolveContentType,
@@ -195,7 +196,7 @@ export function normalizeTmdbTv(
   const releaseDate = raw.first_air_date ?? raw.release_date ?? null;
   const genres = genresFromTmdb(raw);
 
-  const kdrama = isKDrama({
+  const dramaType = classifyDrama({
     isTv: true,
     originalLanguage: raw.original_language,
     originCountries: raw.origin_country,
@@ -204,14 +205,14 @@ export function normalizeTmdbTv(
   });
 
   const contentType = resolveContentType({
-    isKDrama: kdrama,
+    dramaType,
     isTv: true,
     override: opts?.forceType,
   });
 
   const content: Content = {
     id: makeId(
-      contentType === "kdrama" ? "tmdb_kdrama" : "tmdb_tv",
+      isDramaType(contentType) ? `tmdb_${contentType}` : "tmdb_tv",
       raw.id,
     ),
     slug: slugify(`${title}-${raw.id}`),

@@ -239,6 +239,7 @@ export function ScrollStory() {
 
       {SCROLL_CHAPTERS.map((ch, i) => {
         const isActive = i === activeIndex;
+        const nearActive = Math.abs(i - activeIndex) <= 1;
         const progress = progresses[i] ?? 0;
 
         return (
@@ -256,7 +257,7 @@ export function ScrollStory() {
                 src={ch.video}
                 poster={ch.poster}
                 active={isActive && useVideo}
-                reduced={!useVideo}
+                reduced={!useVideo || !nearActive}
               />
               <div
                 data-chapter-veil

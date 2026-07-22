@@ -17,6 +17,15 @@ export async function GET(request: NextRequest) {
   const region = (
     request.nextUrl.searchParams.get("region") ?? "US"
   ).toUpperCase();
+  const formatParam = (
+    request.nextUrl.searchParams.get("format") ?? ""
+  ).toLowerCase();
+  const animeFormat: "movie" | "series" | undefined =
+    formatParam === "movie"
+      ? "movie"
+      : formatParam === "series" || formatParam === "tv"
+        ? "series"
+        : undefined;
   return json(
     await catalog.byType(
       "anime",
@@ -26,6 +35,8 @@ export async function GET(request: NextRequest) {
       includeMature,
       playableOnly,
       region,
+      undefined,
+      animeFormat,
     ),
   );
 }

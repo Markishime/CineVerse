@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyDrama,
   isKDrama,
   isValidAnime,
   normalizeAnimeFormat,
@@ -48,6 +49,84 @@ describe("isKDrama", () => {
         override: "kdrama",
       }),
     ).toBe(true);
+  });
+});
+
+describe("classifyDrama (K/C/J/Thai)", () => {
+  const drama = [{ name: "Drama" }, { name: "Romance" }];
+  it("classifies Chinese drama", () => {
+    expect(
+      classifyDrama({
+        isTv: true,
+        originalLanguage: "zh",
+        originCountries: ["CN"],
+        genres: drama,
+      }),
+    ).toBe("cdrama");
+    // Taiwan / Hong Kong also map to C-drama
+    expect(
+      classifyDrama({
+        isTv: true,
+        originalLanguage: "zh",
+        originCountries: ["TW"],
+        genres: drama,
+      }),
+    ).toBe("cdrama");
+  });
+
+  it("classifies Japanese live-action drama", () => {
+    expect(
+      classifyDrama({
+        isTv: true,
+        originalLanguage: "ja",
+        originCountries: ["JP"],
+        genres: drama,
+      }),
+    ).toBe("jdrama");
+  });
+
+  it("classifies Thai drama", () => {
+    expect(
+      classifyDrama({
+        isTv: true,
+        originalLanguage: "th",
+        originCountries: ["TH"],
+        genres: drama,
+      }),
+    ).toBe("thaidrama");
+  });
+
+  it("classifies Korean drama and returns null for non-Asian", () => {
+    expect(
+      classifyDrama({
+        isTv: true,
+        originalLanguage: "ko",
+        originCountries: ["KR"],
+        genres: drama,
+      }),
+    ).toBe("kdrama");
+    expect(
+      classifyDrama({
+        isTv: true,
+        originalLanguage: "en",
+        originCountries: ["US"],
+        genres: drama,
+      }),
+    ).toBeNull();
+  });
+
+  it("honors a drama override and rejects reality/variety", () => {
+    expect(
+      classifyDrama({ isTv: true, originalLanguage: "en", override: "cdrama" }),
+    ).toBe("cdrama");
+    expect(
+      classifyDrama({
+        isTv: true,
+        originalLanguage: "th",
+        originCountries: ["TH"],
+        genres: [{ name: "Reality" }],
+      }),
+    ).toBeNull();
   });
 });
 
@@ -103,11 +182,21 @@ describe("normalizeAnimeFormat", () => {
 });
 
 describe("resolveContentType", () => {
-  it("prefers override then anime then kdrama", () => {
+  it("prefers override then anime then dramaType then kdrama", () => {
     expect(resolveContentType({ isAnime: true, isKDrama: true })).toBe(
       "anime",
     );
     expect(resolveContentType({ isKDrama: true, isTv: true })).toBe("kdrama");
+    expect(resolveContentType({ dramaType: "cdrama", isTv: true })).toBe(
+      "cdrama",
+    );
+    expect(resolveContentType({ dramaType: "jdrama", isTv: true })).toBe(
+      "jdrama",
+    );
+    // anime still wins over a drama type (Japanese animation)
+    expect(
+      resolveContentType({ isAnime: true, dramaType: "jdrama" }),
+    ).toBe("anime");
     expect(resolveContentType({ override: "series", isMovie: true })).toBe(
       "series",
     );

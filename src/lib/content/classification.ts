@@ -1,4 +1,5 @@
-import type { AnimeFormat, ContentType } from "@/types/content";
+import type { AnimeFormat, ContentType, DramaContentType } from "@/types/content";
+import { DRAMA_META } from "@/types/content";
 
 /** Genres that indicate scripted narrative drama suitable for K-drama. */
 const KDRAMA_GENRE_HINTS = new Set([
@@ -62,6 +63,16 @@ export interface KDramaCandidate {
   override?: ContentType | null;
 }
 
+/** Origin lookup: language / country → specific drama type. */
+const DRAMA_LANG_TO_TYPE: Record<string, DramaContentType> = {};
+const DRAMA_COUNTRY_TO_TYPE: Record<string, DramaContentType> = {};
+for (const [type, meta] of Object.entries(DRAMA_META) as Array<
+  [DramaContentType, (typeof DRAMA_META)[DramaContentType]]
+>) {
+  for (const l of meta.languages) DRAMA_LANG_TO_TYPE[l.toLowerCase()] = type;
+  for (const c of meta.countries) DRAMA_COUNTRY_TO_TYPE[c.toUpperCase()] = type;
+}
+
 export interface AnimeCandidate {
   format?: string | null;
   isAdult?: boolean;
@@ -81,25 +92,45 @@ function genreNames(
 }
 
 /**
- * Classify a TV title as K-drama when it is a scripted Korean series
- * with a narrative genre. Admin overrides take precedence.
+ * Classify a TV title into a specific Asian-drama type (K/C/J/Thai) when it is
+ * a scripted series from that country with a narrative genre. Returns null when
+ * it is not an Asian drama. Admin overrides take precedence.
+ *
+ * NOTE: anime must be classified BEFORE this (Japanese animation would match
+ * jdrama by language otherwise). Callers pass only non-anime TV here.
  */
-export function isKDrama(candidate: KDramaCandidate): boolean {
+export function classifyDrama(
+  candidate: KDramaCandidate,
+): DramaContentType | null {
   if (candidate.override != null) {
-    return candidate.override === "kdrama";
+    return (["kdrama", "cdrama", "jdrama", "thaidrama"] as const).includes(
+      candidate.override as DramaContentType,
+    )
+      ? (candidate.override as DramaContentType)
+      : null;
   }
-  if (!candidate.isTv) return false;
+  if (!candidate.isTv) return null;
 
   const lang = (candidate.originalLanguage ?? "").toLowerCase();
   const countries = (candidate.originCountries ?? []).map((c) =>
     c.toUpperCase(),
   );
-  const isKorean =
-    lang === "ko" || countries.includes("KR") || countries.includes("KOR");
-  if (!isKorean) return false;
+
+  // Resolve origin → drama type. Country takes precedence over language.
+  let dramaType: DramaContentType | null = null;
+  for (const c of countries) {
+    if (DRAMA_COUNTRY_TO_TYPE[c]) {
+      dramaType = DRAMA_COUNTRY_TO_TYPE[c];
+      break;
+    }
+  }
+  if (!dramaType && DRAMA_LANG_TO_TYPE[lang]) {
+    dramaType = DRAMA_LANG_TO_TYPE[lang];
+  }
+  if (!dramaType) return null;
 
   const names = genreNames(candidate.genres);
-  if (names.some((n) => KDRAMA_EXCLUDED_GENRES.has(n))) return false;
+  if (names.some((n) => KDRAMA_EXCLUDED_GENRES.has(n))) return null;
 
   const type = (candidate.typeLabel ?? "").toLowerCase();
   if (
@@ -109,15 +140,23 @@ export function isKDrama(candidate: KDramaCandidate): boolean {
     type.includes("variety") ||
     type.includes("documentary")
   ) {
-    return false;
+    return null;
   }
 
   if (names.length === 0) {
-    // Korean scripted series without genre metadata — allow with caution
-    return true;
+    // Scripted series without genre metadata — allow with caution
+    return dramaType;
   }
 
-  return names.some((n) => KDRAMA_GENRE_HINTS.has(n));
+  return names.some((n) => KDRAMA_GENRE_HINTS.has(n)) ? dramaType : null;
+}
+
+/**
+ * Back-compat boolean: true only for Korean drama.
+ * Prefer `classifyDrama` for the specific country type.
+ */
+export function isKDrama(candidate: KDramaCandidate): boolean {
+  return classifyDrama(candidate) === "kdrama";
 }
 
 /**
@@ -173,12 +212,15 @@ export function normalizeAnimeFormat(
 export function resolveContentType(input: {
   isAnime?: boolean;
   isKDrama?: boolean;
+  /** Specific Asian-drama type (K/C/J/Thai). Wins over isKDrama when set. */
+  dramaType?: DramaContentType | null;
   isMovie?: boolean;
   isTv?: boolean;
   override?: ContentType | null;
 }): ContentType {
   if (input.override) return input.override;
   if (input.isAnime) return "anime";
+  if (input.dramaType) return input.dramaType;
   if (input.isKDrama) return "kdrama";
   if (input.isMovie) return "movie";
   if (input.isTv) return "series";

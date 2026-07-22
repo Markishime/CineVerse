@@ -5,7 +5,7 @@
  */
 import { slugify } from "@/lib/utils";
 import {
-  isKDrama,
+  classifyDrama,
   normalizeAnimeFormat,
 } from "@/lib/content/classification";
 import { filterOfficialTrailers } from "@/lib/content/trailers";
@@ -13,12 +13,13 @@ import type {
   Content,
   ContentType,
   Credit,
+  DramaContentType,
   Episode,
   Season,
   Trailer,
   WatchProvider,
 } from "@/types/content";
-import { ContentSchema } from "@/types/content";
+import { ContentSchema, DRAMA_META, isDramaType } from "@/types/content";
 
 const ANILIST = "https://graphql.anilist.co";
 const TVMAZE = "https://api.tvmaze.com";
@@ -69,9 +70,10 @@ function tmdbPoster(path?: string | null, size = "w500"): string | null {
 /* ─── AniList ─────────────────────────────────────────────── */
 
 const ANIME_QUERY = `
-query ($page: Int, $perPage: Int, $sort: [MediaSort], $search: String, $status: MediaStatus, $seasonYear: Int, $isAdult: Boolean) {
+query ($page: Int, $perPage: Int, $sort: [MediaSort], $search: String, $status: MediaStatus, $seasonYear: Int, $isAdult: Boolean, $format: MediaFormat) {
   Page(page: $page, perPage: $perPage) {
-    media(type: ANIME, isAdult: $isAdult, sort: $sort, search: $search, status: $status, seasonYear: $seasonYear) {
+    pageInfo { total currentPage lastPage hasNextPage }
+    media(type: ANIME, isAdult: $isAdult, sort: $sort, search: $search, status: $status, seasonYear: $seasonYear, format: $format) {
       id
       format
       status
@@ -201,6 +203,13 @@ export async function resolveTmdbIdForTitle(opts: {
   year?: number | null;
   preferMovie?: boolean;
   alternateTitles?: string[];
+  /**
+   * When true, only accept TMDB matches that are actually animation (genre 16).
+   * Prevents an anime from resolving to its LIVE-ACTION adaptation (e.g. the
+   * live-action film of a shounen series), which would play the wrong video and
+   * defeat the anime streaming backends. Set for contentType === "anime".
+   */
+  requireAnimation?: boolean;
 }): Promise<{ tmdb: number; tmdbMediaType: "movie" | "tv" } | null> {
   const queries = [
     opts.title,
@@ -290,13 +299,20 @@ export async function resolveTmdbIdForTitle(opts: {
       score: number;
     }> = [];
 
+    // For anime, only real animation entries qualify — never a live-action
+    // adaptation that happens to share the title.
+    const passesAnimation = (r: { genre_ids?: number[] }): boolean =>
+      !opts.requireAnimation || Boolean(r.genre_ids?.includes(16));
+
     for (const r of movies?.results ?? []) {
+      if (!passesAnimation(r)) continue;
       const s = scoreHit(r, "movie");
       if (s >= 0 && r.id) {
         candidates.push({ tmdb: r.id, tmdbMediaType: "movie", score: s });
       }
     }
     for (const r of tv?.results ?? []) {
+      if (!passesAnimation(r)) continue;
       const s = scoreHit(r, "tv");
       if (s >= 0 && r.id) {
         candidates.push({ tmdb: r.id, tmdbMediaType: "tv", score: s });
@@ -352,6 +368,15 @@ function mapAnilist(m: AnilistMedia): Content | null {
     tmdbMediaType = format === "MOVIE" ? "movie" : "tv";
   }
 
+  // Adults-only detection beyond AniList `isAdult` (which flags only hentai):
+  // Ecchi / sexual-content genres mark adult-oriented anime (e.g. "Overflow",
+  // an R18+ ecchi that AniList does NOT set isAdult on). These must hide when
+  // the 18+ toggle is off — hence a distinct `anime-adult-genre` tag.
+  const genreLower = (m.genres ?? []).map((g) => g.toLowerCase());
+  const adultGenre = genreLower.some(
+    (g) => g === "hentai" || g === "ecchi" || g === "erotica",
+  );
+
   const animeSlug = slugify(`${title}-${m.id}`) || `anilist-${m.id}`;
   return safeParse({
     id: `anilist_${m.id}`,
@@ -383,7 +408,7 @@ function mapAnilist(m: AnilistMedia): Content | null {
     runtime: m.duration ?? null,
     seasonCount: null,
     episodeCount: m.episodes ?? null,
-    ageRating: m.isAdult ? "18+" : null,
+    ageRating: m.isAdult ? "18+" : adultGenre ? "R+" : null,
     scores: m.averageScore
       ? [{ source: "anilist", score: m.averageScore / 10 }]
       : [],
@@ -399,15 +424,21 @@ function mapAnilist(m: AnilistMedia): Content | null {
     studios: (m.studios?.nodes ?? [])
       .map((n) => n.name)
       .filter(Boolean) as string[],
-    // AniList isAdult is the ground truth for adult anime (not mere ecchi)
+    // AniList isAdult = hentai (ground truth). Adult-oriented ecchi genres are
+    // tagged separately so the 18+ OFF gate hides them without treating them as
+    // explicit sexual content in the curated 18+ library.
     tags: m.isAdult
       ? ["18+", "mature", "adult-anime", "anilist-adult", "anime", "explicit"]
-      : ["anime"],
+      : adultGenre
+        ? ["r+", "mature", "adults-only", "anime-adult-genre", "anime"]
+        : format === "MOVIE"
+          ? ["anime", "anime-movie", "film"]
+          : ["anime"],
     nextEpisodeAt: m.nextAiringEpisode?.airingAt
       ? new Date(m.nextAiringEpisode.airingAt * 1000).toISOString()
       : null,
     approved: true,
-    mature: Boolean(m.isAdult),
+    mature: Boolean(m.isAdult) || adultGenre,
     lastSyncedAt: new Date().toISOString(),
   });
 }
@@ -474,6 +505,13 @@ export function mapAnilistCredits(m: AnilistMedia, contentId: string): {
   return { cast, crew };
 }
 
+export type WorldCatalogPage = {
+  items: Content[];
+  page: number;
+  totalPages: number;
+  total: number;
+};
+
 export async function fetchAnilistAnime(opts?: {
   page?: number;
   search?: string;
@@ -483,28 +521,71 @@ export async function fetchAnilistAnime(opts?: {
   seasonYear?: number;
   /** When true, request 18+ anime catalog from AniList */
   isAdult?: boolean;
+  format?: string;
 }): Promise<Content[]> {
+  const page = await fetchAnilistAnimePage(opts);
+  return page.items;
+}
+
+/** Paginated anime browse — AniList holds essentially the full anime catalog */
+export async function fetchAnilistAnimePage(opts?: {
+  page?: number;
+  search?: string;
+  sort?: string;
+  status?: string;
+  perPage?: number;
+  seasonYear?: number;
+  isAdult?: boolean;
+  /** AniList MediaFormat: TV, MOVIE, OVA, ONA, SPECIAL, … */
+  format?: string;
+}): Promise<WorldCatalogPage> {
+  const page = Math.max(1, opts?.page ?? 1);
+  const perPage = Math.min(50, Math.max(1, opts?.perPage ?? 50));
+  // AniList: isAdult true = adult only, false = safe only, null/omit = both
+  const isAdultVar =
+    opts?.isAdult === undefined ? null : Boolean(opts.isAdult);
+
   const data = await fetchJson<{
-    data?: { Page?: { media?: AnilistMedia[] } };
+    data?: {
+      Page?: {
+        pageInfo?: {
+          total?: number;
+          currentPage?: number;
+          lastPage?: number;
+          hasNextPage?: boolean;
+        };
+        media?: AnilistMedia[];
+      };
+    };
   }>(ANILIST, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
       query: ANIME_QUERY,
       variables: {
-        page: opts?.page ?? 1,
-        perPage: opts?.perPage ?? 40,
+        page,
+        perPage,
         sort: [opts?.sort ?? "POPULARITY_DESC"],
         search: opts?.search || undefined,
         status: opts?.status || undefined,
         seasonYear: opts?.seasonYear || undefined,
-        isAdult: Boolean(opts?.isAdult),
+        isAdult: isAdultVar,
+        format: opts?.format || undefined,
       },
     }),
   });
-  return (data?.data?.Page?.media ?? [])
+  const pageInfo = data?.data?.Page?.pageInfo;
+  const items = (data?.data?.Page?.media ?? [])
     .map(mapAnilist)
     .filter(Boolean) as Content[];
+  const total = pageInfo?.total ?? items.length;
+  const lastPage = pageInfo?.lastPage ?? Math.max(1, Math.ceil(total / perPage));
+  return {
+    items,
+    page: pageInfo?.currentPage ?? page,
+    totalPages: Math.max(1, lastPage),
+    total,
+  };
 }
 
 export async function fetchAnilistById(id: number): Promise<{
@@ -574,10 +655,30 @@ export async function fetchAllAnimeLive(
   includeMature = false,
 ): Promise<Content[]> {
   const year = new Date().getFullYear();
+  // Deep popularity/trending pages for cache warm; full catalog is on-demand paginated
+  const popularPages = await Promise.all(
+    Array.from({ length: 12 }, (_, i) =>
+      fetchAnilistAnime({
+        page: i + 1,
+        perPage: 50,
+        sort: "POPULARITY_DESC",
+        isAdult: false,
+      }),
+    ),
+  );
+  // Explicit anime films (theatrical / OVA movies) for the Anime tab
+  const animeMoviePages = await Promise.all(
+    Array.from({ length: 8 }, (_, i) =>
+      fetchAnilistAnime({
+        page: i + 1,
+        perPage: 50,
+        sort: "POPULARITY_DESC",
+        format: "MOVIE",
+        isAdult: false,
+      }),
+    ),
+  );
   const [
-    popular1,
-    popular2,
-    popular3,
     trending,
     trending2,
     releasing,
@@ -587,13 +688,11 @@ export async function fetchAllAnimeLive(
     decade2010,
     decade2000,
     decade1990,
+    tmdbAnimeMovies,
     ...maturePages
   ] = await Promise.all([
-    fetchAnilistAnime({ page: 1, perPage: 50, sort: "POPULARITY_DESC" }),
-    fetchAnilistAnime({ page: 2, perPage: 50, sort: "POPULARITY_DESC" }),
-    fetchAnilistAnime({ page: 3, perPage: 50, sort: "POPULARITY_DESC" }),
     fetchAnilistAnime({ page: 1, perPage: 50, sort: "TRENDING_DESC" }),
-    fetchAnilistAnime({ page: 2, perPage: 40, sort: "TRENDING_DESC" }),
+    fetchAnilistAnime({ page: 2, perPage: 50, sort: "TRENDING_DESC" }),
     fetchAnilistAnime({
       page: 1,
       perPage: 50,
@@ -602,110 +701,50 @@ export async function fetchAllAnimeLive(
     }),
     fetchAnilistAnime({
       page: 1,
-      perPage: 40,
+      perPage: 50,
       sort: "SCORE_DESC",
       seasonYear: year,
     }),
     fetchAnilistAnime({
       page: 1,
-      perPage: 40,
+      perPage: 50,
       sort: "POPULARITY_DESC",
       seasonYear: year,
     }),
     fetchAnilistAnime({
       page: 1,
-      perPage: 40,
+      perPage: 50,
       sort: "SCORE_DESC",
       seasonYear: year - 5,
     }),
     fetchAnilistAnime({
       page: 1,
-      perPage: 40,
+      perPage: 50,
       sort: "POPULARITY_DESC",
       seasonYear: 2010,
     }),
     fetchAnilistAnime({
       page: 1,
-      perPage: 40,
+      perPage: 50,
       sort: "POPULARITY_DESC",
       seasonYear: 2000,
     }),
     fetchAnilistAnime({
       page: 1,
-      perPage: 40,
+      perPage: 50,
       sort: "POPULARITY_DESC",
       seasonYear: 1995,
     }),
+    fetchTmdbAnimeMovies().catch(() => [] as Content[]),
     ...(includeMature
-      ? [
-          // Accurate 18+ adult anime only (AniList isAdult:true — never soft ecchi)
+      ? Array.from({ length: 12 }, (_, i) =>
           fetchAnilistAnime({
-            page: 1,
+            page: i + 1,
             perPage: 50,
             sort: "POPULARITY_DESC",
             isAdult: true,
           }),
-          fetchAnilistAnime({
-            page: 2,
-            perPage: 50,
-            sort: "POPULARITY_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 3,
-            perPage: 50,
-            sort: "POPULARITY_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 4,
-            perPage: 50,
-            sort: "POPULARITY_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 5,
-            perPage: 50,
-            sort: "POPULARITY_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 1,
-            perPage: 50,
-            sort: "SCORE_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 2,
-            perPage: 50,
-            sort: "SCORE_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 1,
-            perPage: 50,
-            sort: "TRENDING_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 2,
-            perPage: 50,
-            sort: "TRENDING_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 1,
-            perPage: 40,
-            sort: "START_DATE_DESC",
-            isAdult: true,
-          }),
-          fetchAnilistAnime({
-            page: 1,
-            perPage: 40,
-            sort: "FAVOURITES_DESC",
-            isAdult: true,
-          }),
-        ]
+        )
       : []),
   ]);
 
@@ -728,6 +767,7 @@ export async function fetchAllAnimeLive(
       };
     });
 
+  const popular1 = popularPages[0] ?? [];
   const todayAnime = [
     ...tagToday(trending, ["anilist-trending"]),
     ...tagToday(trending2, ["anilist-trending"]),
@@ -736,8 +776,9 @@ export async function fetchAllAnimeLive(
   ];
 
   const rest = [
-    ...popular2,
-    ...popular3,
+    ...popularPages.slice(1).flat(),
+    ...animeMoviePages.flat(),
+    ...tmdbAnimeMovies,
     ...yearScore,
     ...yearScore2,
     ...classicScore,
@@ -858,24 +899,31 @@ function mapTvMaze(s: TvMazeShow, forceType?: ContentType): Content | null {
     id: slugify(g),
     name: g,
   }));
-  const kdrama =
-    forceType === "kdrama" ||
-    isKDrama({
-      isTv: true,
-      originalLanguage:
-        s.language?.toLowerCase() === "korean" ? "ko" : s.language,
-      originCountries: countries,
-      genres,
-      typeLabel: s.type,
-    });
-  if (forceType === "kdrama" && !kdrama && s.language?.toLowerCase() !== "korean") {
-    // still allow KR origin
-    if (!countries.includes("KR") && s.language?.toLowerCase() !== "korean") {
-      return null;
-    }
-  }
+  const langNorm =
+    s.language?.toLowerCase() === "korean"
+      ? "ko"
+      : s.language?.toLowerCase() === "japanese"
+        ? "ja"
+        : s.language?.toLowerCase() === "chinese" ||
+            s.language?.toLowerCase() === "mandarin" ||
+            s.language?.toLowerCase() === "cantonese"
+          ? "zh"
+          : s.language?.toLowerCase() === "thai"
+            ? "th"
+            : s.language;
+  const detectedDrama = classifyDrama({
+    isTv: true,
+    originalLanguage: langNorm,
+    originCountries: countries,
+    genres,
+    typeLabel: s.type,
+    override: isDramaType(forceType) ? (forceType as ContentType) : null,
+  });
   const contentType: ContentType =
-    forceType === "kdrama" || kdrama ? "kdrama" : "series";
+    (isDramaType(forceType) ? (forceType as ContentType) : null) ??
+    detectedDrama ??
+    "series";
+  const isDrama = isDramaType(contentType);
   const img = s.image?.original || s.image?.medium;
   const year = s.premiered ? Number(s.premiered.slice(0, 4)) : null;
 
@@ -891,7 +939,7 @@ function mapTvMaze(s: TvMazeShow, forceType?: ContentType): Content | null {
       : {
           url: posterFallback(
             s.name,
-            contentType === "kdrama" ? 0x5c1a2e : 0x172033,
+            isDrama ? 0x5c1a2e : 0x172033,
           ),
           source: "local",
         },
@@ -931,14 +979,12 @@ function mapTvMaze(s: TvMazeShow, forceType?: ContentType): Content | null {
 }
 
 export async function fetchTvMazePopular(): Promise<Content[]> {
-  // First page = highest-weight shows — treat as popular/trending today
-  const [page0, page1, page2, page3, page4] = await Promise.all([
-    fetchJson<TvMazeShow[]>(`${TVMAZE}/shows?page=0`),
-    fetchJson<TvMazeShow[]>(`${TVMAZE}/shows?page=1`),
-    fetchJson<TvMazeShow[]>(`${TVMAZE}/shows?page=2`),
-    fetchJson<TvMazeShow[]>(`${TVMAZE}/shows?page=3`),
-    fetchJson<TvMazeShow[]>(`${TVMAZE}/shows?page=4`),
-  ]);
+  // Deeper series catalog — pages 0–7 for fuller browse coverage
+  const pages = await Promise.all(
+    [0, 1, 2, 3, 4, 5, 6, 7].map((p) =>
+      fetchJson<TvMazeShow[]>(`${TVMAZE}/shows?page=${p}`),
+    ),
+  );
   const tagToday = (list: TvMazeShow[] | null | undefined) =>
     (list ?? [])
       .map((s) => mapTvMaze(s))
@@ -951,12 +997,13 @@ export async function fetchTvMazePopular(): Promise<Content[]> {
         popularity: (c!.popularity ?? 0) + 25,
       })) as Content[];
 
-  const rest = [page1, page2, page3, page4]
+  const rest = pages
+    .slice(1)
     .flatMap((p) => p ?? [])
     .map((s) => mapTvMaze(s))
     .filter(Boolean) as Content[];
 
-  return [...tagToday(page0), ...rest].slice(0, 320);
+  return [...tagToday(pages[0]), ...rest].slice(0, 600);
 }
 
 export async function fetchTvMazeSearch(q: string): Promise<Content[]> {
@@ -1072,6 +1119,21 @@ export async function fetchTvMazeKdrama(): Promise<Content[]> {
     "squid game",
     "business proposal",
     "descendants of the sun",
+    "vincenzo",
+    "itaewon class",
+    "hospital playlist",
+    "hometown cha-cha-cha",
+    "extraordinary attorney woo",
+    "the glory",
+    "queen of tears",
+    "lovely runner",
+    "alchemy of souls",
+    "mr sunshine",
+    "signal",
+    "my love from the star",
+    "descendants",
+    "penthouse",
+    "start-up",
   ];
   const results: Content[] = [];
   await Promise.all(
@@ -1161,7 +1223,7 @@ export async function fetchTvMazeById(id: number): Promise<{
 /* ─── Jikan ───────────────────────────────────────────────── */
 
 export async function fetchJikanTop(): Promise<Content[]> {
-  const [popular, airing, favorite, movie] = await Promise.all([
+  const [popular, airing, favorite, movie, upcoming, ova] = await Promise.all([
     fetchJson<{ data?: JikanAnime[] }>(
       `${JIKAN}/top/anime?filter=bypopularity&limit=25`,
     ),
@@ -1173,6 +1235,12 @@ export async function fetchJikanTop(): Promise<Content[]> {
     ),
     fetchJson<{ data?: JikanAnime[] }>(
       `${JIKAN}/top/anime?type=movie&filter=bypopularity&limit=25`,
+    ),
+    fetchJson<{ data?: JikanAnime[] }>(
+      `${JIKAN}/top/anime?filter=upcoming&limit=25`,
+    ),
+    fetchJson<{ data?: JikanAnime[] }>(
+      `${JIKAN}/top/anime?type=ova&filter=bypopularity&limit=25`,
     ),
   ]);
   const tagToday = (rows: JikanAnime[] | undefined) =>
@@ -1197,6 +1265,8 @@ export async function fetchJikanTop(): Promise<Content[]> {
     ...tagToday(airing?.data),
     ...((favorite?.data ?? []).map(mapJikan).filter(Boolean) as Content[]),
     ...((movie?.data ?? []).map(mapJikan).filter(Boolean) as Content[]),
+    ...((upcoming?.data ?? []).map(mapJikan).filter(Boolean) as Content[]),
+    ...((ova?.data ?? []).map(mapJikan).filter(Boolean) as Content[]),
   ];
 }
 
@@ -1459,6 +1529,431 @@ async function tmdbGet<T>(
   });
 }
 
+export function hasTmdbAccess(): boolean {
+  return Boolean(process.env.TMDB_ACCESS_TOKEN);
+}
+
+type TmdbListResponse = {
+  page?: number;
+  total_pages?: number;
+  total_results?: number;
+  results?: Record<string, unknown>[];
+};
+
+/** TMDB discover returns max 500 pages × 20 results */
+const TMDB_MAX_PAGES = 500;
+const TMDB_PAGE_SIZE = 20;
+
+function tmdbSortParam(
+  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime",
+  media: "movie" | "tv",
+): string {
+  switch (sort) {
+    case "rating":
+      return "vote_average.desc";
+    case "newest":
+      return media === "movie" ? "primary_release_date.desc" : "first_air_date.desc";
+    case "oldest":
+      return media === "movie" ? "primary_release_date.asc" : "first_air_date.asc";
+    case "title_asc":
+      return media === "movie" ? "original_title.asc" : "original_name.asc";
+    case "title_desc":
+      return media === "movie" ? "original_title.desc" : "original_name.desc";
+    case "runtime":
+      // TMDB discover has no direct runtime sort for lists; fall back to votes
+      return "vote_count.desc";
+    case "popularity":
+    default:
+      return "popularity.desc";
+  }
+}
+
+/**
+ * Fetch a catalog "window" by mapping UI page/pageSize onto TMDB's 20-result pages.
+ * Exposes nearly the full TMDB discover universe (up to 500 × 20 = 10,000 titles per query).
+ */
+async function fetchTmdbDiscoverWindow(opts: {
+  path: "/discover/movie" | "/discover/tv";
+  baseParams: Record<string, string>;
+  page: number;
+  pageSize: number;
+  map: (raw: Record<string, unknown>) => Content | null;
+}): Promise<WorldCatalogPage> {
+  const page = Math.max(1, opts.page);
+  const pageSize = Math.min(100, Math.max(1, opts.pageSize));
+  const tmdbPagesNeeded = Math.max(1, Math.ceil(pageSize / TMDB_PAGE_SIZE));
+  const startTmdbPage = (page - 1) * tmdbPagesNeeded + 1;
+
+  if (startTmdbPage > TMDB_MAX_PAGES) {
+    return { items: [], page, totalPages: TMDB_MAX_PAGES, total: 0 };
+  }
+
+  const pageNums = Array.from(
+    { length: tmdbPagesNeeded },
+    (_, i) => startTmdbPage + i,
+  ).filter((p) => p <= TMDB_MAX_PAGES);
+
+  const responses = await Promise.all(
+    pageNums.map((p) =>
+      tmdbGet<TmdbListResponse>(opts.path, {
+        ...opts.baseParams,
+        page: String(p),
+      }),
+    ),
+  );
+
+  const first = responses[0];
+  const tmdbTotalPages = Math.min(
+    TMDB_MAX_PAGES,
+    Math.max(1, first?.total_pages ?? 1),
+  );
+  const tmdbTotalResults = Math.min(
+    tmdbTotalPages * TMDB_PAGE_SIZE,
+    first?.total_results ?? 0,
+  );
+
+  const items = responses
+    .flatMap((r) => r?.results ?? [])
+    .map(opts.map)
+    .filter(Boolean) as Content[];
+
+  // UI total pages so last catalog page still maps into TMDB
+  const totalPages = Math.max(
+    1,
+    Math.ceil(tmdbTotalPages / tmdbPagesNeeded),
+  );
+
+  return {
+    items: items.slice(0, pageSize),
+    page: Math.min(page, totalPages),
+    totalPages,
+    total: tmdbTotalResults,
+  };
+}
+
+/** World movie catalog page (TMDB discover) */
+export async function fetchWorldMoviesPage(
+  page = 1,
+  pageSize = 60,
+  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  includeAdult = false,
+  country?: string,
+): Promise<WorldCatalogPage> {
+  if (!hasTmdbAccess()) {
+    return { items: [], page: 1, totalPages: 1, total: 0 };
+  }
+  const base: Record<string, string> = {
+    sort_by: tmdbSortParam(sort, "movie"),
+    include_adult: includeAdult ? "true" : "false",
+    language: "en-US",
+    region: "US",
+  };
+  // Country-specific catalog: filter at TMDB discover level
+  if (country) {
+    base.with_origin_country = country.toUpperCase();
+  }
+  // Rating/newest need a vote floor so empty stubs don't dominate
+  if (sort === "rating") {
+    base["vote_count.gte"] = "50";
+  }
+  return fetchTmdbDiscoverWindow({
+    path: "/discover/movie",
+    baseParams: base,
+    page,
+    pageSize,
+    map: mapTmdbMovie,
+  });
+}
+
+/** World TV series catalog (excludes KR-origin when possible via post-filter) */
+export async function fetchWorldSeriesPage(
+  page = 1,
+  pageSize = 60,
+  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  country?: string,
+): Promise<WorldCatalogPage> {
+  if (!hasTmdbAccess()) {
+    return { items: [], page: 1, totalPages: 1, total: 0 };
+  }
+  const base: Record<string, string> = {
+    sort_by: tmdbSortParam(sort, "tv"),
+    language: "en-US",
+    include_adult: "false",
+    include_null_first_air_dates: "false",
+  };
+  // Country-specific catalog: filter at TMDB discover level
+  if (country) {
+    base.with_origin_country = country.toUpperCase();
+  }
+  if (sort === "rating") {
+    base["vote_count.gte"] = "40";
+  }
+  const result = await fetchTmdbDiscoverWindow({
+    path: "/discover/tv",
+    baseParams: base,
+    page,
+    pageSize: pageSize + 10, // headroom after dropping kdrama/anime
+    map: (r) => mapTmdbTv(r, false),
+  });
+  // When browsing a specific country, skip the exclusion filters
+  if (country) {
+    return {
+      ...result,
+      items: result.items.slice(0, pageSize),
+    };
+  }
+  const items = result.items.filter((c) => {
+    if (c.contentType === "kdrama") return false;
+    // Keep pure JP animation out of generic series browse
+    if (
+      c.language === "ja" &&
+      c.genres.some((g) => /anim/i.test(g.name))
+    ) {
+      return false;
+    }
+    return true;
+  });
+  return {
+    ...result,
+    items: items.slice(0, pageSize),
+  };
+}
+
+/** World drama catalog for a specific type (K/C/J/Thai) — full origin catalog */
+export async function fetchWorldDramaPage(
+  type: DramaContentType,
+  page = 1,
+  pageSize = 60,
+  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+): Promise<WorldCatalogPage> {
+  if (!hasTmdbAccess()) {
+    return { items: [], page: 1, totalPages: 1, total: 0 };
+  }
+  const base: Record<string, string> = {
+    sort_by: tmdbSortParam(sort, "tv"),
+    // Origin country only — pipe-OR across all countries for this type so the
+    // full catalog (incl. TW/HK for C-drama) paginates through TMDB.
+    with_origin_country: dramaDiscoverCountries(type),
+    // Exclude Animation so anime is never mislabeled as live-action drama.
+    without_genres: "16",
+    include_adult: "false",
+    language: "en-US",
+  };
+  if (sort === "rating") {
+    base["vote_count.gte"] = "20";
+  }
+  return fetchTmdbDiscoverWindow({
+    path: "/discover/tv",
+    baseParams: base,
+    page,
+    pageSize,
+    map: (r) => mapTmdbTv(r, type),
+  });
+}
+
+/** World K-drama catalog — Korean origin + language */
+export async function fetchWorldKdramaPage(
+  page = 1,
+  pageSize = 60,
+  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+): Promise<WorldCatalogPage> {
+  return fetchWorldDramaPage("kdrama", page, pageSize, sort);
+}
+
+/**
+ * World anime catalog page via AniList (series + films) + TMDB anime movies.
+ * `formatCategory` optionally narrows to anime films ("movie") or everything
+ * else — TV/OVA/ONA/SPECIAL/SHORT ("series").
+ */
+export async function fetchWorldAnimePage(
+  page = 1,
+  pageSize = 60,
+  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  includeMature = false,
+  formatCategory?: "movie" | "series",
+): Promise<WorldCatalogPage> {
+  const isMovieOnly = formatCategory === "movie";
+  const isSeriesOnly = formatCategory === "series";
+  const perPage = Math.min(50, pageSize);
+  // AniList max 50/page — if UI wants 60, fetch 2 AniList pages
+  const pagesNeeded = Math.max(1, Math.ceil(pageSize / perPage));
+  const start = (Math.max(1, page) - 1) * pagesNeeded + 1;
+
+  const anilistSort =
+    sort === "rating"
+      ? "SCORE_DESC"
+      : sort === "newest"
+        ? "START_DATE_DESC"
+        : sort === "oldest"
+          ? "START_DATE_ASC"
+          : sort === "title_asc"
+            ? "TITLE_ROMAJI"
+            : sort === "title_desc"
+              ? "TITLE_ROMAJI_DESC"
+              : "POPULARITY_DESC";
+
+  // ── Anime films only: AniList MOVIE format (+ TMDB JP animation films) ──
+  if (isMovieOnly) {
+    const [moviePages, tmdbFilms] = await Promise.all([
+      Promise.all(
+        Array.from({ length: pagesNeeded }, (_, i) =>
+          fetchAnilistAnimePage({
+            page: start + i,
+            perPage,
+            sort: anilistSort,
+            format: "MOVIE",
+            isAdult: includeMature ? undefined : false,
+          }),
+        ),
+      ),
+      page === 1
+        ? fetchTmdbAnimeMovies().catch(() => [] as Content[])
+        : Promise.resolve([] as Content[]),
+    ]);
+    const firstM = moviePages[0];
+    const seenM = new Set<string>();
+    const mergedM: Content[] = [];
+    const pushM = (list: Content[]) => {
+      for (const c of list) {
+        if (!c?.id || seenM.has(c.id)) continue;
+        if (!includeMature && c.mature) continue;
+        // Guard: keep only actual films.
+        if (c.animeFormat && c.animeFormat !== "MOVIE") continue;
+        seenM.add(c.id);
+        mergedM.push(c);
+      }
+    };
+    if (page === 1) pushM(tmdbFilms.slice(0, 20));
+    pushM(moviePages.flatMap((p) => p.items));
+    const anilistLastM = firstM?.totalPages ?? 1;
+    const totalPagesM = Math.max(1, Math.ceil(anilistLastM / pagesNeeded));
+    return {
+      items: mergedM.slice(0, pageSize),
+      page: Math.min(Math.max(1, page), totalPagesM),
+      totalPages: totalPagesM,
+      total: firstM?.total ?? mergedM.length,
+    };
+  }
+
+  // Interleave dedicated MOVIE-format pages so theatrical anime surfaces
+  // alongside series (AniList all-format pages already include films, but
+  // popularity skews heavily to TV — inject MOVIE pages every few UI pages).
+  // Skip the injection entirely when the caller wants series only.
+  const injectMovies =
+    !isSeriesOnly && (page === 1 || page % 3 === 0);
+  const moviePage = Math.max(1, Math.ceil(page / 3));
+
+  const [pages, moviePageResult, tmdbAnimeMovies] = await Promise.all([
+    Promise.all(
+      Array.from({ length: pagesNeeded }, (_, i) =>
+        fetchAnilistAnimePage({
+          page: start + i,
+          perPage,
+          sort: anilistSort,
+          isAdult: includeMature ? undefined : false,
+        }),
+      ),
+    ),
+    injectMovies
+      ? fetchAnilistAnimePage({
+          page: moviePage,
+          perPage: Math.min(25, perPage),
+          sort: anilistSort,
+          format: "MOVIE",
+          isAdult: includeMature ? undefined : false,
+        }).catch(() => ({ items: [] as Content[], total: 0, totalPages: 1 }))
+      : Promise.resolve({ items: [] as Content[], total: 0, totalPages: 1 }),
+    // Page 1 also blends TMDB JP Animation films (AniList/MAL pairing later)
+    !isSeriesOnly && page === 1
+      ? fetchTmdbAnimeMovies().catch(() => [] as Content[])
+      : Promise.resolve([] as Content[]),
+  ]);
+
+  const first = pages[0];
+  const seen = new Set<string>();
+  const merged: Content[] = [];
+  const push = (list: Content[]) => {
+    for (const c of list) {
+      if (!c?.id || seen.has(c.id)) continue;
+      if (!includeMature && c.mature) continue;
+      // Series-only excludes theatrical films (TV/OVA/ONA/SPECIAL/SHORT stay).
+      if (isSeriesOnly && c.animeFormat === "MOVIE") continue;
+      seen.add(c.id);
+      merged.push(c);
+    }
+  };
+
+  // Surface anime films early on page 1, then series popularity mix
+  if (page === 1) {
+    push(moviePageResult.items);
+    push(tmdbAnimeMovies.slice(0, 20));
+  }
+  push(pages.flatMap((p) => p.items));
+  if (page > 1) push(moviePageResult.items);
+
+  const items = merged.slice(0, pageSize);
+
+  const anilistLast = first?.totalPages ?? 1;
+  const totalPages = Math.max(1, Math.ceil(anilistLast / pagesNeeded));
+  const total = (first?.total ?? items.length) + (moviePageResult.total ?? 0);
+
+  return {
+    items,
+    page: Math.min(Math.max(1, page), totalPages),
+    totalPages,
+    total,
+  };
+}
+
+/** Bulk multi-page TMDB fetch for home/cache warm */
+async function tmdbFetchManyPages(
+  path: string,
+  baseParams: Record<string, string>,
+  pages: number,
+): Promise<Record<string, unknown>[]> {
+  const count = Math.min(pages, 25);
+  const responses = await Promise.all(
+    Array.from({ length: count }, (_, i) =>
+      tmdbGet<TmdbListResponse>(path, {
+        ...baseParams,
+        page: String(i + 1),
+      }),
+    ),
+  );
+  return responses.flatMap((r) => r?.results ?? []);
+}
+
+/**
+ * Heuristic adult-content detection for TMDB titles.
+ *
+ * TMDB's `adult` boolean only flags outright pornography, so mainstream 18+
+ * films — especially the large Filipino (Vivamax-style) and other regional
+ * softcore/erotic-drama categories, plus NC-17/R-18 releases — slip through
+ * with `adult:false` and no age rating. This scans the title + overview for
+ * explicit-sexual signals so those titles get an "18+" rating and are hidden
+ * when the mature toggle is off.
+ */
+const TMDB_ADULT_OVERVIEW =
+  /\b(erotic|erotica|softcore|hardcore|sexual|sensual|seduc|explicit sex|sex scene|sexually|nudity|nude|lust|infidelity affair|adult film|pornograph|xxx|bold film|sultry|steamy affair)\b/i;
+
+const TMDB_ADULT_TITLE =
+  /\b(sex|erotic|erotica|xxx|18\+|r-?18|bold|bare|naked|seduction|lust|desire uncut|uncut|kinky)\b/i;
+
+export function tmdbLooksAdult(
+  title: string,
+  overview: string,
+  rawAdult: boolean,
+): boolean {
+  if (rawAdult) return true;
+  if (TMDB_ADULT_OVERVIEW.test(overview)) return true;
+  // Title signal alone is weaker (false positives like "Sex Education" exist),
+  // so require a title hit AND at least a soft overview corroboration.
+  if (TMDB_ADULT_TITLE.test(title) && /\b(affair|desire|passion|body|night|seduc|lust|nude|bed|lover)\b/i.test(overview)) {
+    return true;
+  }
+  return false;
+}
+
 function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
   const id = Number(raw.id);
   const title = String(raw.title ?? raw.name ?? "");
@@ -1466,6 +1961,33 @@ function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
   const posterPath = raw.poster_path ? String(raw.poster_path) : null;
   const backdropPath = raw.backdrop_path ? String(raw.backdrop_path) : null;
   const release = raw.release_date ? String(raw.release_date) : null;
+  const lang = raw.original_language
+    ? String(raw.original_language)
+    : null;
+  const origin = Array.isArray(raw.origin_country)
+    ? (raw.origin_country as string[])
+    : [];
+  const genreIds = Array.isArray(raw.genre_ids)
+    ? (raw.genre_ids as number[])
+    : Array.isArray(raw.genres)
+      ? (raw.genres as Array<{ id?: number }>).map((g) => Number(g.id)).filter(Boolean)
+      : [];
+
+  // Movies catalog keeps every theatrical title as contentType=movie so the
+  // full TMDB movie universe stays browseable. Anime films are ALSO mapped
+  // into the Anime tab via mapTmdbAnimeMovie / AniList MOVIE.
+  const genres =
+    genreIds.length > 0
+      ? genreIds.map((gid) => ({
+          id: String(gid),
+          name: gid === 16 ? "Animation" : `Genre ${gid}`,
+        }))
+      : [];
+
+  const overview = String(raw.overview ?? "");
+  const isAdult = tmdbLooksAdult(title, overview, Boolean(raw.adult));
+  const baseTags = lang === "ja" && genreIds.includes(16) ? ["animation", "jp"] : [];
+
   return safeParse({
     id: `tmdb_movie_${id}`,
     slug: slugify(`${title}-${id}`),
@@ -1474,7 +1996,7 @@ function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
     originalTitle: raw.original_title
       ? String(raw.original_title)
       : undefined,
-    overview: String(raw.overview ?? ""),
+    overview,
     poster: posterPath
       ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
       : { url: posterFallback(title, 0x111827), source: "local" },
@@ -1484,15 +2006,13 @@ function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
     releaseDate: release,
     year: release ? Number(release.slice(0, 4)) : null,
     status: "released",
-    language: raw.original_language
-      ? String(raw.original_language)
-      : null,
-    countries: [],
-    genres: [],
+    language: lang,
+    countries: origin,
+    genres,
     runtime: raw.runtime != null ? Number(raw.runtime) : null,
     seasonCount: null,
     episodeCount: null,
-    ageRating: raw.adult ? "18+" : null,
+    ageRating: isAdult ? "18+" : null,
     scores: raw.vote_average
       ? [
           {
@@ -1507,7 +2027,70 @@ function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
     watchProviders: [],
     providerIds: { tmdb: id, tmdbMediaType: "movie" },
     studios: [],
-    tags: [],
+    tags: isAdult ? [...baseTags, "18+", "mature", "adult"] : baseTags,
+    alternateTitles: [],
+    approved: true,
+    mature: isAdult,
+    lastSyncedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Map a TMDB Japanese Animation film into the Anime catalog
+ * (contentType=anime, animeFormat=MOVIE) for the Anime tab.
+ */
+function mapTmdbAnimeMovie(raw: Record<string, unknown>): Content | null {
+  const id = Number(raw.id);
+  const title = String(raw.title ?? raw.name ?? "");
+  if (!title || !id) return null;
+  const posterPath = raw.poster_path ? String(raw.poster_path) : null;
+  const backdropPath = raw.backdrop_path ? String(raw.backdrop_path) : null;
+  const release = raw.release_date ? String(raw.release_date) : null;
+  const lang = raw.original_language
+    ? String(raw.original_language)
+    : "ja";
+
+  return safeParse({
+    id: `tmdb_anime_movie_${id}`,
+    slug: slugify(`${title}-${id}`),
+    contentType: "anime",
+    title,
+    originalTitle: raw.original_title
+      ? String(raw.original_title)
+      : undefined,
+    overview: String(raw.overview ?? ""),
+    poster: posterPath
+      ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
+      : { url: posterFallback(title, 0x7867ff), source: "local" },
+    backdrop: backdropPath
+      ? { url: tmdbPoster(backdropPath, "w1280")!, source: "tmdb" }
+      : null,
+    releaseDate: release,
+    year: release ? Number(release.slice(0, 4)) : null,
+    status: "released",
+    language: lang,
+    countries: ["JP"],
+    genres: [{ id: "animation", name: "Animation" }],
+    runtime: raw.runtime != null ? Number(raw.runtime) : null,
+    seasonCount: null,
+    episodeCount: 1,
+    ageRating: raw.adult ? "18+" : null,
+    scores: raw.vote_average
+      ? [
+          {
+            source: "tmdb",
+            score: Number(raw.vote_average),
+            count: raw.vote_count ? Number(raw.vote_count) : undefined,
+          },
+        ]
+      : [],
+    popularity: Number(raw.popularity ?? 0),
+    trailer: null,
+    watchProviders: [],
+    providerIds: { tmdb: id, tmdbMediaType: "movie" },
+    animeFormat: "MOVIE",
+    studios: [],
+    tags: ["anime", "anime-movie", "film"],
     alternateTitles: [],
     approved: true,
     mature: Boolean(raw.adult),
@@ -1515,9 +2098,27 @@ function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
   });
 }
 
+/** Theatrical / anime films from TMDB for the Anime catalog */
+export async function fetchTmdbAnimeMovies(): Promise<Content[]> {
+  if (!hasTmdbAccess()) return [];
+  const rows = await tmdbFetchManyPages(
+    "/discover/movie",
+    {
+      sort_by: "popularity.desc",
+      with_genres: "16",
+      with_original_language: "ja",
+      region: "US",
+      language: "en-US",
+      "vote_count.gte": "10",
+    },
+    15,
+  );
+  return rows.map(mapTmdbAnimeMovie).filter(Boolean) as Content[];
+}
+
 function mapTmdbTv(
   raw: Record<string, unknown>,
-  asKdrama = false,
+  asDrama: DramaContentType | boolean = false,
 ): Content | null {
   const id = Number(raw.id);
   const title = String(raw.name ?? raw.title ?? "");
@@ -1531,26 +2132,32 @@ function mapTmdbTv(
   const lang = raw.original_language
     ? String(raw.original_language)
     : null;
-  const kdrama =
-    asKdrama ||
-    isKDrama({
+  // `asDrama` can force a specific type (or true = kdrama for back-compat).
+  const forced: DramaContentType | null =
+    asDrama === true ? "kdrama" : asDrama === false ? null : asDrama;
+  const dramaType =
+    forced ??
+    classifyDrama({
       isTv: true,
       originalLanguage: lang,
       originCountries: origin,
     });
+  const isDrama = dramaType != null;
+  const overview = String(raw.overview ?? "");
+  const isAdult = tmdbLooksAdult(title, overview, Boolean(raw.adult));
   return safeParse({
-    id: kdrama ? `tmdb_kdrama_${id}` : `tmdb_tv_${id}`,
+    id: isDrama ? `tmdb_${dramaType}_${id}` : `tmdb_tv_${id}`,
     slug: slugify(`${title}-${id}`),
-    contentType: kdrama ? "kdrama" : "series",
+    contentType: dramaType ?? "series",
     title,
     originalTitle: raw.original_name
       ? String(raw.original_name)
       : undefined,
-    overview: String(raw.overview ?? ""),
+    overview,
     poster: posterPath
       ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
       : {
-          url: posterFallback(title, kdrama ? 0x5c1a2e : 0x172033),
+          url: posterFallback(title, isDrama ? 0x5c1a2e : 0x172033),
           source: "local",
         },
     backdrop: backdropPath
@@ -1569,7 +2176,7 @@ function mapTmdbTv(
     episodeCount: raw.number_of_episodes != null
       ? Number(raw.number_of_episodes)
       : null,
-    ageRating: null,
+    ageRating: isAdult ? "18+" : null,
     scores: raw.vote_average
       ? [{ source: "tmdb", score: Number(raw.vote_average) }]
       : [],
@@ -1578,10 +2185,10 @@ function mapTmdbTv(
     watchProviders: [],
     providerIds: { tmdb: id, tmdbMediaType: "tv" },
     studios: [],
-    tags: [],
+    tags: isAdult ? ["18+", "mature", "adult"] : [],
     alternateTitles: [],
     approved: true,
-    mature: false,
+    mature: isAdult,
     lastSyncedAt: new Date().toISOString(),
   });
 }
@@ -1755,139 +2362,237 @@ export async function fetchTmdbMature(): Promise<Content[]> {
 }
 
 export async function fetchTmdbMovies(): Promise<Content[]> {
-  const [
-    popular,
-    top,
-    now,
-    upcoming,
-    page2,
-    page3,
-    page4,
-    top2,
-    now2,
-    action,
-    comedy,
-    scifi,
-  ] = await Promise.all([
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
-      page: "1",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/top_rated", {
-      page: "1",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/now_playing", {
-      page: "1",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/upcoming", {
-      page: "1",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
-      page: "2",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
-      page: "3",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
-      page: "4",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/top_rated", {
-      page: "2",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/now_playing", {
-      page: "2",
-      region: "US",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      with_genres: "28",
-      "vote_count.gte": "100",
-      region: "US",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      with_genres: "35",
-      "vote_count.gte": "100",
-      region: "US",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      with_genres: "878",
-      "vote_count.gte": "100",
-      region: "US",
-      page: "1",
-    }),
-  ]);
+  // Warm cache: deep popular + top + now + multi-genre (world-scale browse is paginated on demand)
+  const [popular, top, now, upcoming, action, comedy, scifi, thriller, horror, romance, drama, adventure] =
+    await Promise.all([
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        include_adult: "false",
+        region: "US",
+        language: "en-US",
+      }, 20),
+      tmdbFetchManyPages("/movie/top_rated", { region: "US", language: "en-US" }, 8),
+      tmdbFetchManyPages("/movie/now_playing", { region: "US", language: "en-US" }, 4),
+      tmdbFetchManyPages("/movie/upcoming", { region: "US", language: "en-US" }, 3),
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        with_genres: "28",
+        "vote_count.gte": "50",
+        region: "US",
+      }, 3),
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        with_genres: "35",
+        "vote_count.gte": "50",
+        region: "US",
+      }, 3),
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        with_genres: "878",
+        "vote_count.gte": "40",
+        region: "US",
+      }, 3),
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        with_genres: "53",
+        "vote_count.gte": "40",
+        region: "US",
+      }, 3),
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        with_genres: "27",
+        "vote_count.gte": "30",
+        region: "US",
+      }, 3),
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        with_genres: "10749",
+        "vote_count.gte": "30",
+        region: "US",
+      }, 3),
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        with_genres: "18",
+        "vote_count.gte": "50",
+        region: "US",
+      }, 3),
+      tmdbFetchManyPages("/discover/movie", {
+        sort_by: "popularity.desc",
+        with_genres: "12",
+        "vote_count.gte": "40",
+        region: "US",
+      }, 3),
+    ]);
   return [
-    ...(popular?.results ?? []),
-    ...(top?.results ?? []),
-    ...(now?.results ?? []),
-    ...(upcoming?.results ?? []),
-    ...(page2?.results ?? []),
-    ...(page3?.results ?? []),
-    ...(page4?.results ?? []),
-    ...(top2?.results ?? []),
-    ...(now2?.results ?? []),
-    ...(action?.results ?? []),
-    ...(comedy?.results ?? []),
-    ...(scifi?.results ?? []),
+    ...popular,
+    ...top,
+    ...now,
+    ...upcoming,
+    ...action,
+    ...comedy,
+    ...scifi,
+    ...thriller,
+    ...horror,
+    ...romance,
+    ...drama,
+    ...adventure,
   ]
     .map(mapTmdbMovie)
     .filter(Boolean) as Content[];
 }
 
+/**
+ * Popular movies for a specific origin country (Korean / Japanese / Chinese /
+ * Thai / Filipino …). Feeds the homepage "Popular {country} movies" rows and
+ * warms the country movie catalog. Tagged popular so todayOnly() surfaces them.
+ */
+export async function fetchTmdbMoviesByCountry(
+  country: string,
+): Promise<Content[]> {
+  const cc = country.toUpperCase();
+  const [popular, top, recent] = await Promise.all([
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
+        with_origin_country: cc,
+        sort_by: "popularity.desc",
+        include_adult: "false",
+        language: "en-US",
+      },
+      8,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
+        with_origin_country: cc,
+        sort_by: "vote_average.desc",
+        "vote_count.gte": "20",
+        include_adult: "false",
+        language: "en-US",
+      },
+      4,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
+        with_origin_country: cc,
+        sort_by: "primary_release_date.desc",
+        "primary_release_date.lte": new Date().toISOString().slice(0, 10),
+        "vote_count.gte": "5",
+        include_adult: "false",
+        language: "en-US",
+      },
+      4,
+    ),
+  ]);
+  return [...popular, ...top, ...recent]
+    .map(mapTmdbMovie)
+    .map((c) =>
+      c
+        ? {
+            ...c,
+            tags: Array.from(
+              new Set([...(c.tags ?? []), "trending-today", "popular"]),
+            ),
+          }
+        : c,
+    )
+    .filter(Boolean) as Content[];
+}
+
+/**
+ * Popular live-action series for a specific origin country, EXCLUDING animation
+ * (anime) and drama-classified titles handled elsewhere. Feeds the homepage
+ * "Popular {country} series" rows.
+ */
+export async function fetchTmdbSeriesByCountry(
+  country: string,
+): Promise<Content[]> {
+  const cc = country.toUpperCase();
+  const [popular, recent] = await Promise.all([
+    tmdbFetchManyPages(
+      "/discover/tv",
+      {
+        with_origin_country: cc,
+        without_genres: "16",
+        include_adult: "false",
+        sort_by: "popularity.desc",
+        language: "en-US",
+      },
+      8,
+    ),
+    tmdbFetchManyPages(
+      "/discover/tv",
+      {
+        with_origin_country: cc,
+        without_genres: "16",
+        include_adult: "false",
+        sort_by: "first_air_date.desc",
+        "vote_count.gte": "5",
+        language: "en-US",
+      },
+      4,
+    ),
+  ]);
+  return [...popular, ...recent]
+    .map((r) => mapTmdbTv(r))
+    .map((c) =>
+      c
+        ? {
+            ...c,
+            tags: Array.from(
+              new Set([...(c.tags ?? []), "trending-today", "popular"]),
+            ),
+          }
+        : c,
+    )
+    .filter(Boolean) as Content[];
+}
+
 export async function fetchTmdbSeries(): Promise<Content[]> {
-  const [popular, top, airing, page2, page3, top2, drama, crime] =
+  const [popular, top, airing, drama, crime, scifi, comedy, action] =
     await Promise.all([
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/popular", {
-        page: "1",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/top_rated", {
-        page: "1",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/on_the_air", {
-        page: "1",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/popular", {
-        page: "2",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/popular", {
-        page: "3",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/top_rated", {
-        page: "2",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
+      tmdbFetchManyPages("/discover/tv", {
+        sort_by: "popularity.desc",
+        language: "en-US",
+      }, 18),
+      tmdbFetchManyPages("/tv/top_rated", { language: "en-US" }, 6),
+      tmdbFetchManyPages("/tv/on_the_air", { language: "en-US" }, 4),
+      tmdbFetchManyPages("/discover/tv", {
         sort_by: "popularity.desc",
         with_genres: "18",
-        "vote_count.gte": "80",
-        page: "1",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
+        "vote_count.gte": "40",
+      }, 3),
+      tmdbFetchManyPages("/discover/tv", {
         sort_by: "popularity.desc",
         with_genres: "80",
-        "vote_count.gte": "80",
-        page: "1",
-      }),
+        "vote_count.gte": "40",
+      }, 3),
+      tmdbFetchManyPages("/discover/tv", {
+        sort_by: "popularity.desc",
+        with_genres: "10765",
+        "vote_count.gte": "30",
+      }, 3),
+      tmdbFetchManyPages("/discover/tv", {
+        sort_by: "popularity.desc",
+        with_genres: "35",
+        "vote_count.gte": "30",
+      }, 3),
+      tmdbFetchManyPages("/discover/tv", {
+        sort_by: "popularity.desc",
+        with_genres: "10759",
+        "vote_count.gte": "30",
+      }, 3),
     ]);
   return [
-    ...(popular?.results ?? []),
-    ...(top?.results ?? []),
-    ...(airing?.results ?? []),
-    ...(page2?.results ?? []),
-    ...(page3?.results ?? []),
-    ...(top2?.results ?? []),
-    ...(drama?.results ?? []),
-    ...(crime?.results ?? []),
+    ...popular,
+    ...top,
+    ...airing,
+    ...drama,
+    ...crime,
+    ...scifi,
+    ...comedy,
+    ...action,
   ]
     .map((r) => mapTmdbTv(r))
     .filter(Boolean) as Content[];
@@ -2074,50 +2779,69 @@ export async function fetchTrendingTodayByType(): Promise<{
   return { movies, series, anime, kdrama };
 }
 
-export async function fetchTmdbKdrama(): Promise<Content[]> {
-  const [a, b, c, d, e] = await Promise.all([
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      with_origin_country: "KR",
-      with_original_language: "ko",
-      sort_by: "popularity.desc",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      with_origin_country: "KR",
-      with_original_language: "ko",
-      sort_by: "popularity.desc",
-      page: "2",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      with_origin_country: "KR",
-      with_original_language: "ko",
-      sort_by: "vote_average.desc",
-      "vote_count.gte": "50",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      with_origin_country: "KR",
-      with_original_language: "ko",
-      sort_by: "popularity.desc",
-      page: "3",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      with_origin_country: "KR",
-      with_original_language: "ko",
-      sort_by: "first_air_date.desc",
-      "vote_count.gte": "20",
-      page: "1",
-    }),
+/**
+ * TMDB discover filters for a given drama type.
+ *
+ * Filters by ORIGIN COUNTRY only (the definitional signal for a national drama),
+ * pipe-OR across every 2-letter ISO-3166 code in DRAMA_META so the FULL catalog
+ * surfaces — e.g. C-drama covers Mainland (CN), Taiwan (TW) and Hong Kong (HK),
+ * not just CN. Language is intentionally NOT constrained here: adding
+ * `with_original_language` can only subtract (e.g. drop a Cantonese/Hokkien
+ * Taiwanese series), never widen. TMDB rejects 3-letter codes on discover.
+ */
+function dramaDiscoverCountries(type: DramaContentType): string {
+  const countries = Array.from(
+    new Set(DRAMA_META[type].countries.filter((c) => c.length === 2)),
+  );
+  return countries.join("|"); // pipe = OR
+}
+
+export async function fetchTmdbDrama(
+  type: DramaContentType,
+): Promise<Content[]> {
+  const country = dramaDiscoverCountries(type);
+  // Exclude Animation (16) so anime never gets mislabeled as a live-action
+  // drama — critical for J-drama (JP origin includes anime).
+  const base = {
+    with_origin_country: country,
+    without_genres: "16",
+    include_adult: "false",
+    language: "en-US",
+  } as const;
+  const [popular, top, newest, all] = await Promise.all([
+    tmdbFetchManyPages(
+      "/discover/tv",
+      { ...base, sort_by: "popularity.desc" },
+      30,
+    ),
+    tmdbFetchManyPages(
+      "/discover/tv",
+      { ...base, sort_by: "vote_average.desc", "vote_count.gte": "20" },
+      10,
+    ),
+    tmdbFetchManyPages(
+      "/discover/tv",
+      { ...base, sort_by: "first_air_date.desc" },
+      10,
+    ),
+    // No vote floor — pull the long tail so obscure/older titles are included.
+    tmdbFetchManyPages(
+      "/discover/tv",
+      {
+        ...base,
+        sort_by: "first_air_date.desc",
+        "first_air_date.lte": new Date().toISOString().slice(0, 10),
+      },
+      20,
+    ),
   ]);
-  return [
-    ...(a?.results ?? []),
-    ...(b?.results ?? []),
-    ...(c?.results ?? []),
-    ...(d?.results ?? []),
-    ...(e?.results ?? []),
-  ]
-    .map((r) => mapTmdbTv(r, true))
+  return [...popular, ...top, ...newest, ...all]
+    .map((r) => mapTmdbTv(r, type))
     .filter(Boolean) as Content[];
+}
+
+export async function fetchTmdbKdrama(): Promise<Content[]> {
+  return fetchTmdbDrama("kdrama");
 }
 
 export async function fetchTmdbWatchProviders(
@@ -2263,18 +2987,24 @@ export async function fetchTmdbSeasonEpisodes(
 
 export async function fetchTmdbSearch(q: string): Promise<Content[]> {
   if (!q.trim()) return [];
-  const [movies, tv] = await Promise.all([
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/search/movie", {
-      query: q,
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/search/tv", {
-      query: q,
-    }),
+  const [movies1, movies2, tv1, tv2] = await Promise.all([
+    tmdbGet<TmdbListResponse>("/search/movie", { query: q, page: "1" }),
+    tmdbGet<TmdbListResponse>("/search/movie", { query: q, page: "2" }),
+    tmdbGet<TmdbListResponse>("/search/tv", { query: q, page: "1" }),
+    tmdbGet<TmdbListResponse>("/search/tv", { query: q, page: "2" }),
   ]);
   return [
-    ...(movies?.results ?? []).map(mapTmdbMovie),
-    ...(tv?.results ?? []).map((r) => mapTmdbTv(r)),
-  ].filter(Boolean) as Content[];
+    ...(movies1?.results ?? []),
+    ...(movies2?.results ?? []),
+    ...(tv1?.results ?? []),
+    ...(tv2?.results ?? []),
+  ]
+    .map((r) =>
+      r.media_type === "tv" || r.first_air_date != null || r.name != null
+        ? mapTmdbTv(r)
+        : mapTmdbMovie(r),
+    )
+    .filter(Boolean) as Content[];
 }
 
 /**

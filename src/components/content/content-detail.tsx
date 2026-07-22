@@ -358,23 +358,24 @@ export function ContentDetail({ slug }: { slug: string }) {
 
   return (
     <article data-theme={content.contentType === "movie" ? "movies" : content.contentType === "series" ? "series" : content.contentType === "anime" ? "anime" : "kdrama"}>
-      <div className="relative min-h-[50vh] pt-16">
+      <div className="relative min-h-[48vh] pt-16 sm:min-h-[52vh]">
         {(content.backdrop?.url || content.poster?.url) && (
           <Image
             src={content.backdrop?.url || content.poster!.url}
             alt=""
             fill
-            className="object-cover opacity-40"
+            className="object-cover object-top opacity-45"
             priority
             unoptimized
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-[var(--background)]/80 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-[var(--background)]/85 to-[var(--background)]/40" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[var(--background)]/70 via-transparent to-transparent" />
       </div>
 
-      <div className="relative z-10 mx-auto -mt-40 max-w-7xl px-4 pb-24 sm:px-6">
-        <Reveal inView={false} className="flex flex-col gap-8 md:flex-row">
-          <div className="relative mx-auto h-[320px] w-[210px] shrink-0 overflow-hidden rounded-xl shadow-2xl sm:mx-0">
+      <div className="relative z-10 mx-auto -mt-36 max-w-7xl px-4 pb-24 sm:-mt-40 sm:px-6">
+        <Reveal inView={false} className="flex flex-col gap-8 md:flex-row md:items-start">
+          <div className="relative mx-auto h-[320px] w-[210px] shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.75)] sm:mx-0">
             {content.poster?.url ? (
               <Image
                 src={content.poster.url}
@@ -411,7 +412,7 @@ export function ContentDetail({ slug }: { slug: string }) {
               )}
             </div>
 
-            <h1 className="font-display text-3xl font-bold sm:text-4xl md:text-5xl">
+            <h1 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">
               {title}
             </h1>
             {(content.originalTitle ||
@@ -457,22 +458,40 @@ export function ContentDetail({ slug }: { slug: string }) {
               {content.overview || "No overview available."}
             </p>
 
-            <div className="flex flex-wrap gap-2">
-              <Link href={getWatchHref(content)} className="watch-now-cta">
-                <Button variant="gold" className="watch-now-cta !text-black">
-                  <Play className="h-4 w-4 !text-black" />
-                  Watch Now
-                </Button>
-              </Link>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {user ? (
+                <Link href={getWatchHref(content)} className="watch-now-cta">
+                  <Button
+                    size="lg"
+                    variant="gold"
+                    className="watch-now-cta !text-black"
+                  >
+                    <Play className="h-4 w-4 !text-black" />
+                    Watch Now
+                  </Button>
+                </Link>
+              ) : (
+                <Link href="/login" className="watch-now-cta">
+                  <Button
+                    size="lg"
+                    variant="gold"
+                    className="watch-now-cta !text-black"
+                  >
+                    <Play className="h-4 w-4 !text-black" />
+                    Sign in to Watch
+                  </Button>
+                </Link>
+              )}
               {trailer?.site === "youtube" && trailer.key ? (
                 <Link href={getTrailerHref(content)}>
-                  <Button variant="secondary">
+                  <Button size="lg" variant="secondary">
                     <Play className="h-4 w-4" />
                     Watch Trailer
                   </Button>
                 </Link>
               ) : null}
               <Button
+                size="lg"
                 variant="secondary"
                 onClick={() => watchlistMut.mutate()}
                 disabled={watchlistMut.isPending}
@@ -481,6 +500,7 @@ export function ContentDetail({ slug }: { slug: string }) {
                 My List
               </Button>
               <Button
+                size="lg"
                 variant="outline"
                 onClick={() => favoriteMut.mutate()}
                 disabled={favoriteMut.isPending}
@@ -489,6 +509,7 @@ export function ContentDetail({ slug }: { slug: string }) {
                 Favorite
               </Button>
               <Button
+                size="lg"
                 variant="ghost"
                 onClick={() => completeMut.mutate()}
                 disabled={completeMut.isPending}
@@ -497,6 +518,7 @@ export function ContentDetail({ slug }: { slug: string }) {
                 Mark watched
               </Button>
               <Button
+                size="lg"
                 variant="ghost"
                 onClick={() => {
                   if (navigator.share) {
@@ -594,16 +616,22 @@ export function ContentDetail({ slug }: { slug: string }) {
             title={title}
             trailer={activeTrailer}
             legalFull={playback?.legalFull}
-            eligible={playback?.eligible}
+            eligible={Boolean(user && playback?.eligible)}
             autoOpenTrailer={playTrailer && !playFull}
-            autoOpenFull={playFull || Boolean(playback?.eligible)}
+            autoOpenFull={(playFull || Boolean(playback?.eligible)) && Boolean(user)}
             providers={providers?.providers ?? content.watchProviders}
             keepInApp
           />
           {content.playable || playback?.eligible ? (
-            <p className="mt-2 text-xs text-[var(--success)]">
-              Free full stream available in-app.
-            </p>
+            user ? (
+              <p className="mt-2 text-xs text-[var(--success)]">
+                Free full stream available in-app.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--gold)]">
+                Sign in to watch the full stream in-app.
+              </p>
+            )
           ) : null}
         </div>
 

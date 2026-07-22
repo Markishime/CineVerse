@@ -101,7 +101,7 @@ export default function SignupPage() {
       <Button
         type="button"
         variant="secondary"
-        className="w-full gap-2 py-6 text-base"
+        className="h-12 w-full gap-2 text-[15px] transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
         onClick={google}
       >
         <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden>
@@ -125,55 +125,72 @@ export default function SignupPage() {
         Sign up with Google
       </Button>
 
-      <div className="my-6 flex items-center gap-3 text-xs text-[var(--text-muted)]">
-        <div className="h-px flex-1 bg-white/10" />
+      <div className="my-6 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/12" />
         or email
-        <div className="h-px flex-1 bg-white/10" />
+        <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/12" />
       </div>
 
-      <form className="space-y-3.5" onSubmit={handleSubmit(onSubmit)}>
+      <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">
+          <label
+            htmlFor="signup-name"
+            className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]"
+          >
             Display name
           </label>
-          <Input placeholder="How should we call you?" {...register("displayName")} />
+          <Input
+            id="signup-name"
+            className="h-12"
+            placeholder="How should we call you?"
+            {...register("displayName")}
+          />
           {errors.displayName && (
-            <p className="mt-1 text-xs text-[var(--danger)]">
+            <p className="mt-1.5 text-xs text-[var(--danger)]" role="alert">
               {errors.displayName.message}
             </p>
           )}
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">
+          <label
+            htmlFor="signup-email"
+            className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]"
+          >
             Email
           </label>
           <Input
+            id="signup-email"
             type="email"
+            className="h-12"
             placeholder="you@email.com"
             autoComplete="email"
             {...register("email")}
           />
           {errors.email && (
-            <p className="mt-1 text-xs text-[var(--danger)]">
+            <p className="mt-1.5 text-xs text-[var(--danger)]" role="alert">
               {errors.email.message}
             </p>
           )}
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">
+          <label
+            htmlFor="signup-password"
+            className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]"
+          >
             Password
           </label>
           <div className="relative">
             <Input
+              id="signup-password"
               type={showPw ? "text" : "password"}
               placeholder="At least 8 characters"
               autoComplete="new-password"
-              className="pr-11"
+              className="h-12 pr-12"
               {...register("password")}
             />
             <button
               type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white"
+              className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               onClick={() => setShowPw((v) => !v)}
               aria-label={showPw ? "Hide password" : "Show password"}
             >
@@ -181,36 +198,44 @@ export default function SignupPage() {
             </button>
           </div>
           {errors.password && (
-            <p className="mt-1 text-xs text-[var(--danger)]">
+            <p className="mt-1.5 text-xs text-[var(--danger)]" role="alert">
               {errors.password.message}
             </p>
           )}
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">
+          <label
+            htmlFor="signup-confirm"
+            className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]"
+          >
             Confirm password
           </label>
           <Input
+            id="signup-confirm"
             type={showPw ? "text" : "password"}
+            className="h-12"
             placeholder="Repeat password"
             autoComplete="new-password"
             {...register("confirm")}
           />
           {errors.confirm && (
-            <p className="mt-1 text-xs text-[var(--danger)]">
+            <p className="mt-1.5 text-xs text-[var(--danger)]" role="alert">
               {errors.confirm.message}
             </p>
           )}
         </div>
 
         {error && (
-          <div className="rounded-xl border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-3 py-2 text-sm text-[var(--danger)]">
+          <div
+            className="rounded-xl border border-[var(--danger)]/35 bg-[var(--danger)]/10 px-3.5 py-2.5 text-sm text-[var(--danger)]"
+            role="alert"
+          >
             {error}
           </div>
         )}
         <Button
           type="submit"
-          className="w-full py-6 text-base"
+          className="h-12 w-full text-[15px] transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
           disabled={isSubmitting}
         >
           {isSubmitting ? "Creating account…" : "Create free account"}

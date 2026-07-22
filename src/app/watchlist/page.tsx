@@ -8,6 +8,9 @@ import { deleteLibrary, fetchLibrary } from "@/lib/api/user";
 import { fetchContentById } from "@/lib/api/content";
 import { ContentCard } from "@/components/content/content-card";
 import { ContinueWatchingRow } from "@/components/content/continue-watching-row";
+import { PageHeader } from "@/components/layout/page-header";
+import { EmptyState } from "@/components/layout/empty-state";
+import { Chip } from "@/components/ui/chip";
 import { useAuthStore } from "@/stores/auth-store";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,8 +26,6 @@ import {
   type LocalLibraryEntry,
 } from "@/lib/user/local-library";
 import type { Content, LibraryStatus } from "@/types/content";
-import { cn } from "@/lib/utils";
-
 type Tab = LibraryStatus | "all";
 
 /**
@@ -144,49 +145,40 @@ export default function WatchlistPage() {
   }, [localItems, uid, queryClient]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-24 pt-24 sm:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-[var(--primary-light)]">
-            Your library
-          </p>
-          <h1 className="font-display text-3xl font-bold text-white">
-            My List & Watchlist
-          </h1>
-          <p className="mt-2 text-sm text-[var(--text-muted)]">
-            {user
-              ? "Saved on this device and synced when the server is available."
-              : "Saved on this device — sign in to sync across devices."}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {dataUpdatedAt ? (
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="Your library"
+        title="My List"
+        description={
+          user
+            ? "Saved on this device and synced when online."
+            : "Saved on this device. Sign in to sync across devices."
+        }
+        actions={
+          <>
             <span className="text-xs text-[var(--text-muted)]">
-              Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
-              {isFetching ? " · refreshing…" : ""}
+              {dataUpdatedAt
+                ? `Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}${isFetching ? " · refreshing…" : ""}`
+                : `${localItems.length} title${localItems.length === 1 ? "" : "s"}`}
             </span>
-          ) : (
-            <span className="text-xs text-[var(--text-muted)]">
-              {localItems.length} title{localItems.length === 1 ? "" : "s"}
-            </span>
-          )}
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              bumpLocal();
-              void refetch();
-            }}
-          >
-            Refresh
-          </Button>
-          {!user && (
-            <Link href="/login">
-              <Button size="sm">Sign in to sync</Button>
-            </Link>
-          )}
-        </div>
-      </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                bumpLocal();
+                void refetch();
+              }}
+            >
+              Refresh
+            </Button>
+            {!user && (
+              <Link href="/login">
+                <Button size="sm">Sign in to sync</Button>
+              </Link>
+            )}
+          </>
+        }
+      />
 
       <div className="mt-10">
         <ContinueWatchingRow title="Continue watching" />
@@ -194,22 +186,12 @@ export default function WatchlistPage() {
 
       <div className="mt-10 flex flex-wrap gap-2">
         {LIST_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "rounded-full px-4 py-2 text-sm font-medium transition",
-              tab === t.id
-                ? "bg-[var(--primary)] text-white"
-                : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white",
-            )}
-          >
+          <Chip key={t.id} active={tab === t.id} onClick={() => setTab(t.id)}>
             {t.label}
             {counts[t.id] != null ? (
-              <span className="ml-1.5 text-xs opacity-70">{counts[t.id]}</span>
+              <span className="text-xs opacity-70">{counts[t.id]}</span>
             ) : null}
-          </button>
+          </Chip>
         ))}
       </div>
 
@@ -249,7 +231,7 @@ export default function WatchlistPage() {
               <button
                 type="button"
                 aria-label="Remove from list"
-                className="absolute right-2 top-2 z-10 rounded-full bg-black/70 p-1.5 text-white hover:bg-black"
+                className="absolute right-2 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/75 text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 onClick={() => removeMut.mutate(e.contentId)}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -260,33 +242,21 @@ export default function WatchlistPage() {
       </div>
 
       {entries.length === 0 && (
-        <div className="mt-12 rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 text-center">
-          <Bookmark className="mx-auto h-10 w-10 text-[var(--text-muted)]" />
-          <p className="mt-4 font-display text-lg font-semibold text-white">
-            {tab === "plan_to_watch" ? "My List is empty" : "Nothing here yet"}
-          </p>
-          <p className="mt-2 text-sm text-[var(--text-muted)]">
-            Tap <strong className="text-white">My List</strong> on any movie,
-            series, anime, or K-drama card to save it here.
-          </p>
-          <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <Link href="/discover">
-              <Button>Discover</Button>
-            </Link>
-            <Link href="/movies">
-              <Button variant="secondary">Movies</Button>
-            </Link>
-            <Link href="/series">
-              <Button variant="secondary">Series</Button>
-            </Link>
-            <Link href="/anime">
-              <Button variant="secondary">Anime</Button>
-            </Link>
-            <Link href="/kdrama">
-              <Button variant="secondary">K-Drama</Button>
-            </Link>
-          </div>
-        </div>
+        <EmptyState
+          className="mt-12"
+          icon={Bookmark}
+          title={
+            tab === "plan_to_watch" ? "My List is empty" : "Nothing here yet"
+          }
+          description="Tap My List on any movie, series, anime, or K-drama card to save it here."
+          actions={[
+            { href: "/discover", label: "Discover" },
+            { href: "/movies", label: "Movies", variant: "secondary" },
+            { href: "/series", label: "Series", variant: "secondary" },
+            { href: "/anime", label: "Anime", variant: "secondary" },
+            { href: "/kdrama", label: "K-Drama", variant: "secondary" },
+          ]}
+        />
       )}
     </div>
   );

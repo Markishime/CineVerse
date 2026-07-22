@@ -17,6 +17,18 @@ interface WatchMovieClientProps {
   movie: TmdbMovieDetail;
 }
 
+/** Detect Asian-drama type for regional movies (Korean, Chinese, Japanese, Thai). */
+function detectDramaType(
+  originalLanguage: string | undefined,
+): "kdrama" | "cdrama" | "jdrama" | "thaidrama" | null {
+  const lang = (originalLanguage ?? "").toLowerCase();
+  if (lang === "ko") return "kdrama";
+  if (lang === "zh" || lang === "cn") return "cdrama";
+  if (lang === "ja") return "jdrama";
+  if (lang === "th") return "thaidrama";
+  return null;
+}
+
 /**
  * Client component for the movie watch page.
  * Handles the interactive video player, share functionality, and cinematic UI.
@@ -30,7 +42,14 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
   const isAnimeMovie =
     (movie.genres ?? []).some((g) => g.id === 16) &&
     movie.original_language === "ja";
-  const contentType = isAnimeMovie ? "anime" : "movie";
+  // Detect regional drama movies so they use drama-specific embed providers
+  const dramaType = isAnimeMovie
+    ? null
+    : detectDramaType(movie.original_language);
+  const contentType = isAnimeMovie ? "anime" : dramaType ?? "movie";
+  const year = movie.release_date
+    ? Number(movie.release_date.slice(0, 4))
+    : null;
 
   useEffect(() => {
     const poster = movie.poster_path
@@ -41,22 +60,22 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
       : null;
     saveContinueWatching(
       {
-        contentId: `tmdb_movie_${tmdbId}`,
+        contentId: isAnimeMovie
+          ? `tmdb_anime_movie_${tmdbId}`
+          : `tmdb_movie_${tmdbId}`,
         slug: `tmdb-movie-${tmdbId}`,
         title: movie.title,
-        contentType: "movie",
+        contentType,
         posterUrl: poster,
         backdropUrl: bg,
         tmdbId,
-        year: movie.release_date
-          ? Number(movie.release_date.slice(0, 4))
-          : null,
+        year,
         href: `/watch/movie/${tmdbId}`,
         percent: 28,
       },
       user?.uid,
     );
-  }, [tmdbId, movie, user?.uid]);
+  }, [tmdbId, movie, user?.uid, isAnimeMovie, contentType, year]);
 
   const share = async () => {
     try {
@@ -109,13 +128,15 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
           </div>
         </div>
 
-        {/* Video player */}
+        {/* Video player — anime films use anime-only backends (Cinezo, AnimePahe, …) */}
         <VideoPlayer
           tmdbId={tmdbId}
           mediaType="movie"
           title={movie.title}
           originalLanguage={movie.original_language}
           contentType={contentType}
+          animeFormat={isAnimeMovie ? "MOVIE" : undefined}
+          year={year}
           autoPlay
         />
 

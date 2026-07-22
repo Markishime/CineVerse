@@ -35,6 +35,27 @@ function currentSeasonEpCount(tvShow: TmdbTvDetail, season: number): number {
   );
 }
 
+/** Origin language/country → specific Asian-drama type (or null). Anime excluded. */
+function detectDramaType(
+  originalLanguage: string | undefined,
+  originCountries: string[] | undefined,
+  isAnime: boolean,
+): "kdrama" | "cdrama" | "jdrama" | "thaidrama" | null {
+  if (isAnime) return null;
+  const lang = (originalLanguage ?? "").toLowerCase();
+  const countries = (originCountries ?? []).map((c) => c.toUpperCase());
+  if (lang === "ko" || countries.includes("KR")) return "kdrama";
+  if (
+    lang === "zh" ||
+    lang === "cn" ||
+    countries.some((c) => ["CN", "TW", "HK"].includes(c))
+  )
+    return "cdrama";
+  if (lang === "ja" || countries.includes("JP")) return "jdrama";
+  if (lang === "th" || countries.includes("TH")) return "thaidrama";
+  return null;
+}
+
 /**
  * Client component for the TV watch page.
  * Handles the interactive video player, episode navigation,
@@ -56,11 +77,16 @@ export function WatchTvClient({
 
   // Detect anime from TMDb genre (16 = Animation) + Japanese language
   const isAnime =
-    genreIds.includes(16) &&
-    (tvShow.original_language === "ja" || tvShow.original_language === "ko");
+    genreIds.includes(16) && tvShow.original_language === "ja";
 
-  // Detect K-drama: Korean language, non-anime
-  const isKdrama = tvShow.original_language === "ko" && !isAnime;
+  // Detect Asian drama (live-action) by original language, excluding anime.
+  const originCountries = (tvShow as { origin_country?: string[] })
+    .origin_country;
+  const dramaContentType = detectDramaType(
+    tvShow.original_language,
+    originCountries,
+    isAnime,
+  );
 
   // Find next episode for auto-play
   const nextEpisode = useMemo(() => {
@@ -166,15 +192,22 @@ export function WatchTvClient({
           </div>
         </div>
 
-        {/* Video player */}
+        {/* Video player — anime uses AniList/MAL-aware multi-backend chain */}
         <VideoPlayer
           tmdbId={tmdbId}
           mediaType="tv"
           season={season}
           episode={episodeNum}
-          title={fullTitle}
+          title={isAnime ? tvShow.name : fullTitle}
           originalLanguage={tvShow.original_language}
-          contentType={isAnime ? "anime" : isKdrama ? "kdrama" : "series"}
+          contentType={
+            isAnime ? "anime" : dramaContentType ?? "series"
+          }
+          year={
+            tvShow.first_air_date
+              ? Number(tvShow.first_air_date.slice(0, 4))
+              : null
+          }
           autoPlay
           onProviderLoad={() => {
             // Save progress so user resumes from this episode next time
@@ -186,15 +219,17 @@ export function WatchTvClient({
               ? `https://image.tmdb.org/t/p/w780${tvShow.backdrop_path}`
               : null;
             // Heuristic content type from genre / origin
-            const isAnime =
-              tvShow.original_language === "ja" ||
-              (tvShow.genres ?? []).some((g) => /animation/i.test(g.name));
-            const isKdrama = tvShow.original_language === "ko";
-            const contentType = isAnime
-              ? "anime"
-              : isKdrama
-                ? "kdrama"
-                : "series";
+            const isAnimeCw =
+              (tvShow.genres ?? []).some((g) => /animation/i.test(g.name)) &&
+              tvShow.original_language === "ja";
+            const contentType =
+              isAnimeCw
+                ? "anime"
+                : detectDramaType(
+                    tvShow.original_language,
+                    (tvShow as { origin_country?: string[] }).origin_country,
+                    isAnimeCw,
+                  ) ?? "series";
             saveContinueWatching(
               {
                 contentId: `tmdb_tv_${tmdbId}`,

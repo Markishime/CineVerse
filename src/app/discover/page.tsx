@@ -3,14 +3,19 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { fetchDiscover, fetchHome } from "@/lib/api/content";
 import { ContentCard } from "@/components/content/content-card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { PageHeader } from "@/components/layout/page-header";
+import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
 import { isMatureEnabledClient } from "@/lib/user/local-profile";
 import { APP_REGION } from "@/lib/user/region";
 import { cn } from "@/lib/utils";
+
 const FALLBACK_MOODS = [
   { id: "cozy", label: "Cozy nights", emoji: "🌙" },
   { id: "thrill", label: "Heart-racing", emoji: "⚡" },
@@ -78,14 +83,12 @@ function DiscoverInner() {
         if (value) next.set(key, value);
         else next.delete(key);
       }
-      // Reset page when filters change (unless page itself is set)
       if (!("page" in patch)) next.delete("page");
       router.replace(`/discover?${next.toString()}`);
     },
     [router, sp],
   );
 
-  // Live catalog meta (moods/genres) + trending fallback
   const homeQuery = useQuery({
     queryKey: ["home-meta", mature, APP_REGION],
     queryFn: () => fetchHome(APP_REGION, mature),
@@ -126,7 +129,6 @@ function DiscoverInner() {
     refetchOnReconnect: true,
   });
 
-  // Debounced search from draft
   useEffect(() => {
     const t = window.setTimeout(() => {
       if (searchDraft !== q) update({ q: searchDraft.trim() || undefined });
@@ -143,138 +145,151 @@ function DiscoverInner() {
   }, [dataUpdatedAt]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-24 pt-24 sm:px-6">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-bold sm:text-4xl">
-            Discover
-          </h1>
-          <p className="mt-2 text-[var(--text-muted)]">
-            Live catalog of movies, series, anime, and K-dramas. Filters stay in
-            the URL.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-          <span
-            className={cn(
-              "inline-flex h-2 w-2 rounded-full",
-              isFetching ? "animate-pulse bg-[var(--gold)]" : "bg-[var(--success)]",
-            )}
-          />
-          {isFetching ? "Live updating…" : liveLabel ? `Live · ${liveLabel}` : "Live"}
-          <Button size="sm" variant="secondary" onClick={() => void refetch()}>
-            Refresh
-          </Button>
-        </div>
-      </header>
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="Live catalog"
+        title="Discover"
+        description="Browse movies, series, anime, and K-dramas. Filters stay in the URL so you can share or refresh anytime."
+        actions={
+          <>
+            <span className="inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
+              <span
+                className={cn(
+                  "inline-flex h-2 w-2 rounded-full",
+                  isFetching
+                    ? "animate-pulse bg-[var(--gold)]"
+                    : "bg-[var(--success)]",
+                )}
+              />
+              {isFetching
+                ? "Updating…"
+                : liveLabel
+                  ? `Live · ${liveLabel}`
+                  : "Live"}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void refetch()}
+              className="gap-1.5"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
-      {/* Type tabs */}
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div
+        className="mt-8 flex flex-wrap gap-2"
+        role="tablist"
+        aria-label="Content type"
+      >
         {TYPES.map((t) => (
-          <button
+          <Chip
             key={t.id || "all"}
-            type="button"
+            active={type === t.id}
             onClick={() => update({ type: t.id || undefined })}
-            className={cn(
-              "rounded-full px-4 py-2 text-sm font-medium transition",
-              type === t.id
-                ? "bg-[var(--primary)] text-white"
-                : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10",
-            )}
           >
             {t.label}
-          </button>
+          </Chip>
         ))}
       </div>
 
-      {/* Search + filters */}
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Input
-          placeholder="Search titles…"
-          value={searchDraft}
-          onChange={(e) => setSearchDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              update({ q: searchDraft.trim() || undefined });
+      <div className="mt-5 rounded-2xl border border-white/10 bg-[var(--surface)] p-4 sm:p-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Input
+            placeholder="Search titles…"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                update({ q: searchDraft.trim() || undefined });
+              }
+            }}
+            aria-label="Search titles"
+            className="h-11"
+          />
+          <Input
+            placeholder="Genre (e.g. Drama)"
+            value={genreDraft}
+            onChange={(e) => setGenreDraft(e.target.value)}
+            onBlur={() => update({ genre: genreDraft.trim() || undefined })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                update({ genre: genreDraft.trim() || undefined });
+              }
+            }}
+            aria-label="Genre"
+            className="h-11"
+          />
+          <Input
+            placeholder="Year"
+            value={yearDraft}
+            onChange={(e) =>
+              setYearDraft(e.target.value.replace(/\D/g, "").slice(0, 4))
             }
-          }}
-        />
-        <Input
-          placeholder="Genre (e.g. Drama)"
-          value={genreDraft}
-          onChange={(e) => setGenreDraft(e.target.value)}
-          onBlur={() => update({ genre: genreDraft.trim() || undefined })}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              update({ genre: genreDraft.trim() || undefined });
+            onBlur={() => update({ year: yearDraft || undefined })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                update({ year: yearDraft || undefined });
+              }
+            }}
+            aria-label="Year"
+            className="h-11"
+          />
+          <Button
+            variant="secondary"
+            className="h-11"
+            onClick={() =>
+              update({
+                q: searchDraft.trim() || undefined,
+                genre: genreDraft.trim() || undefined,
+                year: yearDraft || undefined,
+              })
             }
-          }}
-        />
-        <Input
-          placeholder="Year"
-          value={yearDraft}
-          onChange={(e) => setYearDraft(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          onBlur={() => update({ year: yearDraft || undefined })}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              update({ year: yearDraft || undefined });
-            }
-          }}
-        />
-        <Button
-          variant="secondary"
-          onClick={() =>
-            update({
-              q: searchDraft.trim() || undefined,
-              genre: genreDraft.trim() || undefined,
-              year: yearDraft || undefined,
-            })
-          }
-        >
-          Apply
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setSearchDraft("");
-            setGenreDraft("");
-            setYearDraft("");
-            router.replace("/discover");
-          }}
-        >
-          Clear
-        </Button>
+          >
+            Apply
+          </Button>
+          <Button
+            variant="outline"
+            className="h-11"
+            onClick={() => {
+              setSearchDraft("");
+              setGenreDraft("");
+              setYearDraft("");
+              router.replace("/discover");
+            }}
+          >
+            Clear
+          </Button>
+        </div>
       </div>
 
-      {/* Moods */}
-      <div className="mb-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+      <div className="mt-6">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
           Mood
         </p>
         <div className="flex flex-wrap gap-2">
           {moods.map((m) => (
-            <button
+            <Chip
               key={m.id}
-              type="button"
-              onClick={() =>
-                update({ mood: mood === m.id ? undefined : m.id })
-              }
-              className={cn(
-                "rounded-full px-3 py-1.5 text-sm transition",
+              active={mood === m.id}
+              onClick={() => update({ mood: mood === m.id ? undefined : m.id })}
+              className={
                 mood === m.id
-                  ? "bg-[var(--secondary)]/30 text-white ring-1 ring-[var(--secondary)]"
-                  : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10",
-              )}
+                  ? "!bg-[var(--secondary)]/25 !text-white ring-1 ring-[var(--secondary)]/50"
+                  : undefined
+              }
             >
               {m.emoji} {m.label}
-            </button>
+            </Chip>
           ))}
         </div>
       </div>
 
-      {/* Genres */}
-      <div className="mb-8">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+      <div className="mt-5 mb-8">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
           Genre
         </p>
         <div className="flex flex-wrap gap-2">
@@ -285,21 +300,14 @@ function DiscoverInner() {
               genre.toLowerCase() === name.toLowerCase() ||
               genre.toLowerCase() === String(id).toLowerCase();
             return (
-              <button
+              <Chip
                 key={String(id)}
-                type="button"
-                onClick={() =>
-                  update({ genre: active ? undefined : name })
-                }
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                  active
-                    ? "bg-[var(--primary)] text-white"
-                    : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10",
-                )}
+                active={active}
+                onClick={() => update({ genre: active ? undefined : name })}
+                className="text-xs"
               >
                 {name}
-              </button>
+              </Chip>
             );
           })}
         </div>
@@ -314,7 +322,7 @@ function DiscoverInner() {
       )}
 
       {isError && (
-        <div className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-6 text-center">
+        <div className="rounded-2xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-8 text-center">
           <p className="text-sm text-[var(--text-secondary)]">
             Could not load the live catalog. Try again.
           </p>
@@ -370,38 +378,45 @@ function DiscoverInner() {
       )}
 
       {!isLoading && !isError && items.length === 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-12 text-center">
-          <p className="font-display text-lg font-semibold text-white">
-            No matches
-          </p>
-          <p className="mt-2 text-sm text-[var(--text-muted)]">
-            Broaden filters or try a different mood.
-          </p>
-          {(homeQuery.data?.trending?.length ?? 0) > 0 && (
-            <div className="mt-10 text-left">
-              <h2 className="mb-4 font-display text-xl font-semibold text-white">
-                Trending right now
-              </h2>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {homeQuery.data!.trending.slice(0, 10).map((item) => (
-                  <ContentCard
-                    key={item.id}
-                    content={item}
-                    className="w-full min-w-0"
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <EmptyState
+          title="No matches"
+          description="Broaden filters or try a different mood."
+          actions={[{ href: "/movies", label: "Browse movies", variant: "secondary" }]}
+        />
       )}
+
+      {!isLoading &&
+        !isError &&
+        items.length === 0 &&
+        (homeQuery.data?.trending?.length ?? 0) > 0 && (
+          <div className="mt-10">
+            <h2 className="mb-4 font-display text-xl font-semibold text-white">
+              Trending right now
+            </h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {homeQuery.data!.trending.slice(0, 10).map((item) => (
+                <ContentCard
+                  key={item.id}
+                  content={item}
+                  className="w-full min-w-0"
+                />
+              ))}
+            </div>
+          </div>
+        )}
     </div>
   );
 }
 
 export default function DiscoverPage() {
   return (
-    <Suspense fallback={<div className="pt-24 skeleton h-96 mx-4 rounded-xl" />}>
+    <Suspense
+      fallback={
+        <div className="page-shell">
+          <div className="h-96 skeleton rounded-2xl" />
+        </div>
+      }
+    >
       <DiscoverInner />
     </Suspense>
   );

@@ -6,6 +6,7 @@ import {
 } from "@/data/seed-content";
 import { buildRecommendations } from "@/lib/recommendations";
 import { deduplicateContent, rankSearchResults } from "@/lib/content/dedupe";
+import { filterBlocked, isBlockedTitle } from "@/lib/content/blocklist";
 import {
   fetchAllAnimeLive,
   fetchAdultAnimeCatalog,
@@ -16,8 +17,11 @@ import {
   fetchTmdbCredits,
   fetchTmdbDetail,
   fetchTmdbKdrama,
+  fetchTmdbDrama,
   fetchTmdbMature,
   fetchTmdbMovies,
+  fetchTmdbMoviesByCountry,
+  fetchTmdbSeriesByCountry,
   fetchTmdbSearch,
   fetchTmdbSeasonEpisodes,
   fetchTmdbSeasons,
@@ -36,6 +40,11 @@ import {
   fetchJikanEpisodes,
   resolveJikanMalId,
   resolveTmdbIdForTitle,
+  fetchWorldMoviesPage,
+  fetchWorldSeriesPage,
+  fetchWorldDramaPage,
+  fetchWorldAnimePage,
+  hasTmdbAccess,
   LEGAL_FULL_PLAYBACK,
 } from "@/lib/providers/live-catalog";
 import {
@@ -62,16 +71,28 @@ import {
   isAccurateAdultAnime,
   isMatureContent,
 } from "@/lib/content/mature";
+import {
+  fetchOmdbByImdbId,
+  extractRatings,
+} from "@/lib/providers/omdb-client";
+import {
+  fetchTraktTrendingShows,
+  fetchTraktTrendingMovies,
+} from "@/lib/providers/trakt-client";
+import { enrichWithRegionalPlatforms } from "@/lib/content/regional-enrichment";
+import { fetchGmmtvLatest, mapGmmtvVideo } from "@/lib/providers/gmmtv-youtube";
 import type {
   Content,
   ContentType,
   Credit,
+  DramaContentType,
   Episode,
   Recommendation,
   Season,
   Trailer,
   WatchProvider,
 } from "@/types/content";
+import { isDramaType } from "@/types/content";
 import type { HomePayload, Paginated } from "@/lib/api/content";
 import {
   cinematicBackdropUrl,
@@ -115,18 +136,25 @@ export class CatalogService {
       return cache.items;
     }
 
+    const COUNTRY_CODES = ["KR", "JP", "CN", "TH", "PH"] as const;
+
     const [
       animeAll,
       adultAnime,
       jikan,
       series,
       kdrama,
+      cdrama,
+      jdrama,
+      thaidrama,
       tmdbMovies,
       tmdbSeries,
       tmdbTrend,
       tmdbKd,
       tmdbMature,
       todayBuckets,
+      countryMovieBuckets,
+      countrySeriesBuckets,
     ] = await Promise.all([
       fetchAllAnimeLive(includeMature).catch(() => [] as Content[]),
       includeMature
@@ -135,6 +163,9 @@ export class CatalogService {
       fetchJikanTop().catch(() => [] as Content[]),
       fetchTvMazePopular().catch(() => [] as Content[]),
       fetchTvMazeKdrama().catch(() => [] as Content[]),
+      fetchTmdbDrama("cdrama").catch(() => [] as Content[]),
+      fetchTmdbDrama("jdrama").catch(() => [] as Content[]),
+      fetchTmdbDrama("thaidrama").catch(() => [] as Content[]),
       fetchTmdbMovies().catch(() => [] as Content[]),
       fetchTmdbSeries().catch(() => [] as Content[]),
       fetchTmdbTrending().catch(() => [] as Content[]),
@@ -148,11 +179,24 @@ export class CatalogService {
         anime: [] as Content[],
         kdrama: [] as Content[],
       })),
+      // Per-country movie catalogs (Korean / Japanese / Chinese / Thai / Filipino)
+      Promise.all(
+        COUNTRY_CODES.map((cc) =>
+          fetchTmdbMoviesByCountry(cc).catch(() => [] as Content[]),
+        ),
+      ),
+      // Per-country live-action series (anime excluded in the fetcher)
+      Promise.all(
+        COUNTRY_CODES.map((cc) =>
+          fetchTmdbSeriesByCountry(cc).catch(() => [] as Content[]),
+        ),
+      ),
     ]);
 
-    // Free full movies + free series/anime/kdrama first so Watch Now wins merges
-    const freeMovieCatalog = FREE_FULL_MOVIES.map(freeMovieToContent);
-    const freeShowCatalog = FREE_FULL_SHOWS.map(freeShowToContent);
+    const countryMovies = countryMovieBuckets.flat();
+    const countrySeries = countrySeriesBuckets.flat();
+
+    // Free full movies + free series/anime/kdrama removed — too outdated
     const todayTrending = [
       ...todayBuckets.movies,
       ...todayBuckets.series,
@@ -163,8 +207,6 @@ export class CatalogService {
 
     // Seed first so known trailers (e.g. Attack on Titan) survive merge
     let merged = deduplicateContent([
-      ...freeMovieCatalog,
-      ...freeShowCatalog,
       ...todayTrending,
       // When 18+ is off, never seed mature titles into the main catalog
       ...(includeMature
@@ -176,6 +218,11 @@ export class CatalogService {
       ...jikan,
       ...series,
       ...kdrama,
+      ...cdrama,
+      ...jdrama,
+      ...thaidrama,
+      ...countryMovies,
+      ...countrySeries,
       ...tmdbMovies,
       ...tmdbSeries,
       ...tmdbTrend,
@@ -192,6 +239,9 @@ export class CatalogService {
     if (!includeMature) {
       merged = filterByMatureFlag(merged, false);
     }
+
+    // Remove broken / non-working titles
+    merged = filterBlocked(merged);
 
     // Nothing before 1980 in browse catalogs
     merged = merged.filter(isAtLeastMinYear);
@@ -245,13 +295,9 @@ export class CatalogService {
         c.slug?.replace(/_/g, "-") === decoded.replace(/_/g, "-"),
     );
     if (!hit) {
-      // Last resort: match by id prefix (e.g. tmdb_movie_123 from partial links)
-      const soft = all.find(
-        (c) =>
-          c.slug?.endsWith(decoded) ||
-          decoded.endsWith(c.slug ?? "") ||
-          c.id.includes(decoded),
-      );
+      // Last resort for partial / drifted links only — must stay EXACT so a
+      // query never resolves to a different title (that plays the wrong movie).
+      const soft = softMatchByIdentity(all, decoded);
       if (!soft) return null;
       const hydratedSoft = await this.hydrate(soft.id);
       return hydratedSoft?.content ?? soft;
@@ -285,12 +331,6 @@ export class CatalogService {
           c.slug === idOrSlug ||
           c.id === decoded ||
           c.slug === decoded,
-      ) ??
-      FREE_FULL_MOVIES.map(freeMovieToContent).find(
-        (c) => c.id === decoded || c.slug === decoded,
-      ) ??
-      FREE_FULL_SHOWS.map(freeShowToContent).find(
-        (c) => c.id === decoded || c.slug === decoded,
       );
     if (!base) return null;
 
@@ -455,6 +495,46 @@ export class CatalogService {
       trailer: primary,
     };
 
+    // OMDb rating enrichment — adds IMDb, Rotten Tomatoes, Metacritic scores
+    if (content.providerIds?.imdb || content.providerIds?.tmdb) {
+      try {
+        const omdbTitle = content.providerIds?.imdb
+          ? await fetchOmdbByImdbId(content.providerIds.imdb)
+          : null;
+        if (omdbTitle) {
+          const omdbRatings = extractRatings(omdbTitle);
+          const existingSources = new Set(
+            content.scores?.map((s) => s.source) ?? [],
+          );
+          const newScores = omdbRatings
+            .filter((r) => !existingSources.has(r.source))
+            .map((r) => ({
+              source: r.source as "imdb" | "rotten_tomatoes" | "metacritic",
+              score: r.score,
+              count: r.count,
+            }));
+          if (newScores.length) {
+            content = {
+              ...content,
+              scores: [...(content.scores ?? []), ...newScores],
+              providerIds: {
+                ...content.providerIds,
+                omdb: content.providerIds?.omdb ?? omdbTitle.imdbID,
+              },
+            };
+          }
+        }
+      } catch {
+        // OMDb is enrichment-only — never block hydration
+      }
+    }
+
+    // Regional platform deep-link enrichment
+    const regionalPlatforms = enrichWithRegionalPlatforms(content);
+    if (regionalPlatforms.length > 0) {
+      content = { ...content, regionalPlatforms };
+    }
+
     const payload = {
       at: Date.now(),
       content,
@@ -505,6 +585,9 @@ export class CatalogService {
         year: content.year,
         preferMovie:
           content.contentType === "movie" || content.animeFormat === "MOVIE",
+        // Anime must resolve to an animation TMDB entry, never its live-action
+        // adaptation — otherwise the wrong (live-action) video would play.
+        requireAnimation: content.contentType === "anime",
         alternateTitles: [
           content.englishTitle,
           content.romajiTitle,
@@ -535,9 +618,45 @@ export class CatalogService {
     includeMature = false,
     playableOnly = false,
     region = "US",
+    country?: string,
+    animeFormat?: "movie" | "series",
   ): Promise<Paginated<Content>> {
     const regionCode = (region || "US").toUpperCase();
     const { isTitlePlayable } = await import("@/lib/playback/playback-store");
+    const size = Math.min(Math.max(pageSize, 1), 100);
+
+    // Watch Now / free-only still uses the local playable catalog (not the full world index)
+    if (!playableOnly) {
+      const world = await this.loadWorldCatalogPage(
+        type,
+        page,
+        size,
+        sort,
+        includeMature,
+        country,
+        animeFormat,
+      );
+      if (world) {
+        // When a country filter was passed, TMDB already filtered via
+        // with_origin_country — do NOT re-filter or valid results get dropped.
+        const items = world.items
+          .map((c) => applyMatureFlag(c))
+          .map((c) => tagPlayable(c))
+          .map((c) => applyRegionPlayable(c, regionCode, isTitlePlayable))
+          .map((c) => sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))))
+          .filter((c) => includeMature || !isMatureContent(c))
+          .filter((c) => !isBlockedTitle(c))
+          .filter(isAtLeastMinYear);
+
+        return {
+          items,
+          page: world.page,
+          totalPages: world.totalPages,
+          total: world.total,
+        };
+      }
+    }
+
     const all = (await this.loadLive(includeMature)).map((c) =>
       applyRegionPlayable(c, regionCode, isTitlePlayable),
     );
@@ -548,25 +667,80 @@ export class CatalogService {
     if (playableOnly) {
       items = items.filter((c) => c.playable);
     }
-    // Surface Watch Now (free full) titles first for every catalog type
-    if (sort === "popularity") {
-      const bias = regionCode
-        .split("")
-        .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-      items = [...items].sort((a, b) => {
-        const pa = a.playable ? 1 : 0;
-        const pb = b.playable ? 1 : 0;
-        if (pb !== pa) return pb - pa;
-        const pop = (b.popularity ?? 0) - (a.popularity ?? 0);
-        if (pop !== 0) return pop;
-        return (
-          ((a.id.charCodeAt(0) + bias) % 13) - ((b.id.charCodeAt(0) + bias) % 13)
-        );
-      });
-    } else {
-      items = sortContent(items, sort);
+    // Country filter for country-specific catalog pages
+    if (country) {
+      const cc = country.toUpperCase();
+      items = items.filter(
+        (c) =>
+          c.language?.toLowerCase() === cc.toLowerCase() ||
+          c.countries?.some((cn) => cn.toUpperCase() === cc),
+      );
     }
-    return paginate(items, page, pageSize);
+    // Anime films vs series split
+    if (type === "anime" && animeFormat) {
+      items = items.filter((c) =>
+        animeFormat === "movie"
+          ? c.animeFormat === "MOVIE"
+          : c.animeFormat !== "MOVIE",
+      );
+    }
+    items = sortContent(items, sort);
+    return paginate(items, page, size);
+  }
+
+  /**
+   * On-demand world catalog page from TMDB (movies/series/kdrama) or AniList (anime).
+   * Powers Movies / Series / Anime / K-Drama browse with tens of thousands of titles.
+   */
+  private async loadWorldCatalogPage(
+    type: ContentType,
+    page: number,
+    pageSize: number,
+    sort: CatalogSort,
+    includeMature: boolean,
+    country?: string,
+    animeFormat?: "movie" | "series",
+  ): Promise<{
+    items: Content[];
+    page: number;
+    totalPages: number;
+    total: number;
+  } | null> {
+    try {
+      if (type === "anime") {
+        return await fetchWorldAnimePage(
+          page,
+          pageSize,
+          sort,
+          includeMature,
+          animeFormat,
+        );
+      }
+      if (!hasTmdbAccess()) return null;
+      if (type === "movie") {
+        return await fetchWorldMoviesPage(
+          page,
+          pageSize,
+          sort,
+          includeMature,
+          country,
+        );
+      }
+      if (type === "series") {
+        return await fetchWorldSeriesPage(page, pageSize, sort, country);
+      }
+      if (isDramaType(type)) {
+        return await fetchWorldDramaPage(
+          type as DramaContentType,
+          page,
+          pageSize,
+          sort,
+        );
+      }
+    } catch {
+      return null;
+    }
+    return null;
   }
 
   async home(_region = "US", includeMature = false): Promise<HomePayload> {
@@ -584,6 +758,9 @@ export class CatalogService {
     const series = all.filter((c) => c.contentType === "series");
     const anime = all.filter((c) => c.contentType === "anime");
     const kdrama = all.filter((c) => c.contentType === "kdrama");
+    const cdrama = all.filter((c) => c.contentType === "cdrama");
+    const jdrama = all.filter((c) => c.contentType === "jdrama");
+    const thaidrama = all.filter((c) => c.contentType === "thaidrama");
     const byPop = (a: Content, b: Content) =>
       (b.popularity ?? 0) - (a.popularity ?? 0);
 
@@ -602,10 +779,107 @@ export class CatalogService {
       return out;
     };
 
+    // Korean movies: origin country KR or original language ko
+    const isKoreanMovie = (c: Content) =>
+      c.contentType === "movie" &&
+      (c.language === "ko" || c.countries?.some((cn) => cn === "KR"));
+    const koreanMovies = uniqueById(
+      [...movies].filter(isKoreanMovie).sort(byPop),
+    );
+    // Japanese movies
+    const isJapaneseMovie = (c: Content) =>
+      c.contentType === "movie" &&
+      (c.language === "ja" || c.countries?.some((cn) => cn === "JP"));
+    const japaneseMovies = uniqueById(
+      [...movies].filter(isJapaneseMovie).sort(byPop),
+    );
+    // Chinese movies
+    const isChineseMovie = (c: Content) =>
+      c.contentType === "movie" &&
+      (c.language === "zh" || c.countries?.some((cn) => cn === "CN"));
+    const chineseMovies = uniqueById(
+      [...movies].filter(isChineseMovie).sort(byPop),
+    );
+    // Thai movies
+    const isThaiMovie = (c: Content) =>
+      c.contentType === "movie" &&
+      (c.language === "th" || c.countries?.some((cn) => cn === "TH"));
+    const thaiMovies = uniqueById(
+      [...movies].filter(isThaiMovie).sort(byPop),
+    );
+    // Filipino movies
+    const isFilipinoMovie = (c: Content) =>
+      c.contentType === "movie" &&
+      (c.language === "tl" || c.countries?.some((cn) => cn === "PH"));
+    const filipinoMovies = uniqueById(
+      [...movies].filter(isFilipinoMovie).sort(byPop),
+    );
+    // Filipino series
+    const isFilipinoSeries = (c: Content) =>
+      c.contentType === "series" &&
+      (c.language === "tl" || c.countries?.some((cn) => cn === "PH"));
+    const filipinoSeries = uniqueById(
+      [...series].filter(isFilipinoSeries).sort(byPop),
+    );
+    // Korean series (includes kdrama content type)
+    const isKoreanSeries = (c: Content) =>
+      (c.contentType === "series" || c.contentType === "kdrama") &&
+      (c.language === "ko" || c.countries?.some((cn) => cn === "KR"));
+    const koreanSeries = uniqueById(
+      [...all].filter(isKoreanSeries).sort(byPop),
+    );
+    // Japanese series (includes jdrama content type)
+    const isJapaneseSeries = (c: Content) =>
+      (c.contentType === "series" || c.contentType === "jdrama") &&
+      (c.language === "ja" || c.countries?.some((cn) => cn === "JP"));
+    const japaneseSeries = uniqueById(
+      [...all].filter(isJapaneseSeries).sort(byPop),
+    );
+    // Chinese series (includes cdrama content type)
+    const isChineseSeries = (c: Content) =>
+      (c.contentType === "series" || c.contentType === "cdrama") &&
+      (c.language === "zh" || c.countries?.some((cn) => cn === "CN"));
+    const chineseSeries = uniqueById(
+      [...all].filter(isChineseSeries).sort(byPop),
+    );
+    // Thai series (includes thaidrama content type)
+    const isThaiSeries = (c: Content) =>
+      (c.contentType === "series" || c.contentType === "thaidrama") &&
+      (c.language === "th" || c.countries?.some((cn) => cn === "TH"));
+    const thaiSeries = uniqueById(
+      [...all].filter(isThaiSeries).sort(byPop),
+    );
+    // Mature K-drama: 18+ explicit/nudity Korean dramas
+    const matureKdramas = includeMature
+      ? uniqueById(
+          filterExplicitMatureLibrary(kdrama).sort(byPop),
+        )
+      : [];
+
     const topMovies = uniqueById([...movies].sort(byPop));
     const topSeries = uniqueById([...series].sort(byPop));
     const topAnime = uniqueById([...anime].sort(byPop));
     const topKdrama = uniqueById([...kdrama].sort(byPop));
+    // Tag top cdrama/jdrama/thaidrama as trending-today so they appear in the
+    // "Trending today" row alongside movies/series/anime/kdrama.
+    const tagTopDramas = (list: Content[], boost: number): Content[] =>
+      list.map((c, i) =>
+        i < 20
+          ? {
+              ...c,
+              tags: Array.from(
+                new Set([...(c.tags ?? []), "trending-today", "popular"]),
+              ),
+              popularity: (c.popularity ?? 0) + boost,
+            }
+          : c,
+      );
+    const topCdrama = tagTopDramas(uniqueById([...cdrama].sort(byPop)), 38);
+    const topJdrama = tagTopDramas(uniqueById([...jdrama].sort(byPop)), 37);
+    const topThaidrama = tagTopDramas(
+      uniqueById([...thaidrama].sort(byPop)),
+      36,
+    );
 
     // Popular & trending *today* only — never fill with random catalog/PD
     const todayOnly = (list: Content[], n: number) => {
@@ -619,6 +893,19 @@ export class CatalogService {
     const todaySeries = todayOnly(topSeries, 36);
     const todayAnime = todayOnly(topAnime, 36);
     const todayKdrama = todayOnly(topKdrama, 36);
+    const todayCdrama = todayOnly(topCdrama, 36);
+    const todayJdrama = todayOnly(topJdrama, 36);
+    const todayThaidrama = todayOnly(topThaidrama, 36);
+    const todayKoreanMovies = todayOnly(koreanMovies, 36);
+    const todayJapaneseMovies = todayOnly(japaneseMovies, 36);
+    const todayChineseMovies = todayOnly(chineseMovies, 36);
+    const todayThaiMovies = todayOnly(thaiMovies, 36);
+    const todayFilipinoMovies = todayOnly(filipinoMovies, 36);
+    const todayFilipinoSeries = todayOnly(filipinoSeries, 36);
+    const todayKoreanSeries = todayOnly(koreanSeries, 36);
+    const todayJapaneseSeries = todayOnly(japaneseSeries, 36);
+    const todayChineseSeries = todayOnly(chineseSeries, 36);
+    const todayThaiSeries = todayOnly(thaiSeries, 36);
 
     // Featured hero: balanced mix of today's movies · series · anime · kdrama
     const movieFeat = todayMovies.slice(0, 4);
@@ -657,11 +944,140 @@ export class CatalogService {
 
     const year = new Date().getFullYear();
     const generatedAt = new Date().toISOString();
+
+    // Trakt trending row — lazy-loaded, non-blocking
+    let traktTrending: Content[] = [];
+    try {
+      const [traktShows, traktMovies] = await Promise.all([
+        fetchTraktTrendingShows(12),
+        fetchTraktTrendingMovies(12),
+      ]);
+      const traktItems: Content[] = [];
+      for (const show of traktShows) {
+        traktItems.push({
+          id: `trakt_show_${show.ids.trakt}`,
+          slug: show.ids.slug,
+          contentType: "series",
+          title: show.title,
+          alternateTitles: [],
+          overview: show.overview ?? "",
+          year: show.year,
+          status: show.status === "ended" ? "ended" : "released",
+          countries: [],
+          poster: show.images?.poster
+            ? { url: show.images.poster, source: "local" }
+            : undefined,
+          backdrop: show.images?.fanart
+            ? { url: show.images.fanart, source: "local" }
+            : undefined,
+          scores: show.rating
+            ? [{ source: "trakt" as const, score: show.rating * 10, count: show.votes }]
+            : [],
+          genres: (show.genres ?? []).map((g) => ({
+            id: g,
+            name: g,
+          })),
+          watchProviders: [],
+          regionalPlatforms: [],
+          providerIds: {
+            tmdb: show.ids.tmdb,
+            trakt: show.ids.trakt,
+          },
+          tags: ["trakt-trending"],
+          studios: show.network ? [show.network] : [],
+          approved: true,
+          mature: false,
+          popularity: show.rating ?? 0,
+          lastSyncedAt: generatedAt,
+        });
+      }
+      for (const movie of traktMovies) {
+        traktItems.push({
+          id: `trakt_movie_${movie.ids.trakt}`,
+          slug: movie.ids.slug,
+          contentType: "movie",
+          title: movie.title,
+          alternateTitles: [],
+          overview: movie.overview ?? "",
+          year: movie.year,
+          status: "released",
+          countries: [],
+          poster: movie.images?.poster
+            ? { url: movie.images.poster, source: "local" }
+            : undefined,
+          backdrop: movie.images?.fanart
+            ? { url: movie.images.fanart, source: "local" }
+            : undefined,
+          scores: movie.rating
+            ? [{ source: "trakt" as const, score: movie.rating * 10, count: movie.votes }]
+            : [],
+          genres: (movie.genres ?? []).map((g) => ({
+            id: g,
+            name: g,
+          })),
+          watchProviders: [],
+          regionalPlatforms: [],
+          providerIds: {
+            tmdb: movie.ids.tmdb,
+            trakt: movie.ids.trakt,
+          },
+          tags: ["trakt-trending"],
+          studios: [],
+          approved: true,
+          mature: false,
+          popularity: movie.rating ?? 0,
+          lastSyncedAt: generatedAt,
+        });
+      }
+      traktTrending = uniqueById(traktItems).slice(0, 24);
+    } catch {
+      // Trakt trending is optional — homepage still works without it
+    }
+
+    // GMMTV free Thai dramas — lazy-loaded from YouTube RSS
+    let gmmtvDramas: Content[] = [];
+    try {
+      const gmmtvVideos = await fetchGmmtvLatest(20);
+      gmmtvDramas = gmmtvVideos
+        .map((v) => mapGmmtvVideo(v))
+        .filter(Boolean)
+        .map((partial) => ({
+          id: `gmmtv_${partial!.slug}`,
+          slug: partial!.slug ?? "gmmtv-unknown",
+          contentType: "thaidrama" as const,
+          title: partial!.title ?? "Untitled",
+          alternateTitles: [],
+          overview: partial!.overview ?? "",
+          status: "released" as const,
+          countries: ["TH"],
+          language: "th",
+          genres: [],
+          scores: [],
+          poster: partial!.poster,
+          watchProviders: [],
+          regionalPlatforms: [],
+          providerIds: {},
+          tags: ["gmmtv", "free"],
+          studios: ["GMMTV"],
+          approved: true,
+          mature: false,
+          popularity: 50,
+          lastSyncedAt: generatedAt,
+        })) as Content[];
+    } catch {
+      // GMMTV is optional
+    }
     // Trending row = today's popular across all four types
     const rankedToday = uniqueById(
-      [...todayMovies, ...todaySeries, ...todayAnime, ...todayKdrama].sort(
-        byPop,
-      ),
+      [
+        ...todayMovies,
+        ...todaySeries,
+        ...todayAnime,
+        ...todayKdrama,
+        ...todayCdrama,
+        ...todayJdrama,
+        ...todayThaidrama,
+      ].sort(byPop),
     );
 
     return {
@@ -669,11 +1085,24 @@ export class CatalogService {
       featuredCarousel: featuredUnique,
       featuredUpdatedAt: generatedAt,
       region: regionCode,
-      trending: rankedToday.slice(0, 24),
+      trending: rankedToday.slice(0, 42),
       popularMovies: todayMovies,
       popularSeries: todaySeries,
       airingAnime: todayAnime,
       trendingKdramas: todayKdrama,
+      trendingCdramas: todayCdrama,
+      trendingJdramas: todayJdrama,
+      trendingThaidramas: todayThaidrama,
+      koreanMovies: todayKoreanMovies,
+      koreanSeries: todayKoreanSeries,
+      japaneseMovies: todayJapaneseMovies,
+      japaneseSeries: todayJapaneseSeries,
+      chineseMovies: todayChineseMovies,
+      chineseSeries: todayChineseSeries,
+      thaiMovies: todayThaiMovies,
+      thaiSeries: todayThaiSeries,
+      filipinoMovies: todayFilipinoMovies,
+      filipinoSeries: todayFilipinoSeries,
       newReleases: uniqueById(
         [...all]
           .filter((c) => c.year && c.year >= year - 2)
@@ -718,10 +1147,13 @@ export class CatalogService {
             ),
           ).slice(0, 36)
         : [],
+      matureKdramas,
       communityFavorites: rankedToday.slice(0, 18),
       editorial: featuredUnique.slice(0, 8),
       moods: SEED_MOODS,
       genres: SEED_GENRES,
+      traktTrending,
+      gmmtvDramas,
     };
   }
 
@@ -774,16 +1206,25 @@ export class CatalogService {
 
     let remote: Content[] = [];
     if (q.length >= 2) {
-      const [anilist, tvmaze, tmdb] = await Promise.all([
+      const [anilist, anilist2, tvmaze, tmdb] = await Promise.all([
         fetchAnilistAnime({
           search: q,
-          perPage: 30,
+          perPage: 50,
+          page: 1,
+          isAdult: includeMature ? undefined : false,
+        }).catch(() => []),
+        fetchAnilistAnime({
+          search: q,
+          perPage: 50,
+          page: 2,
           isAdult: includeMature ? undefined : false,
         }).catch(() => []),
         fetchTvMazeSearch(q).catch(() => []),
         fetchTmdbSearch(q).catch(() => []),
       ]);
-      remote = [...anilist, ...tvmaze, ...tmdb].map((c) => applyMatureFlag(c));
+      remote = [...anilist, ...anilist2, ...tvmaze, ...tmdb].map((c) =>
+        applyMatureFlag(c),
+      );
     }
 
     const local = q
@@ -797,6 +1238,7 @@ export class CatalogService {
 
     // Always strip 18+ when mature is off (including remote search hits)
     results = filterByMatureFlag(results, includeMature);
+    results = filterBlocked(results);
     results = results.filter(isAtLeastMinYear);
 
     if (q) {
@@ -1327,6 +1769,66 @@ export class CatalogService {
       tmdbIsMetadataOnly: true,
     };
   }
+}
+
+/**
+ * Strict soft-match for partial / drifted content links.
+ *
+ * Only resolves a query to a title when their IDENTITY matches exactly — never
+ * a loose substring/suffix on free text (which could resolve to a different
+ * title and play the wrong movie). Two safe strategies, in order:
+ *
+ *  1. Provider-id anchored: if the query embeds a provider id (e.g.
+ *     `tmdb_movie_123`, `anilist_456`, or a slug ending in `-123`), match the
+ *     item whose canonical id equals that exact provider-typed id.
+ *  2. Exact slug-stem equality: compare both sides with the trailing `-{id}`
+ *     suffix removed, requiring a full-string match of the title stem.
+ */
+export function softMatchByIdentity(
+  all: Content[],
+  decoded: string,
+): Content | undefined {
+  const q = decoded.trim();
+  if (!q) return undefined;
+
+  // 1) Provider-id anchored match. Pull a trailing/standalone numeric id and,
+  //    when present, the provider prefix (tmdb_movie / tmdb_tv / anilist / …).
+  const prefixed = q.match(
+    /^(tmdb_(?:movie|tv|kdrama|cdrama|jdrama|thaidrama|anime)|jikan|anilist|tvmaze)_(\d+)$/i,
+  );
+  const trailingNum = q.match(/(?:^|[-_])(\d{2,})$/);
+  const rawNum = /^\d{2,}$/.test(q) ? q : null;
+
+  if (prefixed) {
+    const wanted = `${prefixed[1]!.toLowerCase()}_${prefixed[2]!}`;
+    const byExactId = all.find((c) => c.id.toLowerCase() === wanted);
+    if (byExactId) return byExactId;
+  }
+
+  const numId = prefixed?.[2] ?? trailingNum?.[1] ?? rawNum;
+  if (numId) {
+    const n = Number(numId);
+    const byProvider = all.find(
+      (c) =>
+        c.providerIds?.tmdb === n ||
+        c.providerIds?.anilist === n ||
+        c.providerIds?.mal === n ||
+        c.providerIds?.tvmaze === n ||
+        // id ends with exactly this number (e.g. anilist_456 for "456")
+        new RegExp(`_${numId}$`).test(c.id),
+    );
+    if (byProvider) return byProvider;
+  }
+
+  // 2) Exact slug-stem equality (strip trailing `-{digits}` provider suffix).
+  const stem = (s: string) => s.toLowerCase().replace(/-\d+$/, "");
+  const qStem = stem(q);
+  if (qStem.length >= 3) {
+    const exactStem = all.find((c) => c.slug && stem(c.slug) === qStem);
+    if (exactStem) return exactStem;
+  }
+
+  return undefined;
 }
 
 function freeMovieToContent(m: (typeof FREE_FULL_MOVIES)[number]): Content {

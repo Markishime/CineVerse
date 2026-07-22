@@ -4,7 +4,7 @@ import { WatchPage } from "@/components/content/watch-page";
 /**
  * Legal in-app watch page.
  * Plays only rights-approved sources (Cloudflare Stream, PD, official YouTube, etc.).
- * Never uses pirate embeds (VidSrc / 2Embed / etc.).
+ * Uses legal/cloud playback resolution; embed fallbacks are AutoEmbed / VidCore / 2Embed only.
  */
 export default async function WatchRoute({
   params,

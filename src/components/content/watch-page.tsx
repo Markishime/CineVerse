@@ -354,7 +354,8 @@ export function WatchPage({
           | "cloudflare",
       }
     : null;
-  const canFull = Boolean(playback?.eligible && legalFull);
+  // Full playback requires sign-in — non-auth users only see trailers
+  const canFull = Boolean(user && playback?.eligible && legalFull);
   // Watch Now (play=full / default) never auto-opens the trailer — only
   // explicit ?play=trailer does. Full legal sources still autoplay when present.
   const autoFull = (play === "full" || play == null) && canFull;
@@ -448,20 +449,58 @@ export function WatchPage({
           />
         </div>
 
-        {isSeries && content.providerIds?.tmdb && embedSeason && embedEpisode && (
-          <div id="embed-player" className="mt-4">
-            <VideoPlayer
-              tmdbId={content.providerIds.tmdb}
-              mediaType="tv"
-              season={embedSeason}
-              episode={embedEpisode}
-              title={`${title} · S${String(embedSeason).padStart(2, "0")}E${String(embedEpisode).padStart(2, "0")}`}
-              originalLanguage={content.language ?? undefined}
-              contentType={content.contentType}
-              autoPlay
-            />
+        {/* Sign-in prompt for non-auth users when full playback is available */}
+        {!user && playback?.eligible && (
+          <div className="mt-3 flex items-center gap-3 rounded-xl border border-[var(--gold)]/30 bg-[var(--gold)]/10 px-4 py-3">
+            <p className="text-sm text-white">
+              <strong>Sign in</strong> to watch the full movie or series.
+            </p>
+            <Link href="/login">
+              <Button size="sm" variant="gold" className="!text-black">
+                Sign in
+              </Button>
+            </Link>
           </div>
         )}
+        {(content.contentType === "anime" ||
+          (isSeries && content.providerIds?.tmdb)) &&
+          (content.providerIds?.anilist ||
+            content.providerIds?.mal ||
+            content.providerIds?.tmdb) && (
+            <div id="embed-player" className="mt-4">
+              <VideoPlayer
+                tmdbId={content.providerIds?.tmdb}
+                mediaType={
+                  content.animeFormat === "MOVIE" ||
+                  content.providerIds?.tmdbMediaType === "movie"
+                    ? "movie"
+                    : "tv"
+                }
+                season={
+                  content.animeFormat === "MOVIE"
+                    ? 1
+                    : embedSeason ?? 1
+                }
+                episode={
+                  content.animeFormat === "MOVIE"
+                    ? 1
+                    : embedEpisode ?? 1
+                }
+                title={
+                  content.animeFormat === "MOVIE" || !isSeries
+                    ? title
+                    : `${title} · S${String(embedSeason ?? 1).padStart(2, "0")}E${String(embedEpisode ?? 1).padStart(2, "0")}`
+                }
+                originalLanguage={content.language ?? undefined}
+                contentType={content.contentType}
+                anilistId={content.providerIds?.anilist}
+                malId={content.providerIds?.mal}
+                animeFormat={content.animeFormat}
+                year={content.year}
+                autoPlay
+              />
+            </div>
+          )}
 
         {countdown != null && nextEpisode && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-4 py-3 text-sm">

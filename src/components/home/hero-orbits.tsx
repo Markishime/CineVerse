@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
 import type { Group, Mesh } from "three";
@@ -64,7 +64,19 @@ function Ring({
 export function HeroOrbits() {
   const effective = usePerformanceStore((s) => s.effective);
   const webgl = usePerformanceStore((s) => s.webglSupported);
-  if (effective === "performance" || !webgl) return null;
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const id = requestIdleCallback
+      ? requestIdleCallback(() => setReady(true), { timeout: 2000 })
+      : window.setTimeout(() => setReady(true), 600);
+    return () => {
+      if (typeof id === "number") cancelAnimationFrame(id);
+      else clearTimeout(id);
+    };
+  }, []);
+
+  if (effective === "performance" || !webgl || !ready) return null;
 
   return (
     <div className="absolute inset-0 -z-0">

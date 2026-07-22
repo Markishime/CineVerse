@@ -4,7 +4,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
 import { Play, Star } from "lucide-react";
-import { motion, useReducedMotion } from "framer-motion";
 import type { Content } from "@/types/content";
 import { cn, formatScore } from "@/lib/utils";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
@@ -16,7 +15,7 @@ import {
   hasOfficialTrailer,
 } from "@/lib/content/watch-href";
 import { AddToListButton } from "@/components/content/add-to-list-button";
-import { springSoft } from "@/lib/motion";
+import { useAuthStore } from "@/stores/auth-store";
 
 const typeTone: Record<
   Content["contentType"],
@@ -26,6 +25,9 @@ const typeTone: Record<
   series: "cyan",
   anime: "accent",
   kdrama: "gold",
+  cdrama: "gold",
+  jdrama: "gold",
+  thaidrama: "gold",
 };
 
 const typeLabel: Record<Content["contentType"], string> = {
@@ -33,6 +35,9 @@ const typeLabel: Record<Content["contentType"], string> = {
   series: "Series",
   anime: "Anime",
   kdrama: "K-Drama",
+  cdrama: "C-Drama",
+  jdrama: "J-Drama",
+  thaidrama: "Thai Drama",
 };
 
 export function ContentCard({
@@ -50,35 +55,34 @@ export function ContentCard({
 }) {
   const title = displayTitle(content, animeTitlePreference);
   const score = primaryScore(content);
-  // Gold ring when free legal full OR TMDb embed path is available
   const canWatch = Boolean(content.playable || content.providerIds?.tmdb);
   const trailer = hasOfficialTrailer(content);
-  // Always route Watch Now through full playback (hydrate resolves TMDb for anime)
   const watchHref = getWatchHref(content);
   const trailerHref = getTrailerHref(content);
   const detailsHref = getDetailsHref(content);
   const [imgFailed, setImgFailed] = useState(false);
-  const reduce = useReducedMotion();
+  const user = useAuthStore((s) => s.user);
   const src =
     !imgFailed &&
     ((wide && content.backdrop?.url) || content.poster?.url || "");
 
   return (
-    <motion.div
+    <article
       className={cn(
-        "group relative flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-sm",
+        // GPU-friendly hover: transform + border/shadow only, no JS per frame.
+        "group relative flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)]",
+        "transition-transform duration-200 ease-out will-change-transform motion-safe:hover:-translate-y-1",
+        "hover:border-white/18 hover:shadow-[0_14px_40px_-18px_rgba(0,0,0,0.8)]",
+        "focus-within:border-[var(--primary)]/40 focus-within:ring-2 focus-within:ring-[var(--ring)]",
         wide ? "min-w-[220px] sm:min-w-[280px]" : "min-w-[140px] w-[140px] sm:w-[160px]",
-        canWatch && "ring-1 ring-[var(--gold)]/50",
+        canWatch && "ring-1 ring-[var(--gold)]/40",
         className,
       )}
-      whileHover={reduce ? undefined : { y: -6, scale: 1.02 }}
-      whileTap={reduce ? undefined : { scale: 0.98 }}
-      transition={springSoft}
     >
       <Link
         href={watchHref}
         className={cn(
-          "relative w-full overflow-hidden bg-[#0c0c12] focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+          "relative w-full overflow-hidden bg-[var(--background-secondary)] focus-visible:outline-none",
           wide ? "aspect-[16/9]" : "aspect-[2/3]",
         )}
         aria-label={`Watch Now: ${title}`}
@@ -89,32 +93,32 @@ export function ContentCard({
             alt={title}
             fill
             sizes={wide ? "(max-width:768px) 80vw, 280px" : "160px"}
-            className="object-cover transition-transform duration-500 group-hover:scale-105"
+            className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
             unoptimized
             onError={() => setImgFailed(true)}
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#1a1a28] to-[#2a2040] p-2 text-center text-xs font-semibold text-white">
+          <div className="absolute inset-0 flex items-center justify-center bg-[var(--surface-elevated)] p-2 text-center text-xs font-semibold text-white">
             {title}
           </div>
         )}
-        {/* Strong bottom scrim so overlays stay readable */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-black/30" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-black/20" />
 
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--gold)] text-[#1a1408] shadow-xl">
-            <Play className="h-5 w-5 fill-current" />
+        {/* Play affordance: pure CSS opacity fade on hover / keyboard focus. */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--gold)] text-black shadow-xl">
+            <Play className="h-4 w-4 fill-current" aria-hidden />
           </span>
         </div>
 
         {rank != null && (
-          <span className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-[var(--gold)] text-xs font-bold text-[#1a1408] shadow">
+          <span className="absolute left-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-[var(--gold)] px-1.5 text-xs font-bold text-black shadow">
             {rank}
           </span>
         )}
 
         {content.mature && (
-          <span className="absolute right-2 top-2 rounded-md bg-[var(--danger)] px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-lg">
+          <span className="absolute right-2 top-2 rounded-md bg-[var(--danger)] px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
             18+
           </span>
         )}
@@ -124,20 +128,23 @@ export function ContentCard({
             {typeLabel[content.contentType]}
           </Badge>
           {score != null && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-black/75 px-1.5 py-0.5 text-[11px] font-semibold text-[var(--gold)]">
-              <Star className="h-3 w-3 fill-current" />
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-black/80 px-1.5 py-0.5 text-[11px] font-semibold text-[var(--gold)]">
+              <Star className="h-3 w-3 fill-current" aria-hidden />
               {formatScore(score)}
             </span>
           )}
         </div>
       </Link>
 
-      <div className="flex flex-1 flex-col gap-1.5 bg-[var(--surface)] p-2.5">
-        <Link href={detailsHref} className="min-w-0">
-          <h3 className="line-clamp-2 font-display text-sm font-semibold leading-snug text-white hover:text-[var(--primary-light)]">
+      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
+        <Link
+          href={detailsHref}
+          className="min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        >
+          <h3 className="line-clamp-2 font-display text-sm font-semibold leading-snug text-white transition-colors hover:text-[var(--primary-light)]">
             {title}
           </h3>
-          <p className="text-xs text-[var(--text-secondary)]">
+          <p className="text-xs text-[var(--text-muted)]">
             {[content.year, content.runtime ? `${content.runtime}m` : null]
               .filter(Boolean)
               .join(" · ")}
@@ -145,24 +152,24 @@ export function ContentCard({
         </Link>
         <div className="mt-auto flex flex-col gap-1.5">
           <Link
-            href={watchHref}
-            className="watch-now-cta inline-flex items-center justify-center gap-1 rounded-lg bg-[var(--gold)] px-2 py-1.5 text-[11px] font-bold !text-black transition hover:brightness-110"
+            href={user ? watchHref : "/login"}
+            className="watch-now-cta inline-flex min-h-9 items-center justify-center gap-1 rounded-lg bg-[var(--gold)] px-2 py-1.5 text-[11px] font-bold !text-black transition duration-150 hover:brightness-110 active:scale-[0.98]"
           >
-            <Play className="h-3 w-3 fill-current !text-black" />
-            Watch Now
+            <Play className="h-3 w-3 fill-current !text-black" aria-hidden />
+            {user ? "Watch Now" : "Sign in to Watch"}
           </Link>
           <AddToListButton content={content} className="w-full" />
           {trailer && (
             <Link
               href={trailerHref}
-              className="inline-flex items-center justify-center gap-1 rounded-lg bg-white/12 px-2 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/20"
+              className="inline-flex min-h-8 items-center justify-center gap-1 rounded-lg border border-white/10 bg-transparent px-2 py-1.5 text-[11px] font-semibold text-white transition duration-150 hover:bg-white/8"
             >
-              <Play className="h-3 w-3" />
-              Watch Trailer
+              <Play className="h-3 w-3" aria-hidden />
+              Trailer
             </Link>
           )}
         </div>
       </div>
-    </motion.div>
+    </article>
   );
 }

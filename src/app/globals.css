@@ -116,8 +116,10 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  /* Lenis owns wheel smoothing; native smooth fights it */
+  scroll-behavior: auto;
   color-scheme: dark;
+  -webkit-overflow-scrolling: touch;
 }
 
 html.lenis,
@@ -127,6 +129,48 @@ html.lenis body {
 
 .lenis.lenis-smooth {
   scroll-behavior: auto !important;
+}
+
+html,
+body {
+  overflow-x: clip;
+}
+
+/* Hero Ken Burns — subtle push on active poster/backdrop */
+@media (prefers-reduced-motion: no-preference) {
+  .hero-kenburns {
+    animation: hero-kenburns 18s ease-out forwards;
+    will-change: transform;
+  }
+
+  @keyframes hero-kenburns {
+    from {
+      transform: scale(1.08) translate3d(0, 1.5%, 0);
+    }
+    to {
+      transform: scale(1.14) translate3d(0, -1%, 0);
+    }
+  }
+
+  .hero-scroll-cue {
+    animation: hero-scroll-cue 2.2s ease-in-out infinite;
+  }
+
+  @keyframes hero-scroll-cue {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0);
+      opacity: 0.55;
+    }
+    50% {
+      transform: translate3d(0, 6px, 0);
+      opacity: 1;
+    }
+  }
+
+  .landing-row-enter {
+    /* will-change removed for perf — 20+ rows with will-change is expensive */
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -218,18 +262,16 @@ button[class*="bg-[var(--gold)]"] span {
   text-shadow: 0 1px 14px rgba(0, 0, 0, 0.5);
 }
 
-/* Scrim panels for text over images / video */
+/* Scrim panels for text over images / video — solid-first (impeccable: no glass default) */
 .text-scrim {
   background: linear-gradient(
-    135deg,
-    rgba(5, 6, 10, 0.88) 0%,
-    rgba(8, 11, 18, 0.72) 55%,
-    rgba(5, 6, 10, 0.45) 100%
+    145deg,
+    rgba(5, 6, 10, 0.94) 0%,
+    rgba(8, 11, 18, 0.88) 55%,
+    rgba(5, 6, 10, 0.72) 100%
   );
   border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
 body::before {
@@ -258,27 +300,20 @@ body::before {
   color: var(--text-secondary);
 }
 
+/* Elevated chrome — prefer solid surfaces over glass */
 .glass {
-  background: rgba(17, 24, 39, 0.72);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  background: rgba(17, 24, 39, 0.92);
   border: 1px solid var(--border);
 }
 
 .glass-strong {
-  background: rgba(8, 11, 18, 0.9);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(5, 6, 10, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .surface-card {
-  background: linear-gradient(
-    160deg,
-    rgba(26, 36, 56, 0.98),
-    rgba(17, 24, 39, 0.98)
-  );
-  border: 1px solid transparent;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   color: var(--text-primary);
 }
@@ -332,6 +367,51 @@ body::before {
   outline-offset: 2px;
 }
 
+/* Shared form controls (settings, discover, etc.) */
+.field-select,
+.field-textarea {
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.field-textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.field-select:hover,
+.field-textarea:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.field-select:focus,
+.field-textarea:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.page-shell {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 80rem;
+  padding: 6rem 1rem 6rem;
+}
+
+@media (min-width: 640px) {
+  .page-shell {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -345,6 +425,93 @@ body::before {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.28);
+}
+
+/* ── Cinematic film-grain overlay (CSS-only, zero JS) ─────────────── */
+.cinematic-grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  mix-blend-mode: overlay;
+  will-change: opacity;
+}
+
+/* ── Ambient glow behind content rows (GPU-accelerated) ────────────── */
+.cinematic-glow {
+  position: relative;
+}
+.cinematic-glow::before {
+  content: "";
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  width: 400px;
+  height: 200px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse 100% 100% at 50% 50%,
+    rgba(139, 124, 255, 0.07),
+    transparent 70%
+  );
+  pointer-events: none;
+  will-change: opacity;
+}
+
+/* ── Section divider line (subtle, between major blocks) ────────────── */
+.cinematic-divider {
+  position: relative;
+}
+.cinematic-divider::before {
+  content: "";
+  display: block;
+  width: 120px;
+  height: 1px;
+  margin: 0 auto 2.5rem;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(139, 124, 255, 0.4) 50%,
+    transparent
+  );
+}
+
+/* ── Hero-to-content cinematic transition (taller, richer fade) ─────── */
+.hero-cinematic-fade {
+  height: 120px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(5, 6, 10, 0.4) 35%,
+    rgba(5, 6, 10, 0.85) 70%,
+    var(--background) 100%
+  );
+}
+
+/* ── Spotlight vignette for the hero section ────────────────────────── */
+.hero-vignette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 80% 70% at 50% 50%,
+    transparent 40%,
+    rgba(5, 6, 10, 0.65) 100%
+  );
+}
+
+/* ── Reduced-motion: strip all cinematic overlays ───────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .cinematic-grain::after,
+  .cinematic-glow::before,
+  .cinematic-divider::before {
+    display: none;
+  }
 }
 
 .no-scrollbar::-webkit-scrollbar {

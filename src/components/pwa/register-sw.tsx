@@ -38,11 +38,11 @@ export function RegisterServiceWorker() {
   if (!updateReady) return null;
 
   return (
-    <div className="fixed bottom-20 left-1/2 z-[60] w-[min(420px,92vw)] -translate-x-1/2 rounded-xl glass-strong p-3 shadow-xl md:bottom-6">
-      <p className="text-sm">A new version of CineVerse is ready.</p>
+    <div className="fixed bottom-20 left-1/2 z-[60] w-[min(420px,92vw)] -translate-x-1/2 rounded-xl border border-white/10 bg-[var(--surface)] p-4 shadow-[0_16px_48px_rgba(0,0,0,0.55)] md:bottom-6">
+      <p className="text-sm text-white">A new version of CineVerse is ready.</p>
       <Button
         size="sm"
-        className="mt-2"
+        className="mt-3"
         onClick={() => {
           waiting?.postMessage("SKIP_WAITING");
           window.location.reload();

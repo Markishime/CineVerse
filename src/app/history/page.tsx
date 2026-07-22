@@ -3,13 +3,14 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { History } from "lucide-react";
 import { fetchContentById } from "@/lib/api/content";
 import { ContentCard } from "@/components/content/content-card";
 import { ContinueWatchingRow } from "@/components/content/continue-watching-row";
+import { PageHeader } from "@/components/layout/page-header";
+import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
-import {
-  contentFromSnapshot,
-} from "@/lib/user/my-list";
+import { contentFromSnapshot } from "@/lib/user/my-list";
 import {
   getLocalSnapshot,
   readLocalLibrary,
@@ -25,7 +26,8 @@ export default function HistoryPage() {
   useEffect(() => {
     const onChange = () => setTick((n) => n + 1);
     window.addEventListener("cineverse-library-changed", onChange);
-    return () => window.removeEventListener("cineverse-library-changed", onChange);
+    return () =>
+      window.removeEventListener("cineverse-library-changed", onChange);
   }, []);
 
   const completed = useMemo(() => {
@@ -69,11 +71,19 @@ export default function HistoryPage() {
     .filter(Boolean) as Content[];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-24 pt-24 sm:px-6">
-      <h1 className="font-display text-3xl font-bold">History</h1>
-      <p className="mt-2 text-sm text-[var(--text-muted)]">
-        Continue watching and completed titles for your account on this device.
-      </p>
+    <div className="page-shell">
+      <PageHeader
+        eyebrow="Watch activity"
+        title="History"
+        description="Continue watching and titles you marked completed on this device."
+        actions={
+          <Link href="/watchlist">
+            <Button variant="secondary" size="sm">
+              Open My List
+            </Button>
+          </Link>
+        }
+      />
 
       <div className="mt-10">
         <ContinueWatchingRow title="Continue watching" />
@@ -82,25 +92,25 @@ export default function HistoryPage() {
       <h2 className="mt-12 font-display text-xl font-semibold text-white">
         Completed
       </h2>
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {items.map((c) => (
-          <ContentCard key={c.id} content={c} className="w-full min-w-0" />
-        ))}
-      </div>
-      {items.length === 0 && (
-        <p className="mt-8 text-[var(--text-muted)]">
-          Nothing completed yet.{" "}
-          <Link href="/discover" className="text-[var(--primary-light)]">
-            Start watching
-          </Link>
-          .
-        </p>
+
+      {items.length > 0 ? (
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {items.map((c) => (
+            <ContentCard key={c.id} content={c} className="w-full min-w-0" />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          className="mt-6"
+          icon={History}
+          title="Nothing completed yet"
+          description="Mark titles as watched from a detail page, or keep going with Discover."
+          actions={[
+            { href: "/discover", label: "Start watching" },
+            { href: "/watchlist", label: "My List", variant: "secondary" },
+          ]}
+        />
       )}
-      <div className="mt-8">
-        <Link href="/watchlist">
-          <Button variant="secondary">Open My List</Button>
-        </Link>
-      </div>
     </div>
   );
 }
