@@ -1765,44 +1765,39 @@ export async function fetchWorldSeriesPage(
   if (sort === "rating") {
     base["vote_count.gte"] = "40";
   }
+  const { isGeneralSeriesOnly } = await import(
+    "@/lib/content/classification"
+  );
+
   const result = await fetchTmdbDiscoverWindow({
     path: "/discover/tv",
     baseParams: base,
     page,
-    pageSize: pageSize + 24, // headroom after dropping anime/dramas
+    pageSize: pageSize + 40, // headroom after dropping anime/dramas
     map: (r) => {
       // Hard-drop Animation genre before mapping
       const genreIds = Array.isArray(r.genre_ids)
         ? (r.genre_ids as number[])
         : [];
       if (genreIds.includes(16)) return null;
-      return mapTmdbTv(r, false);
+      const c = mapTmdbTv(r, false);
+      if (!c) return null;
+      // Series tab only accepts contentType=series (no anime / kdrama / …)
+      if (c.contentType !== "series") return null;
+      if (country) {
+        if (c.animeFormat) return null;
+        if (c.genres.some((g) => /anim/i.test(g.name) || g.id === "16")) {
+          return null;
+        }
+        return c;
+      }
+      return isGeneralSeriesOnly(c) ? c : null;
     },
   });
 
-  const { isGeneralSeriesOnly } = await import(
-    "@/lib/content/classification"
-  );
-
-  // Country pages (e.g. PH series) keep origin filter only — still no anime.
-  if (country) {
-    const items = result.items
-      .filter((c) => c.contentType === "series")
-      .filter((c) => !c.animeFormat)
-      .filter(
-        (c) =>
-          !c.genres.some((g) => /anim/i.test(g.name) || g.id === "16"),
-      )
-      .slice(0, pageSize);
-    return { ...result, items };
-  }
-
-  const items = result.items
-    .filter(isGeneralSeriesOnly)
-    .slice(0, pageSize);
   return {
     ...result,
-    items,
+    items: result.items.slice(0, pageSize),
   };
 }
 
