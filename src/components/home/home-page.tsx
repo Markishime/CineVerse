@@ -138,7 +138,7 @@ export function HomePage() {
 
         <ContentRow
           title="Trending today"
-          subtitle="Movies · series · anime · K-drama"
+          subtitle="Movies · series · anime · dramas"
           items={home.trending}
           showRank
         />
@@ -159,17 +159,44 @@ export function HomePage() {
           subtitle="TV series · OVAs · trending Japanese animation"
           items={home.airingAnime}
         />
-        <ContentRow
-          title="Popular K-dramas today"
-          subtitle="Top Korean series"
-          items={home.trendingKdramas}
-        />
-        <ContentRow
-          title="Popular Korean movies today"
-          subtitle="Top Korean cinema"
-          items={home.koreanMovies}
-          wide
-        />
+
+        {/* Drama rows — always render when data exists (K / J / C / Thai / Filipino) */}
+        <div className="cinematic-glow relative space-y-12 sm:space-y-14">
+          <ContentRow
+            title="Popular K-dramas today"
+            subtitle="Top Korean series"
+            items={home.trendingKdramas}
+          />
+          <ContentRow
+            title="Popular J-dramas today"
+            subtitle="Top Japanese dramas"
+            items={home.trendingJdramas}
+          />
+          <ContentRow
+            title="Popular C-dramas today"
+            subtitle="Top Chinese dramas"
+            items={home.trendingCdramas}
+          />
+          <ContentRow
+            title="Popular Thai dramas today"
+            subtitle="Top Thai dramas"
+            items={home.trendingThaidramas}
+          />
+          <ContentRow
+            title="Popular Filipino dramas today"
+            subtitle="Top Filipino series & dramas"
+            items={home.filipinoSeries}
+          />
+        </div>
+
+        {(home.koreanMovies?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular Korean movies today"
+            subtitle="Top Korean cinema"
+            items={home.koreanMovies}
+            wide
+          />
+        )}
         {(home.koreanSeries?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Korean series today"
@@ -228,30 +255,6 @@ export function HomePage() {
             items={home.filipinoMovies}
           />
         )}
-        {(home.filipinoSeries?.length ?? 0) > 0 && (
-          <ContentRow
-            title="Popular Filipino series today"
-            subtitle="Top Filipino TV"
-            items={home.filipinoSeries}
-          />
-        )}
-        <div className="cinematic-glow relative">
-          <ContentRow
-            title="Popular J-dramas today"
-            subtitle="Top Japanese series"
-            items={home.trendingJdramas}
-          />
-          <ContentRow
-            title="Popular C-dramas today"
-            subtitle="Top Chinese series"
-            items={home.trendingCdramas}
-          />
-          <ContentRow
-            title="Popular Thai dramas today"
-            subtitle="Top Thai series"
-            items={home.trendingThaidramas}
-          />
-        </div>
         {/* 18+ titles never appear on home (popular/trending). Open the 18+ tab. */}
 
         <div className="cinematic-divider" />

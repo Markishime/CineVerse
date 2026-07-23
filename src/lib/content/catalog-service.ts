@@ -105,6 +105,8 @@ import type { HomePayload, Paginated } from "@/lib/api/content";
 import {
   cinematicBackdropUrl,
   cinematicPosterUrl,
+  ensureContentPoster,
+  isLikelyBrokenPosterUrl,
   isValidImageUrl,
   normalizeImageUrl,
 } from "@/lib/content/posters";
@@ -1307,29 +1309,33 @@ export class CatalogService {
       ].sort(byPop),
     );
 
+    // Guarantee every home-row item has a real or local poster (never blank).
+    const withPosters = <T extends Content>(list: T[]): T[] =>
+      list.map((c) => ensurePoster(c) as T);
+
     return {
-      featured: featuredUnique[0] ?? null,
-      featuredCarousel: featuredUnique,
+      featured: featuredUnique[0] ? ensurePoster(featuredUnique[0]) : null,
+      featuredCarousel: withPosters(featuredUnique),
       featuredUpdatedAt: generatedAt,
       region: regionCode,
-      trending: rankedToday.slice(0, 42),
-      popularMovies: todayMovies,
-      popularSeries: todaySeries,
-      airingAnime: todayAnime,
-      trendingKdramas: todayKdrama,
-      trendingCdramas: todayCdrama,
-      trendingJdramas: todayJdrama,
-      trendingThaidramas: todayThaidrama,
-      koreanMovies: todayKoreanMovies,
-      koreanSeries: todayKoreanSeries,
-      japaneseMovies: todayJapaneseMovies,
-      japaneseSeries: todayJapaneseSeries,
-      chineseMovies: todayChineseMovies,
-      chineseSeries: todayChineseSeries,
-      thaiMovies: todayThaiMovies,
-      thaiSeries: todayThaiSeries,
-      filipinoMovies: todayFilipinoMovies,
-      filipinoSeries: todayFilipinoSeries,
+      trending: withPosters(rankedToday.slice(0, 42)),
+      popularMovies: withPosters(todayMovies),
+      popularSeries: withPosters(todaySeries),
+      airingAnime: withPosters(todayAnime),
+      trendingKdramas: withPosters(todayKdrama),
+      trendingCdramas: withPosters(todayCdrama),
+      trendingJdramas: withPosters(todayJdrama),
+      trendingThaidramas: withPosters(todayThaidrama),
+      koreanMovies: withPosters(todayKoreanMovies),
+      koreanSeries: withPosters(todayKoreanSeries),
+      japaneseMovies: withPosters(todayJapaneseMovies),
+      japaneseSeries: withPosters(todayJapaneseSeries),
+      chineseMovies: withPosters(todayChineseMovies),
+      chineseSeries: withPosters(todayChineseSeries),
+      thaiMovies: withPosters(todayThaiMovies),
+      thaiSeries: withPosters(todayThaiSeries),
+      filipinoMovies: withPosters(todayFilipinoMovies),
+      filipinoSeries: withPosters(todayFilipinoSeries),
       newReleases: uniqueById(
         [...all]
           .filter((c) => c.year && c.year >= year - 2)
@@ -2228,23 +2234,13 @@ function tagMatureFromRating(c: Content): Content {
 void tagMatureFromRating;
 
 function ensurePoster(c: Content): Content {
-  let next = c;
-  const posterUrl = normalizeImageUrl(c.poster?.url);
-  if (!posterUrl) {
-    next = {
-      ...next,
-      poster: {
-        url: cinematicPosterUrl(c.id, c.title, c.contentType),
-        source: "local",
-      },
-    };
-  } else if (posterUrl !== c.poster?.url) {
-    next = {
-      ...next,
-      poster: { url: posterUrl, source: c.poster?.source ?? "tmdb" },
-    };
-  }
-  const backdropUrl = normalizeImageUrl(c.backdrop?.url);
+  // Strip fake seed / 404 TMDB paths then guarantee a displayable poster
+  let next = ensureContentPoster(c);
+  const backdropRaw = c.backdrop?.url;
+  const backdropUrl =
+    backdropRaw && !isLikelyBrokenPosterUrl(backdropRaw)
+      ? normalizeImageUrl(backdropRaw)
+      : null;
   if (!backdropUrl) {
     next = {
       ...next,
@@ -2256,7 +2252,10 @@ function ensurePoster(c: Content): Content {
   } else if (backdropUrl !== c.backdrop?.url) {
     next = {
       ...next,
-      backdrop: { url: backdropUrl, source: c.backdrop?.source ?? "tmdb" },
+      backdrop: {
+        url: backdropUrl,
+        source: c.backdrop?.source ?? "tmdb",
+      },
     };
   }
   return next;

@@ -9,6 +9,7 @@ import { ContentCard } from "./content-card";
 import { Button } from "@/components/ui/button";
 import { inViewOnce, rowEnter } from "@/lib/motion";
 import { filterPublicCatalog } from "@/lib/content/mature";
+import { ensureContentPoster } from "@/lib/content/posters";
 
 function LazyRender({
   children,
@@ -77,7 +78,8 @@ export function ContentRow({
     for (const item of source) {
       if (!item?.id || seen.has(item.id)) continue;
       seen.add(item.id);
-      out.push(item);
+      // Guarantee every card has a poster (fixes blank K-drama / seed art)
+      out.push(ensureContentPoster(item));
     }
     return out;
   }, [items, publicSafe]);

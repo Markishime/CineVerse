@@ -19,8 +19,8 @@ import { AddToListButton } from "@/components/content/add-to-list-button";
 import { useAuthStore } from "@/stores/auth-store";
 import { cardHover } from "@/lib/motion";
 import {
-  normalizeImageUrl,
   posterFallbackLabel,
+  resolveCardImageUrl,
 } from "@/lib/content/posters";
 
 const typeTone: Record<
@@ -69,10 +69,8 @@ export function ContentCard({
   const [imgFailed, setImgFailed] = useState(false);
   const user = useAuthStore((s) => s.user);
   const reduce = useReducedMotion();
-  const preferred =
-    (wide && normalizeImageUrl(content.backdrop?.url)) ||
-    normalizeImageUrl(content.poster?.url) ||
-    posterFallbackLabel(title, content.contentType);
+  // Always resolve a displayable URL (real art or local SVG — never blank)
+  const preferred = resolveCardImageUrl(content, { preferBackdrop: wide });
   const src = imgFailed
     ? posterFallbackLabel(title, content.contentType)
     : preferred;
