@@ -64,8 +64,15 @@ export interface HomePayload {
 }
 
 export function fetchHome(region?: string, mature?: boolean) {
-  // Short client timeout — seed placeholder already paints the page.
-  const path = `/home${buildQuery({ region, mature: mature ? "1" : undefined })}`;
+  // Do not force region=US — omit region so the API stays global.
+  const path = `/home${buildQuery({
+    mature: mature ? "1" : undefined,
+    // Only pass region when it is a real country code (not * / auto / empty)
+    region:
+      region && region !== "*" && region.toUpperCase() !== "AUTO"
+        ? region
+        : undefined,
+  })}`;
   return Promise.race([
     apiFetch<HomePayload>(path, { auth: false }),
     new Promise<never>((_, reject) =>

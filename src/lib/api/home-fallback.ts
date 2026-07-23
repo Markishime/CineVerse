@@ -28,7 +28,7 @@ export function seedHomePayload(): HomePayload {
     featured: featured[0] ?? null,
     featuredCarousel: featured,
     featuredUpdatedAt: new Date().toISOString(),
-    region: "US",
+    region: "*",
     trending: byPop.slice(0, 36),
     popularMovies: movies,
     popularSeries: series,

@@ -47,14 +47,14 @@ const catalog: Content[] = [
   }),
 ];
 
-describe("softMatchByIdentity (tightened slug fallback)", () => {
+describe("softMatchByIdentity (exact identity only)", () => {
   it("resolves a full provider-typed id", () => {
     expect(softMatchByIdentity(catalog, "tmdb_movie_100")?.id).toBe(
       "tmdb_movie_100",
     );
   });
 
-  it("resolves a slug carrying the provider id suffix", () => {
+  it("resolves exact slug", () => {
     expect(softMatchByIdentity(catalog, "parasite-100")?.id).toBe(
       "tmdb_movie_100",
     );
@@ -64,32 +64,24 @@ describe("softMatchByIdentity (tightened slug fallback)", () => {
     expect(softMatchByIdentity(catalog, "456")?.id).toBe("anilist_456");
   });
 
-  it("does NOT resolve a title to a DIFFERENT film sharing a suffix", () => {
-    // The old bug: "parasite" matched "old-parasite-555" via endsWith.
-    // Now the stem of "parasite" ("parasite") only equals the stem of
-    // "parasite-100", never "old-parasite-555".
-    const hit = softMatchByIdentity(catalog, "parasite");
-    expect(hit?.id).toBe("tmdb_movie_100");
-    expect(hit?.id).not.toBe("tmdb_movie_555");
+  it("does NOT treat a release year as a provider id (wrong-video bug)", () => {
+    // "parasite-2019" must not resolve to tmdb id 2019 or random year match
+    expect(softMatchByIdentity(catalog, "2019")).toBeUndefined();
+    expect(softMatchByIdentity(catalog, "parasite-2019")).toBeUndefined();
+  });
+
+  it("does NOT resolve bare title stems (prevents wrong film)", () => {
+    expect(softMatchByIdentity(catalog, "parasite")).toBeUndefined();
   });
 
   it("does NOT substring-match ids", () => {
-    // "10" must not resolve to tmdb_movie_100 via includes().
     expect(softMatchByIdentity(catalog, "10")).toBeUndefined();
-  });
-
-  it("resolves exact slug stem when suffix drifted off", () => {
-    // Query lost its -100; exact stem "parasite" matches only parasite-100.
-    // (Guarded: only the parasite-100 stem equals "parasite", not old-parasite.)
-    expect(softMatchByIdentity(catalog, "parasite-100")?.id).toBe(
-      "tmdb_movie_100",
-    );
-    // A stem that matches nothing exactly returns undefined.
-    expect(softMatchByIdentity(catalog, "para")).toBeUndefined();
   });
 
   it("returns undefined for empty / unmatched queries", () => {
     expect(softMatchByIdentity(catalog, "")).toBeUndefined();
-    expect(softMatchByIdentity(catalog, "totally-unknown-title")).toBeUndefined();
+    expect(
+      softMatchByIdentity(catalog, "totally-unknown-title"),
+    ).toBeUndefined();
   });
 });

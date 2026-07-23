@@ -146,7 +146,7 @@ function recomputeTitlePlayable(titleId: string) {
   });
 }
 
-export function isTitlePlayable(titleId: string, region = "US"): boolean {
+export function isTitlePlayable(titleId: string, region = "*"): boolean {
   ensureSeeded();
   return listSources({ titleId, status: "approved" }).some((s) => {
     if (s.contentKind !== "full_movie" && s.contentKind !== "full_episode") {
@@ -160,7 +160,11 @@ export function regionAllowed(
   source: PlaybackSourceDocument,
   region: string,
 ): boolean {
-  const r = region.toUpperCase();
+  const r = (region || "*").toUpperCase();
+  // Unrestricted caller region → any non-blocked source is fine
+  if (r === "*" || r === "AUTO" || r === "GLOBAL") {
+    return true;
+  }
   if (source.blockedRegions.map((x) => x.toUpperCase()).includes(r)) {
     return false;
   }

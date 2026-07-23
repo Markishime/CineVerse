@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "static.tvmaze.com" },
       { protocol: "https", hostname: "api.tvmaze.com" },
       { protocol: "https", hostname: "archive.org" },
-      { protocol: "https", hostname: "*.archive.org" },
+      { protocol: "https", hostname: "ia600200.us.archive.org" },
       { protocol: "https", hostname: "upload.wikimedia.org" },
       { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "img.youtube.com" },
@@ -20,7 +20,8 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "placehold.co" },
       { protocol: "https", hostname: "picsum.photos" },
       { protocol: "https", hostname: "fastly.picsum.photos" },
-      { protocol: "https", hostname: "images.unsplash.com" },
+      { protocol: "https", hostname: "image.tmdb.org" },
+      { protocol: "https", hostname: "www.themoviedb.org" },
     ],
   },
   headers: async () => [

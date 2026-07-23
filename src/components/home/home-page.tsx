@@ -14,7 +14,7 @@ import { Reveal, RevealItem, RevealStagger } from "@/components/motion/reveal";
 import { usePerformanceStore } from "@/stores/performance-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { Badge } from "@/components/ui/badge";
-import { APP_REGION } from "@/lib/user/region";
+import { getDeviceRegion } from "@/lib/user/region";
 import { landingSection } from "@/lib/motion";
 import { filterPublicCatalog } from "@/lib/content/mature";
 
@@ -55,7 +55,7 @@ export function HomePage() {
   }, [user?.uid, settingsMature]);
 
   const mature = settingsMature || deviceMature;
-  const region = APP_REGION;
+  const region = getDeviceRegion("*");
 
   // Instant seed so the homepage NEVER sits on a full-screen skeleton while
   // /api/v1/home hangs on Cloud Functions cold starts or provider outages.

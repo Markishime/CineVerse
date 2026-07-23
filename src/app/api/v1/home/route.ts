@@ -1,55 +1,90 @@
-import { catalog } from "@/lib/content/catalog-service";
 import { seedHomePayload } from "@/lib/api/home-fallback";
 import type { HomePayload } from "@/lib/api/content";
 import { json } from "@/lib/server/http";
 import { NextRequest } from "next/server";
 
-/** Live providers may hang on Cloud Functions — never wait longer than this. */
-const LIVE_BUDGET_MS = 2_500;
-
+/**
+ * Home catalog API — must always return 200 quickly.
+ *
+ * Production was 500/503 because loading catalog-service + live providers
+ * on cold start OOMs/timeouts the Cloud Function. We serve seed first, then
+ * optionally upgrade from live catalog under a hard budget.
+ */
 export async function GET(request: NextRequest) {
-  const region = "US";
   const includeMature =
     request.nextUrl.searchParams.get("mature") === "1" ||
     request.nextUrl.searchParams.get("mature") === "true";
 
-  // Always have a ready payload so the SPA never spins on a hung provider fan-out.
-  const seed = seedHomePayload();
-
+  // Synchronous seed — no network, no heavy imports beyond this module tree.
+  let seed: HomePayload;
   try {
-    const livePromise = catalog
-      .home(region, includeMature)
-      .then((p) => p as HomePayload)
-      .catch((err) => {
+    seed = seedHomePayload();
+  } catch (err) {
+    console.error("[api/v1/home] seedHomePayload failed", err);
+    return json({
+      featured: null,
+      featuredCarousel: [],
+      region: "*",
+      trending: [],
+      popularMovies: [],
+      popularSeries: [],
+      airingAnime: [],
+      trendingKdramas: [],
+      trendingCdramas: [],
+      trendingJdramas: [],
+      trendingThaidramas: [],
+      koreanMovies: [],
+      koreanSeries: [],
+      japaneseMovies: [],
+      japaneseSeries: [],
+      chineseMovies: [],
+      chineseSeries: [],
+      thaiMovies: [],
+      thaiSeries: [],
+      filipinoMovies: [],
+      filipinoSeries: [],
+      newReleases: [],
+      comingSoon: [],
+      topRated: [],
+      animeNextEpisode: [],
+      freeLegal: [],
+      matureMovies: [],
+      matureSeries: [],
+      matureAnime: [],
+      matureKdramas: [],
+      communityFavorites: [],
+      editorial: [],
+      moods: [],
+      genres: [],
+      traktTrending: [],
+      gmmtvDramas: [],
+    } satisfies HomePayload);
+  }
+
+  // Optional live upgrade. Dynamic import so a broken provider module cannot
+  // prevent seed from shipping. Hard 2s ceiling.
+  try {
+    const live = await Promise.race([
+      (async (): Promise<HomePayload | null> => {
+        const { catalog } = await import("@/lib/content/catalog-service");
+        // No forced US region — wildcard for global playback eligibility
+        return await catalog.home("*", includeMature);
+      })().catch((err) => {
         console.warn(
-          "[api/v1/home] catalog.home error",
+          "[api/v1/home] live catalog skipped",
           err instanceof Error ? err.message : err,
         );
         return null;
-      });
-
-    const live = await Promise.race([
-      livePromise,
-      new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), LIVE_BUDGET_MS),
-      ),
+      }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_000)),
     ]);
-
-    // Warm cache in the background if we fell back to seed (best-effort).
-    if (!live) {
-      void livePromise.then((p) => {
-        if (p) {
-          /* catalog caches internally on success */
-        }
-      });
-    }
-
-    return json(live ?? seed);
+    if (live) return json(live);
   } catch (err) {
     console.warn(
-      "[api/v1/home] unexpected failure; seed fallback",
+      "[api/v1/home] live race failed",
       err instanceof Error ? err.message : err,
     );
-    return json(seed);
   }
+
+  return json(seed);
 }

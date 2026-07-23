@@ -28,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import { formatScore } from "@/lib/utils";
-import { APP_REGION } from "@/lib/user/region";
+import { getDeviceRegion } from "@/lib/user/region";
 import { useAuthStore } from "@/stores/auth-store";
 import { isMatureEnabledClient } from "@/lib/user/local-profile";
 import {
@@ -85,22 +85,32 @@ export function WatchPage({
     queryFn: () => fetchContentBySlug(slug),
   });
 
-  // Titles with TMDb → full movie/episode embed player (never trailer).
-  // Covers anime (AniList/Jikan after hydrate resolves TMDb), series, kdrama.
+  // Redirect to /watch/movie|tv/{tmdbId} only when TMDb identity is trusted.
+  // Anime without explicit tmdbMediaType stays on slug page (correct embeds).
   useEffect(() => {
     if (!content) return;
-    // Explicit trailer request stays on the legal trailer player
     if (play === "trailer") return;
     const tmdbId = content.providerIds?.tmdb;
     if (!tmdbId || !Number.isFinite(tmdbId)) return;
 
-    const mediaType =
-      content.providerIds?.tmdbMediaType ??
-      (content.contentType === "movie" || content.animeFormat === "MOVIE"
-        ? "movie"
-        : "tv");
+    const mediaType = content.providerIds?.tmdbMediaType;
+    const trusted =
+      mediaType === "movie" ||
+      mediaType === "tv" ||
+      content.contentType === "movie" ||
+      content.contentType === "series" ||
+      content.contentType === "kdrama" ||
+      content.contentType === "cdrama" ||
+      content.contentType === "jdrama" ||
+      content.contentType === "thaidrama";
 
-    if (mediaType === "movie" || content.contentType === "movie") {
+    if (!trusted) return;
+
+    if (
+      mediaType === "movie" ||
+      content.contentType === "movie" ||
+      content.animeFormat === "MOVIE"
+    ) {
       router.replace(`/watch/movie/${tmdbId}`);
       return;
     }
@@ -134,7 +144,7 @@ export function WatchPage({
 
   const { data: playback } = useQuery({
     queryKey: ["watch-playback", contentId],
-    queryFn: () => fetchPlaybackEligibility(contentId!, APP_REGION),
+    queryFn: () => fetchPlaybackEligibility(contentId!, getDeviceRegion("*")),
     enabled: Boolean(contentId),
   });
 

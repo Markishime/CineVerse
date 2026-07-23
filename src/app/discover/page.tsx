@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
 import { isMatureEnabledClient } from "@/lib/user/local-profile";
-import { APP_REGION } from "@/lib/user/region";
+import { getDeviceRegion } from "@/lib/user/region";
 import { cn } from "@/lib/utils";
 
 const FALLBACK_MOODS = [
@@ -90,8 +90,8 @@ function DiscoverInner() {
   );
 
   const homeQuery = useQuery({
-    queryKey: ["home-meta", mature, APP_REGION],
-    queryFn: () => fetchHome(APP_REGION, mature),
+    queryKey: ["home-meta", mature],
+    queryFn: () => fetchHome(getDeviceRegion("*"), mature),
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,

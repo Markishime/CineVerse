@@ -1,29 +1,65 @@
 /**
- * CineVerse ships as a US-market product for catalog + legal playback.
- * Region is locked to the United States.
+ * Region helpers for catalog personalization and playback eligibility.
+ * No longer forced to US — users worldwide should stream without region blocks.
  */
-
-export const APP_REGION = "US" as const;
 
 const REGION_FLAG = "cineverse_region";
 
-export function getDeviceRegion(_fallback = "US"): string {
-  return APP_REGION;
+/** Prefer device locale; fall back to unrestricted wildcard. */
+export function getDeviceRegion(fallback = "*"): string {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const stored = window.localStorage.getItem(REGION_FLAG);
+    if (stored && stored.trim()) return stored.trim().toUpperCase();
+  } catch {
+    /* ignore */
+  }
+  try {
+    const lang = navigator.language || (navigator as { userLanguage?: string }).userLanguage;
+    const parts = (lang ?? "").split(/[-_]/);
+    const country = parts[1] || parts[0];
+    if (country && /^[a-zA-Z]{2}$/.test(country)) {
+      return country.toUpperCase();
+    }
+  } catch {
+    /* ignore */
+  }
+  return fallback;
 }
 
-export function setDeviceRegion(_region?: string) {
+export function setDeviceRegion(region?: string) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(REGION_FLAG, APP_REGION);
+    if (!region || region === "*" || region === "auto") {
+      window.localStorage.removeItem(REGION_FLAG);
+      return;
+    }
+    window.localStorage.setItem(REGION_FLAG, region.toUpperCase());
   } catch {
     /* ignore */
   }
 }
 
-/** Always US — settings region field is ignored for catalog/playback */
+/**
+ * Resolve playback/catalog region.
+ * - Explicit settings region wins
+ * - Otherwise device locale
+ * - Never hard-lock to US
+ */
 export function resolveRegion(
-  _settingsRegion?: string | null,
-  _fallback = "US",
+  settingsRegion?: string | null,
+  fallback = "*",
 ): string {
-  return APP_REGION;
+  if (
+    settingsRegion &&
+    settingsRegion !== "auto" &&
+    settingsRegion !== "*" &&
+    settingsRegion.trim()
+  ) {
+    return settingsRegion.trim().toUpperCase();
+  }
+  return getDeviceRegion(fallback);
 }
+
+/** @deprecated use resolveRegion / getDeviceRegion — kept for call-site compatibility */
+export const APP_REGION = "*" as const;

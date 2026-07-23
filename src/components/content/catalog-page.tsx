@@ -39,7 +39,7 @@ import {
 } from "@/lib/content/watch-href";
 import { easeOutExpo } from "@/lib/motion";
 import { useAuthStore } from "@/stores/auth-store";
-import { APP_REGION } from "@/lib/user/region";
+import { getDeviceRegion } from "@/lib/user/region";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Chip } from "@/components/ui/chip";
 
@@ -194,7 +194,7 @@ export function CatalogPage({
   }, [user?.uid, settingsMature]);
 
   const mature = settingsMature || deviceMature;
-  const region = APP_REGION;
+  const region = getDeviceRegion("*");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<CatalogSort>("popularity");
   const [view, setView] = useState<"grid" | "list">("grid");

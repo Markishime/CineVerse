@@ -18,6 +18,10 @@ import {
 import { AddToListButton } from "@/components/content/add-to-list-button";
 import { useAuthStore } from "@/stores/auth-store";
 import { cardHover } from "@/lib/motion";
+import {
+  normalizeImageUrl,
+  posterFallbackLabel,
+} from "@/lib/content/posters";
 
 const typeTone: Record<
   Content["contentType"],
@@ -65,9 +69,13 @@ export function ContentCard({
   const [imgFailed, setImgFailed] = useState(false);
   const user = useAuthStore((s) => s.user);
   const reduce = useReducedMotion();
-  const src =
-    !imgFailed &&
-    ((wide && content.backdrop?.url) || content.poster?.url || "");
+  const preferred =
+    (wide && normalizeImageUrl(content.backdrop?.url)) ||
+    normalizeImageUrl(content.poster?.url) ||
+    posterFallbackLabel(title, content.contentType);
+  const src = imgFailed
+    ? posterFallbackLabel(title, content.contentType)
+    : preferred;
 
   return (
     <motion.article

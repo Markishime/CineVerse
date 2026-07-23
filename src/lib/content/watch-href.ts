@@ -33,6 +33,12 @@ function isMovieWatch(
 /**
  * Watch Now — start playback of the title (movie full, or TV S1E1 / resume).
  * Always requests full playback. Trailers use getTrailerHref only.
+ *
+ * Correctness rules:
+ * - Only route to /watch/movie|tv/{tmdbId} when we have an explicit tmdb id
+ *   AND a matching media type (or clear movie/tv contentType).
+ * - Anime with only AniList/MAL (no tmdb) must stay on slug path so the
+ *   VideoPlayer uses anime-native embeds — never a guessed wrong TMDb film.
  */
 export function getWatchHref(
   c: Pick<
@@ -48,8 +54,24 @@ export function getWatchHref(
   opts?: { season?: number; episode?: number },
 ): string {
   const tmdbId = c.providerIds?.tmdb;
+  const mediaType = c.providerIds?.tmdbMediaType;
+  const hasTrustedTmdb =
+    Boolean(tmdbId && Number.isFinite(tmdbId)) &&
+    // Require explicit media type OR clear non-anime content type so we never
+    // send an anime card to a random live-action TMDb id.
+    (mediaType === "movie" ||
+      mediaType === "tv" ||
+      c.contentType === "movie" ||
+      c.contentType === "series" ||
+      c.contentType === "kdrama" ||
+      c.contentType === "cdrama" ||
+      c.contentType === "jdrama" ||
+      c.contentType === "thaidrama" ||
+      // Anime only when media type is known (set by hydrate / provider)
+      (c.contentType === "anime" &&
+        (mediaType === "movie" || mediaType === "tv")));
 
-  if (tmdbId && Number.isFinite(tmdbId)) {
+  if (hasTrustedTmdb && tmdbId) {
     if (isMovieWatch(c)) {
       return `/watch/movie/${tmdbId}`;
     }
@@ -64,8 +86,7 @@ export function getWatchHref(
     return `/watch/tv/${tmdbId}/${season}/${episode}`;
   }
 
-  // No TMDb yet — open slug watch page; hydrate will resolve TMDb and redirect
-  // when possible. Never send Watch Now to play=trailer.
+  // Slug path: correct title identity; player uses anilist/mal/tmdb after hydrate.
   const key = contentPathKey(c);
   const params = new URLSearchParams();
   params.set("play", "full");

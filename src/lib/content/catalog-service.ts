@@ -98,6 +98,7 @@ import {
   cinematicBackdropUrl,
   cinematicPosterUrl,
   isValidImageUrl,
+  normalizeImageUrl,
 } from "@/lib/content/posters";
 
 /** Catalog floor year — nothing older than this appears in browse catalogs */
@@ -733,11 +734,11 @@ export class CatalogService {
     sort: CatalogSort = "popularity",
     includeMature = false,
     playableOnly = false,
-    region = "US",
+    region = "*",
     country?: string,
     animeFormat?: "movie" | "series",
   ): Promise<Paginated<Content>> {
-    const regionCode = (region || "US").toUpperCase();
+    const regionCode = (region || "*").toUpperCase();
     const { isTitlePlayable } = await import("@/lib/playback/playback-store");
     const size = Math.min(Math.max(pageSize, 1), 100);
 
@@ -875,9 +876,12 @@ export class CatalogService {
     return null;
   }
 
-  async home(_region = "US", includeMature = false): Promise<HomePayload> {
-    // US-only product market
-    const regionCode = "US";
+  async home(_region = "*", includeMature = false): Promise<HomePayload> {
+    // No forced market lock — use caller region or unrestricted wildcard.
+    const regionCode =
+      !_region || _region === "*" || _region.toUpperCase() === "AUTO"
+        ? "*"
+        : _region.toUpperCase();
     const { isTitlePlayable } = await import("@/lib/playback/playback-store");
 
     // Home is always a public surface: strip every adults-only title so 18+
@@ -1476,7 +1480,7 @@ export class CatalogService {
 
   async providers(
     contentId: string,
-    region = "US",
+    region = "*",
   ): Promise<{ providers: WatchProvider[]; region: string }> {
     const c = await this.byId(contentId);
     if (!c) return { providers: [], region };
@@ -1737,7 +1741,7 @@ export class CatalogService {
    */
   async episodesWithPlayback(
     seasonId: string,
-    region = "US",
+    region = "*",
   ): Promise<Array<Episode & { playable: boolean }>> {
     const eps = await this.episodes(seasonId);
     const match = seasonId.match(/^(.*)_s(\d+)$/);
@@ -1758,7 +1762,7 @@ export class CatalogService {
     }));
   }
 
-  async playback(contentId: string, region = "US") {
+  async playback(contentId: string, region = "*") {
     const { resolvePlayback } = await import(
       "@/lib/playback/resolve-playback"
     );
@@ -1941,42 +1945,44 @@ export function softMatchByIdentity(
   const q = decoded.trim();
   if (!q) return undefined;
 
-  // 1) Provider-id anchored match. Pull a trailing/standalone numeric id and,
-  //    when present, the provider prefix (tmdb_movie / tmdb_tv / anilist / …).
+  // 1) Exact canonical id only (e.g. tmdb_movie_550, anilist_21).
+  //    Never treat a release YEAR (1900–2100) as a provider id — that was
+  //    mapping "parasite-2019" → random title with tmdb id 2019 (wrong video).
   const prefixed = q.match(
     /^(tmdb_(?:movie|tv|kdrama|cdrama|jdrama|thaidrama|anime)|jikan|anilist|tvmaze)_(\d+)$/i,
   );
-  const trailingNum = q.match(/(?:^|[-_])(\d{2,})$/);
-  const rawNum = /^\d{2,}$/.test(q) ? q : null;
-
   if (prefixed) {
     const wanted = `${prefixed[1]!.toLowerCase()}_${prefixed[2]!}`;
     const byExactId = all.find((c) => c.id.toLowerCase() === wanted);
     if (byExactId) return byExactId;
   }
 
-  const numId = prefixed?.[2] ?? trailingNum?.[1] ?? rawNum;
-  if (numId) {
-    const n = Number(numId);
-    const byProvider = all.find(
-      (c) =>
-        c.providerIds?.tmdb === n ||
-        c.providerIds?.anilist === n ||
-        c.providerIds?.mal === n ||
-        c.providerIds?.tvmaze === n ||
-        // id ends with exactly this number (e.g. anilist_456 for "456")
-        new RegExp(`_${numId}$`).test(c.id),
-    );
-    if (byProvider) return byProvider;
+  // Standalone pure numeric id (e.g. "550") — only if NOT a year.
+  if (/^\d{2,}$/.test(q)) {
+    const n = Number(q);
+    if (!(n >= 1900 && n <= 2100)) {
+      const byProvider = all.find(
+        (c) =>
+          c.providerIds?.tmdb === n ||
+          c.providerIds?.anilist === n ||
+          c.providerIds?.mal === n ||
+          c.providerIds?.tvmaze === n ||
+          c.id === `tmdb_movie_${n}` ||
+          c.id === `tmdb_tv_${n}` ||
+          c.id === `anilist_${n}` ||
+          c.id === `jikan_${n}` ||
+          c.id === `tvmaze_${n}`,
+      );
+      if (byProvider) return byProvider;
+    }
   }
 
-  // 2) Exact slug-stem equality (strip trailing `-{digits}` provider suffix).
-  const stem = (s: string) => s.toLowerCase().replace(/-\d+$/, "");
-  const qStem = stem(q);
-  if (qStem.length >= 3) {
-    const exactStem = all.find((c) => c.slug && stem(c.slug) === qStem);
-    if (exactStem) return exactStem;
-  }
+  // 2) Exact full slug equality only (no stem fuzzy). Prevents wrong-title hits.
+  const qLower = q.toLowerCase();
+  const bySlug = all.find(
+    (c) => c.slug?.toLowerCase() === qLower || c.id.toLowerCase() === qLower,
+  );
+  if (bySlug) return bySlug;
 
   return undefined;
 }
@@ -2159,7 +2165,8 @@ void tagMatureFromRating;
 
 function ensurePoster(c: Content): Content {
   let next = c;
-  if (!isValidImageUrl(c.poster?.url)) {
+  const posterUrl = normalizeImageUrl(c.poster?.url);
+  if (!posterUrl) {
     next = {
       ...next,
       poster: {
@@ -2167,14 +2174,25 @@ function ensurePoster(c: Content): Content {
         source: "local",
       },
     };
+  } else if (posterUrl !== c.poster?.url) {
+    next = {
+      ...next,
+      poster: { url: posterUrl, source: c.poster?.source ?? "tmdb" },
+    };
   }
-  if (!isValidImageUrl(c.backdrop?.url)) {
+  const backdropUrl = normalizeImageUrl(c.backdrop?.url);
+  if (!backdropUrl) {
     next = {
       ...next,
       backdrop: {
         url: cinematicBackdropUrl(c.id, c.title),
         source: "local",
       },
+    };
+  } else if (backdropUrl !== c.backdrop?.url) {
+    next = {
+      ...next,
+      backdrop: { url: backdropUrl, source: c.backdrop?.source ?? "tmdb" },
     };
   }
   return next;

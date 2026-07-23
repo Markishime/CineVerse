@@ -15,14 +15,14 @@ export function cinematicPosterUrl(
   title: string,
   contentType?: string,
 ): string {
-  const seed = encodeURIComponent(id || title.slice(0, 24));
-  // Real photo placeholders (stable per seed) — works without API keys
-  return `https://picsum.photos/seed/cv-${seed}/500/750`;
+  // placehold.co is more reliable than picsum redirects in some regions / CF.
+  return posterFallbackLabel(title, contentType ?? "movie");
 }
 
 export function cinematicBackdropUrl(id: string, title: string): string {
-  const seed = encodeURIComponent(id || title.slice(0, 24));
-  return `https://picsum.photos/seed/cvbg-${seed}/1280/720`;
+  const hue = TYPE_HUE["movie"] ?? "111827";
+  const t = encodeURIComponent((title || id || "CineVerse").slice(0, 32));
+  return `https://placehold.co/1280x720/${hue}/F8FAFF/png?text=${t}&font=montserrat`;
 }
 
 /** Text-only gradient poster when remote images fail */
@@ -35,11 +35,22 @@ export function posterFallbackLabel(
   return `https://placehold.co/500x750/${hue}/F8FAFF/png?text=${t}&font=montserrat`;
 }
 
+/** Normalize relative TMDB paths and reject garbage. */
+export function normalizeImageUrl(url?: string | null): string | null {
+  if (!url || typeof url !== "string") return null;
+  const u = url.trim();
+  if (!u || u === "null" || u === "undefined") return null;
+  // Relative TMDB path → absolute
+  if (u.startsWith("/")) {
+    return `https://image.tmdb.org/t/p/w500${u}`;
+  }
+  if (u.startsWith("http://")) {
+    return `https://${u.slice("http://".length)}`;
+  }
+  if (u.startsWith("https://")) return u;
+  return null;
+}
+
 export function isValidImageUrl(url?: string | null): boolean {
-  if (!url) return false;
-  return (
-    url.startsWith("https://") ||
-    url.startsWith("http://") ||
-    url.startsWith("/")
-  );
+  return Boolean(normalizeImageUrl(url));
 }
