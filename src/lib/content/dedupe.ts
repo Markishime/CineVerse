@@ -151,6 +151,22 @@ function collectKeys(item: Content): string[] {
   return keys;
 }
 
+function isRemoteImage(
+  img?: Content["poster"] | null,
+): boolean {
+  const u = img?.url;
+  return Boolean(u && /^https?:\/\//i.test(u) && !u.includes("placehold.co"));
+}
+
+function pickBetterImage(
+  preferred?: Content["poster"] | null,
+  other?: Content["poster"] | null,
+): Content["poster"] | null | undefined {
+  if (isRemoteImage(preferred)) return preferred;
+  if (isRemoteImage(other)) return other;
+  return preferred ?? other ?? null;
+}
+
 function mergeContent(a: Content, b: Content, preferred: Content): Content {
   const other = preferred.id === a.id ? b : a;
   return {
@@ -172,8 +188,9 @@ function mergeContent(a: Content, b: Content, preferred: Content): Content {
         ? preferred.scores
         : other.scores,
     overview: preferred.overview || other.overview,
-    poster: preferred.poster ?? other.poster,
-    backdrop: preferred.backdrop ?? other.backdrop,
+    // Prefer real remote art over missing/local SVG placeholders
+    poster: pickBetterImage(preferred.poster, other.poster),
+    backdrop: pickBetterImage(preferred.backdrop, other.backdrop),
     // Never drop a valid trailer during merge
     trailer: preferred.trailer ?? other.trailer ?? null,
     // Preserve popular/trending-today and other tags from both sides

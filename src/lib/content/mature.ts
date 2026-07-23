@@ -18,6 +18,21 @@
 
 import type { Content, ContentType } from "@/types/content";
 
+// ─── Restricted content email allowlist ─────────────────────────────────────
+// Only these email addresses may view hentai, 18+ mature, and Filipino movies.
+const RESTRICTED_CONTENT_EMAILS = new Set(["cmark7781@gmail.com"]);
+
+/**
+ * Returns true when the given email is allowed to view restricted content
+ * (hentai, 18+ mature, Filipino movies). All other users never see these.
+ */
+export function isRestrictedContentUser(
+  email?: string | null,
+): boolean {
+  if (!email) return false;
+  return RESTRICTED_CONTENT_EMAILS.has(email.toLowerCase());
+}
+
 /** Tags that prove sexual / nude explicit content */
 const EXPLICIT_SEXUAL_TAGS = new Set([
   "nudity",

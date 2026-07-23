@@ -21,6 +21,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 import { Button } from "@/components/ui/button";
 
 interface NavItem {
@@ -183,37 +184,11 @@ export function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const [deviceMature, setDeviceMature] = useState(false);
   const reduce = useReducedMotion();
-  const { user, profile, settings } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const isHome = pathname === "/";
-  const settingsMature = Boolean(settings?.matureContent);
 
-  // Mirror the device 18+ flag used across catalog pages so the navbar stays in
-  // sync when server settings haven't loaded yet.
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem("cineverse_mature_flag") === "1") {
-        setDeviceMature(true);
-      } else if (user?.uid) {
-        const raw = window.localStorage.getItem(
-          `cineverse_settings_${user.uid}`,
-        );
-        if (raw) {
-          const s = JSON.parse(raw) as { matureContent?: boolean };
-          setDeviceMature(Boolean(s.matureContent));
-        } else {
-          setDeviceMature(false);
-        }
-      } else {
-        setDeviceMature(false);
-      }
-    } catch {
-      setDeviceMature(false);
-    }
-  }, [user?.uid, settingsMature]);
-
-  const matureEnabled = settingsMature || deviceMature;
+  const matureEnabled = isRestrictedContentUser(user?.email);
   const nav = baseNav
     .filter((item) => !("matureOnly" in item && item.matureOnly) || matureEnabled)
     // Drop 18+-only dropdown children (country movies) when the toggle is off,

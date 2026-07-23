@@ -15,7 +15,24 @@ const TYPE_HUE: Record<string, string> = {
 
 /** Paths / hostnames that look like fake seed placeholders or dead assets */
 const BROKEN_POSTER_RE =
-  /Q5Q5Q5|5Q5Q|_poster\.jpg$|_bg\.jpg$|queen_tears|lovely_runner|itaewon_class|alchemy_bg|woo_bg|\/null(\.|$)|\/undefined(\.|$)/i;
+  /Q5Q5Q5|5Q5Q|Q5L1|_poster\.jpg$|_bg\.jpg$|queen_tears|lovely_runner|itaewon_class|alchemy_bg|woo_bg|\/null(\.|$)|\/undefined(\.|$)|k1k1k1|1k1k1k|e1k1k1|1e1k1|h1e1d1|n1f1g1|x1z1a1|j1k1k1|m1Q\.jpg|m1L1p1/i;
+
+/**
+ * Detect fabricated TMDB-looking hashes used in seed (repeating k1 / Q5 chunks).
+ * Real TMDB file hashes are random base64-ish strings without long runs of
+ * the same 2–4 character cycle.
+ */
+function looksLikeFabricatedTmdbHash(file: string): boolean {
+  const stem = file.replace(/\.(jpg|jpeg|png|webp)$/i, "");
+  if (stem.length < 12) return true;
+  // "k1k1k1…", "1k1k1k…", "Q5L1k1k1…" style placeholders
+  if (/(?:k1|1k|Q5|5Q|e1|1e){4,}/i.test(stem)) return true;
+  // Any 2-char unit repeating 4+ times (e.g. abababab)
+  if (/(.{2})\1{3,}/i.test(stem)) return true;
+  // Any 3-char unit repeating 3+ times
+  if (/(.{3})\1{2,}/i.test(stem)) return true;
+  return false;
+}
 
 export function isLikelyBrokenPosterUrl(url?: string | null): boolean {
   if (!url || typeof url !== "string") return true;
@@ -27,13 +44,20 @@ export function isLikelyBrokenPosterUrl(url?: string | null): boolean {
     const host = new URL(u.startsWith("http") ? u : `https://x${u}`).hostname;
     if (host.includes("image.tmdb.org")) {
       const file = u.split("/").pop() ?? "";
-      // Reject obvious non-hash filenames
+      // Reject obvious non-hash filenames (word boundaries — do NOT match
+      // accidental substrings inside real hashes like "babgKn…" / "…image…")
+      if (!/^[a-zA-Z0-9_-]{12,}\.(jpg|jpeg|png|webp)$/i.test(file)) {
+        return true;
+      }
+      const stem = file.replace(/\.(jpg|jpeg|png|webp)$/i, "");
+      // Seed used paths like "the_glory_bg.jpg" / "queen_tears_poster.jpg"
       if (
-        !/^[a-zA-Z0-9_-]{12,}\.(jpg|jpeg|png|webp)$/i.test(file) ||
-        /poster|backdrop|bg|image|photo/i.test(file)
+        /(^|[_-])(poster|backdrop|bg|image|photo)([_-]|$)/i.test(stem) ||
+        /^(poster|backdrop|bg|image|photo)$/i.test(stem)
       ) {
         return true;
       }
+      if (looksLikeFabricatedTmdbHash(file)) return true;
     }
   } catch {
     return true;
@@ -103,9 +127,21 @@ export function isValidImageUrl(url?: string | null): boolean {
   return Boolean(normalizeImageUrl(url));
 }
 
+/** True for real remote art (not local SVG / data-URI placeholders). */
+function isRemoteArtUrl(url?: string | null): boolean {
+  if (!url) return false;
+  const n = normalizeImageUrl(url);
+  if (!n) return false;
+  return n.startsWith("https://") || n.startsWith("http://");
+}
+
 /**
  * Best display URL for a catalog card: real poster → backdrop → local SVG.
  * Never returns empty.
+ *
+ * For wide cards (`preferBackdrop`), only prefer a *remote* backdrop. Synthetic
+ * SVG backdrops must not hide a real poster (common for anime movies from
+ * Jikan/TMDB that have cover art but no banner).
  */
 export function resolveCardImageUrl(
   content: {
@@ -119,13 +155,19 @@ export function resolveCardImageUrl(
 ): string {
   const title = content.title || "CineVerse";
   const type = content.contentType || "movie";
-  if (opts?.preferBackdrop) {
-    const bd = normalizeImageUrl(content.backdrop?.url);
-    if (bd) return bd;
-  }
   const poster = normalizeImageUrl(content.poster?.url);
-  if (poster) return poster;
   const bd = normalizeImageUrl(content.backdrop?.url);
+
+  if (opts?.preferBackdrop) {
+    // Prefer real backdrop art only — never a data: SVG placeholder
+    if (bd && isRemoteArtUrl(content.backdrop?.url)) return bd;
+    if (poster && isRemoteArtUrl(content.poster?.url)) return poster;
+    if (bd) return bd;
+    if (poster) return poster;
+    return posterFallbackLabel(title, type);
+  }
+
+  if (poster) return poster;
   if (bd) return bd;
   return posterFallbackLabel(title, type);
 }

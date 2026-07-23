@@ -31,6 +31,7 @@ import { formatScore } from "@/lib/utils";
 import { getDeviceRegion } from "@/lib/user/region";
 import { useAuthStore } from "@/stores/auth-store";
 import { isMatureEnabledClient } from "@/lib/user/local-profile";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 import {
   hasParentalPin,
   isMatureSessionUnlocked,
@@ -61,7 +62,6 @@ export function WatchPage({
   play?: string;
 }) {
   const router = useRouter();
-  const settings = useAuthStore((s) => s.settings);
   const user = useAuthStore((s) => s.user);
   const [deviceMature, setDeviceMature] = useState(false);
   const [pinUnlocked, setPinUnlocked] = useState(false);
@@ -72,13 +72,18 @@ export function WatchPage({
   const [embedEpisode, setEmbedEpisode] = useState<number | null>(null);
 
   useEffect(() => {
+    if (isRestrictedContentUser(user?.email)) {
+      setPinUnlocked(true);
+      setPinGateOpen(false);
+      return;
+    }
     setDeviceMature(isMatureEnabledClient(user?.uid));
     const unlocked = isMatureSessionUnlocked();
     setPinUnlocked(unlocked);
     if (!unlocked) setPinGateOpen(true);
-  }, [user?.uid, settings?.matureContent]);
+  }, [user?.uid, user?.email]);
 
-  const matureOn = Boolean(settings?.matureContent) || deviceMature;
+  const matureOn = isRestrictedContentUser(user?.email);
 
   const { data: content, isLoading, isError } = useQuery({
     queryKey: ["watch-content", slug],
@@ -262,6 +267,28 @@ export function WatchPage({
         <Link href="/" className="mt-6 inline-block">
           <Button>Back home</Button>
         </Link>
+      </div>
+    );
+  }
+
+  // Email-gate: only allowed email may view 18+ content
+  if (content.mature && !isRestrictedContentUser(user?.email)) {
+    return (
+      <div className="mx-auto max-w-lg px-4 pb-24 pt-32 text-center">
+        <p className="text-xs font-bold uppercase tracking-wider text-[var(--danger)]">
+          18+ mature title
+        </p>
+        <h1 className="mt-2 font-display text-2xl font-bold text-white">
+          {displayTitle(content)}
+        </h1>
+        <p className="mt-3 text-sm text-[var(--text-secondary)]">
+          You do not have permission to view this content.
+        </p>
+        <div className="mt-6">
+          <Link href="/">
+            <Button variant="outline">Back to Home</Button>
+          </Link>
+        </div>
       </div>
     );
   }

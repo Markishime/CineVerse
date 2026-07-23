@@ -85,6 +85,7 @@ import {
 import {
   fetchTraktTrendingShows,
   fetchTraktTrendingMovies,
+  firstTraktImage,
 } from "@/lib/providers/trakt-client";
 import { enrichWithRegionalPlatforms } from "@/lib/content/regional-enrichment";
 import { fetchGmmtvLatest, mapGmmtvVideo } from "@/lib/providers/gmmtv-youtube";
@@ -100,14 +101,15 @@ import type {
   WatchProvider,
 } from "@/types/content";
 import { isDramaType } from "@/types/content";
-import { isGeneralSeriesOnly } from "@/lib/content/classification";
+import {
+  isAnimeLikeContent,
+  isGeneralSeriesOnly,
+} from "@/lib/content/classification";
 import type { HomePayload, Paginated } from "@/lib/api/content";
 import {
-  cinematicBackdropUrl,
   cinematicPosterUrl,
   ensureContentPoster,
   isLikelyBrokenPosterUrl,
-  isValidImageUrl,
   normalizeImageUrl,
 } from "@/lib/content/posters";
 
@@ -804,6 +806,15 @@ export class CatalogService {
               !c.genres.some((g) => /anim/i.test(g.name)),
           );
         }
+        // Drama tabs (esp. J-drama): never anime / animation
+        if (
+          type === "jdrama" ||
+          type === "kdrama" ||
+          type === "cdrama" ||
+          type === "thaidrama"
+        ) {
+          items = items.filter((c) => !isAnimeLikeContent(c));
+        }
 
         if (items.length > 0) {
           return {
@@ -839,6 +850,13 @@ export class CatalogService {
     // Series tab: never anime, never Asian dramas
     if (type === "series" && !country) {
       items = items.filter(isGeneralSeriesOnly);
+    } else if (
+      type === "jdrama" ||
+      type === "kdrama" ||
+      type === "cdrama" ||
+      type === "thaidrama"
+    ) {
+      items = items.filter((c) => !isAnimeLikeContent(c));
     } else if (type === "series" && country) {
       items = items.filter(
         (c) =>
@@ -965,7 +983,10 @@ export class CatalogService {
     const anime = all.filter((c) => c.contentType === "anime");
     const kdrama = all.filter((c) => c.contentType === "kdrama");
     const cdrama = all.filter((c) => c.contentType === "cdrama");
-    const jdrama = all.filter((c) => c.contentType === "jdrama");
+    // J-drama must be live-action Japanese drama only — never anime.
+    const jdrama = all.filter(
+      (c) => c.contentType === "jdrama" && !isAnimeLikeContent(c),
+    );
     const thaidrama = all.filter((c) => c.contentType === "thaidrama");
     const byPop = (a: Content, b: Content) =>
       (b.popularity ?? 0) - (a.popularity ?? 0);
@@ -1018,22 +1039,27 @@ export class CatalogService {
     const filipinoMovies = includeMature
       ? uniqueById([...allMovies].filter(isFilipinoMovie).sort(byPop))
       : [];
-    // Filipino series
+    // Filipino series / dramas (full catalog; no dedicated contentType)
     const isFilipinoSeries = (c: Content) =>
-      c.contentType === "series" &&
-      (c.language === "tl" || c.countries?.some((cn) => cn === "PH"));
+      !isAnimeLikeContent(c) &&
+      c.contentType !== "movie" &&
+      c.contentType !== "anime" &&
+      (c.language === "tl" ||
+        c.countries?.some((cn) => cn.toUpperCase() === "PH"));
     const filipinoSeries = uniqueById(
-      [...series].filter(isFilipinoSeries).sort(byPop),
+      [...all].filter(isFilipinoSeries).sort(byPop),
     );
     // Korean series (includes kdrama content type)
     const isKoreanSeries = (c: Content) =>
+      !isAnimeLikeContent(c) &&
       (c.contentType === "series" || c.contentType === "kdrama") &&
       (c.language === "ko" || c.countries?.some((cn) => cn === "KR"));
     const koreanSeries = uniqueById(
       [...all].filter(isKoreanSeries).sort(byPop),
     );
-    // Japanese series (includes jdrama content type)
+    // Japanese series (includes jdrama; never anime)
     const isJapaneseSeries = (c: Content) =>
+      !isAnimeLikeContent(c) &&
       (c.contentType === "series" || c.contentType === "jdrama") &&
       (c.language === "ja" || c.countries?.some((cn) => cn === "JP"));
     const japaneseSeries = uniqueById(
@@ -1041,13 +1067,16 @@ export class CatalogService {
     );
     // Chinese series (includes cdrama content type)
     const isChineseSeries = (c: Content) =>
+      !isAnimeLikeContent(c) &&
       (c.contentType === "series" || c.contentType === "cdrama") &&
-      (c.language === "zh" || c.countries?.some((cn) => cn === "CN"));
+      (c.language === "zh" ||
+        c.countries?.some((cn) => ["CN", "TW", "HK"].includes(cn)));
     const chineseSeries = uniqueById(
       [...all].filter(isChineseSeries).sort(byPop),
     );
     // Thai series (includes thaidrama content type)
     const isThaiSeries = (c: Content) =>
+      !isAnimeLikeContent(c) &&
       (c.contentType === "series" || c.contentType === "thaidrama") &&
       (c.language === "th" || c.countries?.some((cn) => cn === "TH"));
     const thaiSeries = uniqueById(
@@ -1145,37 +1174,41 @@ export class CatalogService {
       ALL_N,
     );
 
-    // Featured hero: strict interleave of today's movies · series · anime · dramas
-    // so "Popular & trending today" is a balanced, correct mix — not trailer-sorted.
-    const movieFeat = todayMovies.slice(0, 4);
-    const seriesFeat = todaySeries.slice(0, 4);
-    const animeFeat = todayAnime.slice(0, 4);
-    const dramaFeat = todayDramas.slice(0, 4);
+    // Featured hero ("Popular & trending today"): movies · series · dramas only.
+    // Never anime / animation — those live in dedicated anime rows below.
+    const movieFeat = todayMovies
+      .filter((c) => !isAnimeLikeContent(c))
+      .slice(0, 6);
+    const seriesFeat = todaySeries
+      .filter((c) => !isAnimeLikeContent(c))
+      .slice(0, 6);
+    const dramaFeat = todayDramas
+      .filter((c) => !isAnimeLikeContent(c))
+      .slice(0, 6);
 
     const featuredPool: Content[] = [];
-    const featBuckets = [movieFeat, seriesFeat, animeFeat, dramaFeat];
+    const featBuckets = [movieFeat, seriesFeat, dramaFeat];
     const maxLen = Math.max(...featBuckets.map((b) => b.length), 0);
     for (let i = 0; i < maxLen; i++) {
       for (const b of featBuckets) {
         if (b[i]) featuredPool.push(b[i]!);
       }
     }
-    // Light hourly rotation so the lead title changes, but type order stays
-    // movie → series → anime → drama within each round-robin slot.
+    // Light hourly rotation so the lead title changes; type order stays
+    // movie → series → drama within each round-robin slot.
     const slot = Math.floor(Date.now() / 3_600_000);
     const rotateGroups = (arr: Content[], s: number): Content[] => {
-      if (arr.length <= 4) return arr;
+      if (arr.length <= 3) return arr;
       const groups: Content[][] = [];
-      for (let i = 0; i < arr.length; i += 4) {
-        groups.push(arr.slice(i, i + 4));
+      for (let i = 0; i < arr.length; i += 3) {
+        groups.push(arr.slice(i, i + 3));
       }
       const o = ((s % groups.length) + groups.length) % groups.length;
       return [...groups.slice(o), ...groups.slice(0, o)].flat();
     };
-    let featuredUnique = uniqueById(rotateGroups(featuredPool, slot)).slice(
-      0,
-      16,
-    );
+    let featuredUnique = uniqueById(rotateGroups(featuredPool, slot))
+      .filter((c) => !isAnimeLikeContent(c))
+      .slice(0, 16);
 
     // Trailer enrichment is best-effort and short — client also hydrates.
     // Keep budget low so /home can win the route race with live trending data.
@@ -1204,8 +1237,16 @@ export class CatalogService {
           setTimeout(() => resolve([[], []]), 2_000),
         ),
       ]);
+      const posterFromCatalog = (tmdbId?: number) => {
+        if (!tmdbId) return undefined;
+        const hit = all.find((c) => c.providerIds?.tmdb === tmdbId);
+        const url = hit?.poster?.url;
+        return url ? { url, source: hit!.poster!.source ?? "tmdb" } : undefined;
+      };
       const traktItems: Content[] = [];
       for (const show of traktShows) {
+        const posterUrl = firstTraktImage(show.images?.poster);
+        const fanartUrl = firstTraktImage(show.images?.fanart);
         traktItems.push({
           id: `trakt_show_${show.ids.trakt}`,
           slug: show.ids.slug,
@@ -1216,11 +1257,11 @@ export class CatalogService {
           year: show.year,
           status: show.status === "ended" ? "ended" : "released",
           countries: [],
-          poster: show.images?.poster
-            ? { url: show.images.poster, source: "local" }
-            : undefined,
-          backdrop: show.images?.fanart
-            ? { url: show.images.fanart, source: "local" }
+          poster: posterUrl
+            ? { url: posterUrl, source: "local" }
+            : posterFromCatalog(show.ids.tmdb),
+          backdrop: fanartUrl
+            ? { url: fanartUrl, source: "local" }
             : undefined,
           scores: show.rating
             ? [{ source: "trakt" as const, score: show.rating * 10, count: show.votes }]
@@ -1244,6 +1285,8 @@ export class CatalogService {
         });
       }
       for (const movie of traktMovies) {
+        const posterUrl = firstTraktImage(movie.images?.poster);
+        const fanartUrl = firstTraktImage(movie.images?.fanart);
         traktItems.push({
           id: `trakt_movie_${movie.ids.trakt}`,
           slug: movie.ids.slug,
@@ -1254,11 +1297,11 @@ export class CatalogService {
           year: movie.year,
           status: "released",
           countries: [],
-          poster: movie.images?.poster
-            ? { url: movie.images.poster, source: "local" }
-            : undefined,
-          backdrop: movie.images?.fanart
-            ? { url: movie.images.fanart, source: "local" }
+          poster: posterUrl
+            ? { url: posterUrl, source: "local" }
+            : posterFromCatalog(movie.ids.tmdb),
+          backdrop: fanartUrl
+            ? { url: fanartUrl, source: "local" }
             : undefined,
           scores: movie.rating
             ? [{ source: "trakt" as const, score: movie.rating * 10, count: movie.votes }]
@@ -2276,7 +2319,10 @@ function tagMatureFromRating(c: Content): Content {
 void tagMatureFromRating;
 
 function ensurePoster(c: Content): Content {
-  // Strip fake seed / 404 TMDB paths then guarantee a displayable poster
+  // Strip fake seed / 404 TMDB paths then guarantee a displayable poster.
+  // Do NOT invent a synthetic SVG backdrop when missing — wide home rows
+  // (e.g. Anime movies) prefer backdrop and would hide a good poster behind
+  // a title card. Real backdrops are normalized; absent ones stay null.
   let next = ensureContentPoster(c);
   const backdropRaw = c.backdrop?.url;
   const backdropUrl =
@@ -2284,13 +2330,9 @@ function ensurePoster(c: Content): Content {
       ? normalizeImageUrl(backdropRaw)
       : null;
   if (!backdropUrl) {
-    next = {
-      ...next,
-      backdrop: {
-        url: cinematicBackdropUrl(c.id, c.title),
-        source: "local",
-      },
-    };
+    if (c.backdrop) {
+      next = { ...next, backdrop: null };
+    }
   } else if (backdropUrl !== c.backdrop?.url) {
     next = {
       ...next,

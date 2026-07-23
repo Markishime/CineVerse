@@ -132,9 +132,16 @@ async function fetchTvMazeJson<T>(
 }
 
 function posterFallback(title: string, _hue: number): string {
-  // placehold.co is stable (no redirect chain) — always shows a poster image
-  const t = encodeURIComponent((title || "CineVerse").slice(0, 28));
-  return `https://placehold.co/500x750/111827/F8FAFF/png?text=${t}&font=montserrat`;
+  // Local SVG data-URI — never blank, never blocked by ad blockers (unlike
+  // placehold.co). Imported logic kept inline to avoid circular deps.
+  const t = (title || "CineVerse")
+    .slice(0, 28)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="750" viewBox="0 0 500 750"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1f0d24"/><stop offset="100%" stop-color="#0a0a12"/></linearGradient></defs><rect fill="url(#g)" width="500" height="750"/><text x="50%" y="48%" fill="#F8FAFF" font-family="system-ui,Segoe UI,sans-serif" font-size="28" font-weight="700" text-anchor="middle" dominant-baseline="middle">${t}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 function safeParse(content: Content): Content | null {
@@ -2358,8 +2365,10 @@ function mapTmdbTv(
   const forced: DramaContentType | null =
     asDrama === true ? "kdrama" : asDrama === false ? null : asDrama;
 
-  // Animation TV → anime tab, never general series.
-  if (isAnimation && !forced) {
+  // Animation TV → anime tab always. Never force into jdrama/cdrama/etc.
+  // (fetchTmdbDrama uses without_genres:16, but empty genre_ids or forced
+  // dramaType used to leak anime into Popular J-dramas.)
+  if (isAnimation) {
     const overview = String(raw.overview ?? "");
     const isAdult = tmdbLooksAdult(title, overview, Boolean(raw.adult));
     return safeParse({

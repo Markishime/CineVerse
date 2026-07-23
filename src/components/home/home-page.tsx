@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { fetchHome } from "@/lib/api/content";
 import { seedHomePayload } from "@/lib/api/home-fallback";
@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { getDeviceRegion } from "@/lib/user/region";
 import { landingSection } from "@/lib/motion";
 import { filterPublicCatalog } from "@/lib/content/mature";
+import { isRestrictedContentUser } from "@/lib/content/mature";
+import { isAnimeLikeContent } from "@/lib/content/classification";
 
 const HeroOrbits = dynamic(
   () => import("./hero-orbits").then((m) => m.HeroOrbits),
@@ -27,34 +29,8 @@ export function HomePage() {
   const effective = usePerformanceStore((s) => s.effective);
   const reduce = useReducedMotion();
   const user = useAuthStore((s) => s.user);
-  const settings = useAuthStore((s) => s.settings);
-  const settingsMature = Boolean(settings?.matureContent);
-  const [deviceMature, setDeviceMature] = useState(false);
 
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      try {
-        if (window.localStorage.getItem("cineverse_mature_flag") === "1") {
-          setDeviceMature(true);
-        } else if (user?.uid) {
-          const raw = window.localStorage.getItem(
-            `cineverse_settings_${user.uid}`,
-          );
-          if (raw) {
-            const s = JSON.parse(raw) as {
-              matureContent?: boolean;
-            };
-            setDeviceMature(Boolean(s.matureContent));
-          }
-        }
-      } catch {
-        setDeviceMature(false);
-      }
-    }, 0);
-    return () => window.clearTimeout(t);
-  }, [user?.uid, settingsMature]);
-
-  const mature = settingsMature || deviceMature;
+  const mature = isRestrictedContentUser(user?.email);
   const region = getDeviceRegion("*");
 
   // Instant seed so the homepage NEVER sits on a full-screen skeleton while
@@ -79,12 +55,15 @@ export function HomePage() {
   const home = data ?? fallback;
 
   const carouselItems = useMemo(() => {
+    // Hero "Popular & trending today" — never anime / animation
     const raw = (
       home.featuredCarousel?.length
         ? home.featuredCarousel
         : [home.featured, ...home.trending].filter(Boolean)
     ).filter(Boolean) as NonNullable<typeof home.featured>[];
-    return filterPublicCatalog(raw).slice(0, 12);
+    return filterPublicCatalog(raw)
+      .filter((c) => !isAnimeLikeContent(c))
+      .slice(0, 12);
   }, [home]);
 
   return (

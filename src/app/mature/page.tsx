@@ -1,23 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "framer-motion";
-import { AlertTriangle, Shield } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { fetchMatureLibrary } from "@/lib/api/content";
 import { ContentCard } from "@/components/content/content-card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Chip } from "@/components/ui/chip";
-import { PinGateModal } from "@/components/content/pin-gate";
-import { isMatureEnabledClient } from "@/lib/user/local-profile";
-import {
-  hasParentalPin,
-  isMatureSessionUnlocked,
-  setMatureSessionUnlocked,
-  verifyParentalPin,
-} from "@/lib/user/mature-pin";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 import { useAuthStore } from "@/stores/auth-store";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
@@ -25,32 +17,12 @@ type Tab = "all" | "movie" | "series" | "anime" | "kdrama" | "cdrama" | "jdrama"
 
 export default function MaturePage() {
   const user = useAuthStore((s) => s.user);
-  const settings = useAuthStore((s) => s.settings);
   const loading = useAuthStore((s) => s.loading);
   const reduce = useReducedMotion();
-  const [unlocked, setUnlocked] = useState(false);
-  const [gateOpen, setGateOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("all");
   const [page, setPage] = useState(1);
-  const [hydrated, setHydrated] = useState(false);
 
-  const matureEnabled =
-    Boolean(settings?.matureContent) || isMatureEnabledClient(user?.uid);
-  const pinReady = hasParentalPin(user?.uid);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      setHydrated(true);
-      if (isMatureSessionUnlocked()) {
-        setUnlocked(true);
-        setGateOpen(false);
-      } else {
-        setUnlocked(false);
-        setGateOpen(true);
-      }
-    }, 0);
-    return () => window.clearTimeout(t);
-  }, [user?.uid, matureEnabled]);
+  const allowed = isRestrictedContentUser(user?.email);
 
   const typeForApi = tab === "all" ? undefined : tab;
 
@@ -62,11 +34,11 @@ export default function MaturePage() {
         pageSize: 48,
         type: typeForApi,
       }),
-    enabled: unlocked && matureEnabled,
+    enabled: allowed,
     staleTime: 60_000,
   });
 
-  if (loading || !hydrated) {
+  if (loading) {
     return (
       <div className="mx-auto max-w-lg px-4 pb-24 pt-32 text-center">
         <div className="mx-auto h-10 w-10 skeleton rounded-full" />
@@ -83,8 +55,7 @@ export default function MaturePage() {
           18+ Mature library
         </h1>
         <p className="mt-3 text-sm text-[var(--text-secondary)]">
-          Sign in, set a parental PIN in Settings, and enable 18+ mature content
-          to open this library.
+          Sign in to view this library.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link href="/login">
@@ -98,66 +69,22 @@ export default function MaturePage() {
     );
   }
 
-  if (!matureEnabled || !pinReady) {
+  if (!allowed) {
     return (
       <div className="mx-auto max-w-lg px-4 pb-24 pt-32 text-center">
         <AlertTriangle className="mx-auto h-10 w-10 text-[var(--danger)]" />
         <h1 className="mt-4 font-display text-3xl font-bold text-white">
-          18+ Mature library locked
+          Access restricted
         </h1>
         <p className="mt-3 text-sm text-[var(--text-secondary)]">
-          {!pinReady
-            ? "Create a parental PIN in Settings, then enable “Show 18+ mature titles” (PIN required)."
-            : "18+ mature is off in your profile settings. Turn it on under Settings → 18+ mature content (requires your PIN). The 18+ tab only appears when enabled."}
+          You do not have permission to view this content.
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Link href="/settings">
-            <Button>Open Settings</Button>
-          </Link>
+        <div className="mt-6">
           <Link href="/">
-            <Button variant="outline">Leave</Button>
+            <Button variant="outline">Back to Home</Button>
           </Link>
         </div>
       </div>
-    );
-  }
-
-  if (!unlocked) {
-    return (
-      <>
-        <div className="mx-auto max-w-lg px-4 pb-24 pt-32 text-center">
-          <AlertTriangle className="mx-auto h-10 w-10 text-[var(--danger)]" />
-          <h1 className="mt-4 font-display text-3xl font-bold text-white">
-            18+ Mature library
-          </h1>
-          <p className="mt-3 text-sm text-[var(--text-secondary)]">
-            Enter your parental PIN to unlock mature movies, series, and anime
-            for this session.
-          </p>
-          <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <Button onClick={() => setGateOpen(true)}>Enter PIN</Button>
-            <Link href="/">
-              <Button variant="outline">Leave</Button>
-            </Link>
-          </div>
-        </div>
-        <PinGateModal
-          open={gateOpen}
-          mode="verify"
-          title="Unlock 18+ library"
-          description="Enter your parental PIN. This stops kids from browsing mature titles."
-          confirmLabel="Unlock 18+"
-          verifyPin={(pin) => verifyParentalPin(user.uid, pin)}
-          onCancel={() => {
-            window.location.href = "/";
-          }}
-          onSuccess={() => {
-            setMatureSessionUnlocked(true);
-            setUnlocked(true);
-            setGateOpen(false);
-          }}
-        />
-      </>
     );
   }
 
@@ -174,24 +101,16 @@ export default function MaturePage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-28 pt-24 sm:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-[var(--danger)]">
-            Age-restricted · 18+ · PIN unlocked
-          </p>
-          <h1 className="mt-1 font-display text-3xl font-bold text-white sm:text-4xl">
-            Mature library
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-[var(--text-secondary)]">
-            Adults-only titles (18+ / R18 / NC-17 / provider-adult / explicit).
-            These never appear on Home or regular Movies · Series · Anime · Drama
-            catalogs — only here when 18+ is enabled.
-          </p>
-        </div>
-        <Badge tone="primary" className="gap-1.5">
-          <Shield className="h-3.5 w-3.5" />
-          PIN verified
-        </Badge>
+      <div>
+        <p className="text-xs font-bold uppercase tracking-wider text-[var(--danger)]">
+          18+ · Mature content
+        </p>
+        <h1 className="mt-1 font-display text-3xl font-bold text-white sm:text-4xl">
+          Mature library
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm text-[var(--text-secondary)]">
+          Adults-only titles (18+ / R18 / NC-17 / provider-adult / explicit).
+        </p>
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2">
@@ -248,7 +167,6 @@ export default function MaturePage() {
                 variants={reduce ? undefined : staggerItem}
                 className="will-change-transform"
               >
-                {/* publicSafe not needed — ContentCard is raw; library is already adult-only */}
                 <ContentCard content={c} className="!w-full !min-w-0" />
               </motion.div>
             ))}

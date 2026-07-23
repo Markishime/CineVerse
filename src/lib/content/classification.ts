@@ -62,7 +62,7 @@ export interface KDramaCandidate {
   isTv: boolean;
   originalLanguage?: string | null;
   originCountries?: string[];
-  genres?: Array<{ name: string } | string>;
+  genres?: Array<{ id?: number | string; name: string } | string>;
   typeLabel?: string | null;
   /** Admin override wins when set. */
   override?: ContentType | null;
@@ -88,7 +88,7 @@ export interface AnimeCandidate {
 }
 
 function genreNames(
-  genres?: Array<{ name: string } | string>,
+  genres?: Array<{ id?: number | string; name: string } | string>,
 ): string[] {
   if (!genres) return [];
   return genres.map((g) =>
@@ -136,6 +136,15 @@ export function classifyDrama(
 
   const names = genreNames(candidate.genres);
   if (names.some((n) => KDRAMA_EXCLUDED_GENRES.has(n))) return null;
+  // Genre id "16" (TMDB Animation) must never classify as live-action drama
+  if (
+    (candidate.genres ?? []).some((g) => {
+      if (typeof g === "string") return false;
+      return String(g.id) === "16";
+    })
+  ) {
+    return null;
+  }
 
   const type = (candidate.typeLabel ?? "").toLowerCase();
   if (
@@ -209,6 +218,32 @@ export function normalizeAnimeFormat(
     default:
       return "UNKNOWN";
   }
+}
+
+/**
+ * True when a title is anime / animation and must not appear in live-action
+ * drama rows (especially Popular J-dramas — JP origin includes lots of anime).
+ */
+export function isAnimeLikeContent(
+  c: Pick<
+    Content,
+    "contentType" | "animeFormat" | "genres" | "tags"
+  >,
+): boolean {
+  if (c.contentType === "anime") return true;
+  if (c.animeFormat) return true;
+  if (c.genres?.some((g) => /anim/i.test(g.name) || g.id === "16")) {
+    return true;
+  }
+  if (
+    c.tags?.some((t) =>
+      /^(anime|animation)$/i.test(t) ||
+      /(^|[\s_-])anime([\s_-]|$)/i.test(t),
+    )
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**

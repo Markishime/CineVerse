@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyDrama,
+  isAnimeLikeContent,
   isGeneralSeriesOnly,
   isKDrama,
   isValidAnime,
@@ -201,6 +202,35 @@ describe("resolveContentType", () => {
     expect(resolveContentType({ override: "series", isMovie: true })).toBe(
       "series",
     );
+  });
+});
+
+describe("isAnimeLikeContent", () => {
+  it("flags contentType anime and animation genres", () => {
+    expect(
+      isAnimeLikeContent({
+        contentType: "anime",
+        genres: [],
+        tags: [],
+      }),
+    ).toBe(true);
+    expect(
+      isAnimeLikeContent({
+        contentType: "jdrama",
+        genres: [{ id: "16", name: "Animation" }],
+        tags: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not flag live-action jdrama", () => {
+    expect(
+      isAnimeLikeContent({
+        contentType: "jdrama",
+        genres: [{ id: "18", name: "Drama" }],
+        tags: ["japanese", "popular"],
+      }),
+    ).toBe(false);
   });
 });
 

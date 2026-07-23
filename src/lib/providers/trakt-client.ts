@@ -52,6 +52,9 @@ export async function traktFetch<T>(
 /*  Type helpers                                                       */
 /* ------------------------------------------------------------------ */
 
+/** Trakt `extended=images` may return a string or string[] per image type. */
+export type TraktImageField = string | string[] | undefined;
+
 export interface TraktShow {
   title: string;
   year: number | null;
@@ -69,7 +72,12 @@ export interface TraktShow {
   status?: string;
   network?: string;
   aired_episodes?: number;
-  images?: { poster?: string; fanart?: string; banner?: string };
+  images?: {
+    poster?: TraktImageField;
+    fanart?: TraktImageField;
+    banner?: TraktImageField;
+    thumb?: TraktImageField;
+  };
 }
 
 export interface TraktMovie {
@@ -86,7 +94,36 @@ export interface TraktMovie {
   votes?: number;
   genres?: string[];
   status?: string;
-  images?: { poster?: string; fanart?: string };
+  images?: {
+    poster?: TraktImageField;
+    fanart?: TraktImageField;
+    thumb?: TraktImageField;
+  };
+}
+
+/** First usable absolute image URL from a Trakt image field. */
+export function firstTraktImage(field?: TraktImageField): string | undefined {
+  if (!field) return undefined;
+  if (typeof field === "string") {
+    const s = field.trim();
+    return s.startsWith("http") ? s : undefined;
+  }
+  if (Array.isArray(field)) {
+    for (const item of field) {
+      if (typeof item === "string" && item.trim().startsWith("http")) {
+        return item.trim();
+      }
+      // Some Trakt payloads use { full, medium, thumb } objects
+      if (item && typeof item === "object") {
+        const o = item as Record<string, unknown>;
+        for (const k of ["full", "medium", "thumb"]) {
+          const v = o[k];
+          if (typeof v === "string" && v.startsWith("http")) return v;
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 export interface TraktTrendingItem<T> {
@@ -111,7 +148,8 @@ export async function fetchTraktTrendingShows(
 ): Promise<TraktShow[]> {
   const data = await traktFetch<TraktTrendingItem<"show">[]>(
     "/shows/trending",
-    { limit: String(limit), extended: "full" },
+    // full + images so homepage cards have poster art when available
+    { limit: String(limit), extended: "full,images" },
   );
   return data?.flatMap((item) => (item.show ? [item.show] : [])) ?? [];
 }
@@ -121,7 +159,7 @@ export async function fetchTraktTrendingMovies(
 ): Promise<TraktMovie[]> {
   const data = await traktFetch<TraktTrendingItem<"movie">[]>(
     "/movies/trending",
-    { limit: String(limit), extended: "full" },
+    { limit: String(limit), extended: "full,images" },
   );
   return data?.flatMap((item) => (item.movie ? [item.movie] : [])) ?? [];
 }

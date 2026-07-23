@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -39,6 +39,7 @@ import {
 } from "@/lib/content/watch-href";
 import { easeOutExpo } from "@/lib/motion";
 import { useAuthStore } from "@/stores/auth-store";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 import { getDeviceRegion } from "@/lib/user/region";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Chip } from "@/components/ui/chip";
@@ -171,33 +172,8 @@ export function CatalogPage({
 }) {
   const m = meta[type];
   const user = useAuthStore((s) => s.user);
-  const settings = useAuthStore((s) => s.settings);
-  const settingsMature = Boolean(settings?.matureContent);
-  // Also honor device flag so 18+ works even if server settings reset
-  const [deviceMature, setDeviceMature] = useState(false);
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      try {
-        const flag = window.localStorage.getItem("cineverse_mature_flag") === "1";
-        if (flag) {
-          setDeviceMature(true);
-        } else if (user?.uid) {
-          const raw = window.localStorage.getItem(
-            `cineverse_settings_${user.uid}`,
-          );
-          if (raw) {
-            const s = JSON.parse(raw) as { matureContent?: boolean };
-            setDeviceMature(Boolean(s.matureContent));
-          }
-        }
-      } catch {
-        setDeviceMature(false);
-      }
-    }, 0);
-    return () => window.clearTimeout(t);
-  }, [user?.uid, settingsMature]);
 
-  const mature = settingsMature || deviceMature;
+  const mature = isRestrictedContentUser(user?.email);
   const region = getDeviceRegion("*");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<CatalogSort>("popularity");

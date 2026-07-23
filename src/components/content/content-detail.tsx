@@ -37,6 +37,7 @@ import {
 } from "@/lib/content/posters";
 import { formatRuntime, formatScore } from "@/lib/utils";
 import { isMatureEnabledClient } from "@/lib/user/local-profile";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 import {
   hasParentalPin,
   isMatureSessionUnlocked,
@@ -62,14 +63,18 @@ export function ContentDetail({ slug }: { slug: string }) {
   const [matureUnlocked, setMatureUnlocked] = useState(false);
   const [pinGateOpen, setPinGateOpen] = useState(false);
   const settings = useAuthStore((s) => s.settings);
-  const matureOn =
-    Boolean(settings?.matureContent) || isMatureEnabledClient(user?.uid);
+  const matureOn = isRestrictedContentUser(user?.email);
 
   useEffect(() => {
+    if (isRestrictedContentUser(user?.email)) {
+      setMatureUnlocked(true);
+      setPinGateOpen(false);
+      return;
+    }
     const unlocked = isMatureSessionUnlocked();
     setMatureUnlocked(unlocked);
     if (!unlocked) setPinGateOpen(true);
-  }, [user?.uid, settings?.matureContent]);
+  }, [user?.uid, user?.email]);
 
   const { data: content, isLoading, isError } = useQuery({
     queryKey: ["content", slug],
@@ -273,6 +278,27 @@ export function ContentDetail({ slug }: { slug: string }) {
     null;
   const activeTrailer =
     allTrailers.find((t) => t.key === activeTrailerKey) ?? trailer;
+
+  if (content.mature && !isRestrictedContentUser(user?.email)) {
+    return (
+      <div className="mx-auto max-w-lg px-4 pb-24 pt-32 text-center">
+        <p className="text-xs font-bold uppercase tracking-wider text-[var(--danger)]">
+          18+ mature title
+        </p>
+        <h1 className="mt-2 font-display text-2xl font-bold text-white">
+          {title}
+        </h1>
+        <p className="mt-3 text-sm text-[var(--text-secondary)]">
+          You do not have permission to view this content.
+        </p>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link href="/">
+            <Button variant="outline">Go home</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (content.mature && !matureOn) {
     return (

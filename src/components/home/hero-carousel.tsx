@@ -65,6 +65,18 @@ function hardSilence(p: YtPlayer | null | undefined) {
   }
 }
 
+function destroyPlayer(ref: { current: YtPlayer | null }) {
+  const p = ref.current;
+  if (!p) return;
+  try {
+    hardSilence(p);
+    p.destroy?.();
+  } catch {
+    /* ignore */
+  }
+  ref.current = null;
+}
+
 function applyPlayback(
   p: YtPlayer | null | undefined,
   opts: { play: boolean; soundOn: boolean },
@@ -142,6 +154,7 @@ function HeroTrailerBg({
 
   const [showPlayer, setShowPlayer] = useState(false);
   const playerRef = useRef<YtPlayer | null>(null);
+  const destroyedRef = useRef(false);
   const shouldPlayRef = useRef(shouldPlay);
   const soundOnRef = useRef(soundOn);
   shouldPlayRef.current = shouldPlay;
@@ -149,9 +162,9 @@ function HeroTrailerBg({
 
   // Mount / unmount player with hard silence on every leave
   useEffect(() => {
+    destroyedRef.current = false;
     if (!shouldPlay) {
-      hardSilence(playerRef.current);
-      playerRef.current = null;
+      destroyPlayer(playerRef);
       onPlayer?.(null);
       const t = window.setTimeout(() => setShowPlayer(false), 0);
       return () => window.clearTimeout(t);
@@ -159,8 +172,8 @@ function HeroTrailerBg({
     const t = window.setTimeout(() => setShowPlayer(true), 220);
     return () => {
       window.clearTimeout(t);
-      hardSilence(playerRef.current);
-      playerRef.current = null;
+      destroyedRef.current = true;
+      destroyPlayer(playerRef);
       onPlayer?.(null);
     };
   }, [shouldPlay, activeKey, onPlayer]);
@@ -176,8 +189,8 @@ function HeroTrailerBg({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      hardSilence(playerRef.current);
-      playerRef.current = null;
+      destroyedRef.current = true;
+      destroyPlayer(playerRef);
       onPlayer?.(null);
     };
   }, [onPlayer]);
@@ -211,6 +224,7 @@ function HeroTrailerBg({
 
   const onReady = useCallback(
     (event: YouTubeEvent) => {
+      if (destroyedRef.current) return;
       const p = event.target as unknown as YtPlayer;
       playerRef.current = p;
       onPlayer?.(p);
@@ -239,8 +253,7 @@ function HeroTrailerBg({
 
   // YouTube error 100/101/150 = unavailable / embed blocked → try next key
   const onError = useCallback(() => {
-    hardSilence(playerRef.current);
-    playerRef.current = null;
+    destroyPlayer(playerRef);
     onPlayer?.(null);
     setKeyIndex((i) => {
       const next = i + 1;
