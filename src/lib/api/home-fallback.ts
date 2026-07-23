@@ -8,6 +8,7 @@ import {
   filterPublicCatalog,
   isMatureContent,
 } from "@/lib/content/mature";
+import { isGeneralSeriesOnly } from "@/lib/content/classification";
 import type { HomePayload } from "@/lib/api/content";
 
 export function seedHomePayload(): HomePayload {
@@ -20,7 +21,8 @@ export function seedHomePayload(): HomePayload {
     (a, b) => (b.popularity ?? 0) - (a.popularity ?? 0),
   );
   const movies = byPop.filter((c) => c.contentType === "movie").slice(0, 24);
-  const series = byPop.filter((c) => c.contentType === "series").slice(0, 24);
+  // Never mix anime / Asian dramas into the general Series row
+  const series = byPop.filter(isGeneralSeriesOnly).slice(0, 24);
   // Prefer TV/OVA series for the home anime row (not theatrical films only).
   const animeAll = byPop.filter((c) => c.contentType === "anime");
   const animeSeries = animeAll.filter((c) => c.animeFormat !== "MOVIE");

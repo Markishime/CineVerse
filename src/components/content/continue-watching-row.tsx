@@ -16,6 +16,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { easeOutExpo, inViewOnce } from "@/lib/motion";
+import {
+  normalizeImageUrl,
+  posterFallbackLabel,
+} from "@/lib/content/posters";
 
 const typeLabel: Record<string, string> = {
   movie: "Movie",
@@ -129,7 +133,10 @@ function ContinueCard({
   uid?: string | null;
   onRemove: () => void;
 }) {
-  const img = item.backdropUrl || item.posterUrl;
+  const img =
+    normalizeImageUrl(item.backdropUrl) ||
+    normalizeImageUrl(item.posterUrl) ||
+    posterFallbackLabel(item.title, item.contentType);
   const epLabel =
     item.contentType !== "movie" && item.season != null && item.episode != null
       ? `S${item.season} · E${item.episode}`
@@ -140,19 +147,13 @@ function ContinueCard({
     <div className="group relative w-[220px] shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] sm:w-[260px]">
       <Link href={item.href} className="block">
         <div className="relative aspect-video bg-[#0c0c12]">
-          {img ? (
-            <Image
-              src={img}
-              alt={item.title}
-              fill
-              className="object-cover transition group-hover:scale-105"
-              unoptimized
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#1a1a28] to-[#2a2040] p-3 text-center text-sm font-semibold text-white">
-              {item.title}
-            </div>
-          )}
+          <Image
+            src={img}
+            alt={item.title}
+            fill
+            className="object-cover transition group-hover:scale-105"
+            unoptimized
+          />
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
           <div className="absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--gold)] text-[#1a1408] shadow-xl">

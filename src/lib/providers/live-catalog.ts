@@ -131,10 +131,10 @@ async function fetchTvMazeJson<T>(
   return fetchJson<T>(`${TVMAZE}${path}`, undefined, timeoutMs);
 }
 
-function posterFallback(title: string, hue: number): string {
-  const seed = encodeURIComponent(title.slice(0, 32) || "cineverse");
-  // Prefer photographic posters so every card has a real image
-  return `https://picsum.photos/seed/cv-${seed}-${hue}/500/750`;
+function posterFallback(title: string, _hue: number): string {
+  // placehold.co is stable (no redirect chain) — always shows a poster image
+  const t = encodeURIComponent((title || "CineVerse").slice(0, 28));
+  return `https://placehold.co/500x750/111827/F8FAFF/png?text=${t}&font=montserrat`;
 }
 
 function safeParse(content: Content): Content | null {
@@ -1739,7 +1739,7 @@ export async function fetchWorldMoviesPage(
   });
 }
 
-/** World TV series catalog (excludes KR-origin when possible via post-filter) */
+/** World TV series catalog — never anime, never Asian dramas (own tabs). */
 export async function fetchWorldSeriesPage(
   page = 1,
   pageSize = 60,
@@ -1755,6 +1755,8 @@ export async function fetchWorldSeriesPage(
     language: "en-US",
     include_adult: includeMature ? "true" : "false",
     include_null_first_air_dates: "false",
+    // Drop Animation (16) at discover so anime never enters the Series tab.
+    without_genres: "16",
   };
   // Country-specific catalog: filter at TMDB discover level
   if (country) {
@@ -1767,30 +1769,40 @@ export async function fetchWorldSeriesPage(
     path: "/discover/tv",
     baseParams: base,
     page,
-    pageSize: pageSize + 10, // headroom after dropping kdrama/anime
-    map: (r) => mapTmdbTv(r, false),
+    pageSize: pageSize + 24, // headroom after dropping anime/dramas
+    map: (r) => {
+      // Hard-drop Animation genre before mapping
+      const genreIds = Array.isArray(r.genre_ids)
+        ? (r.genre_ids as number[])
+        : [];
+      if (genreIds.includes(16)) return null;
+      return mapTmdbTv(r, false);
+    },
   });
-  // When browsing a specific country, skip the exclusion filters
+
+  const { isGeneralSeriesOnly } = await import(
+    "@/lib/content/classification"
+  );
+
+  // Country pages (e.g. PH series) keep origin filter only — still no anime.
   if (country) {
-    return {
-      ...result,
-      items: result.items.slice(0, pageSize),
-    };
+    const items = result.items
+      .filter((c) => c.contentType === "series")
+      .filter((c) => !c.animeFormat)
+      .filter(
+        (c) =>
+          !c.genres.some((g) => /anim/i.test(g.name) || g.id === "16"),
+      )
+      .slice(0, pageSize);
+    return { ...result, items };
   }
-  const items = result.items.filter((c) => {
-    if (c.contentType === "kdrama") return false;
-    // Keep pure JP animation out of generic series browse
-    if (
-      c.language === "ja" &&
-      c.genres.some((g) => /anim/i.test(g.name))
-    ) {
-      return false;
-    }
-    return true;
-  });
+
+  const items = result.items
+    .filter(isGeneralSeriesOnly)
+    .slice(0, pageSize);
   return {
     ...result,
-    items: items.slice(0, pageSize),
+    items,
   };
 }
 
@@ -2333,15 +2345,81 @@ function mapTmdbTv(
   const lang = raw.original_language
     ? String(raw.original_language)
     : null;
+  const genreIds = Array.isArray(raw.genre_ids)
+    ? (raw.genre_ids as number[])
+    : Array.isArray(raw.genres)
+      ? (raw.genres as Array<{ id?: number }>).map((g) => Number(g.id)).filter(Boolean)
+      : [];
+  const isAnimation = genreIds.includes(16);
+  const genres =
+    genreIds.length > 0
+      ? genreIds.map((gid) => ({
+          id: String(gid),
+          name: gid === 16 ? "Animation" : `Genre ${gid}`,
+        }))
+      : [];
+
   // `asDrama` can force a specific type (or true = kdrama for back-compat).
   const forced: DramaContentType | null =
     asDrama === true ? "kdrama" : asDrama === false ? null : asDrama;
+
+  // Animation TV → anime tab, never general series.
+  if (isAnimation && !forced) {
+    const overview = String(raw.overview ?? "");
+    const isAdult = tmdbLooksAdult(title, overview, Boolean(raw.adult));
+    return safeParse({
+      id: `tmdb_tv_${id}`,
+      slug: slugify(`${title}-${id}`),
+      contentType: "anime",
+      title,
+      originalTitle: raw.original_name
+        ? String(raw.original_name)
+        : undefined,
+      overview,
+      poster: posterPath
+        ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
+        : { url: posterFallback(title, 0x7867ff), source: "local" },
+      backdrop: backdropPath
+        ? { url: tmdbPoster(backdropPath, "w1280")!, source: "tmdb" }
+        : null,
+      releaseDate: release,
+      year: release ? Number(release.slice(0, 4)) : null,
+      status: "released",
+      language: lang,
+      countries: origin,
+      genres,
+      runtime: null,
+      seasonCount:
+        raw.number_of_seasons != null ? Number(raw.number_of_seasons) : null,
+      episodeCount:
+        raw.number_of_episodes != null ? Number(raw.number_of_episodes) : null,
+      ageRating: isAdult ? "18+" : null,
+      scores: raw.vote_average
+        ? [{ source: "tmdb", score: Number(raw.vote_average) }]
+        : [],
+      popularity: Number(raw.popularity ?? 0),
+      trailer: null,
+      watchProviders: [],
+      providerIds: { tmdb: id, tmdbMediaType: "tv" },
+      studios: [],
+      tags: isAdult
+        ? ["18+", "mature", "adult", "anime", "animation"]
+        : ["anime", "animation"],
+      alternateTitles: [],
+      animeFormat: "TV",
+      approved: true,
+      mature: isAdult,
+      lastSyncedAt: new Date().toISOString(),
+    });
+  }
+
   const dramaType =
     forced ??
     classifyDrama({
       isTv: true,
       originalLanguage: lang,
       originCountries: origin,
+      genres,
     });
   const isDrama = dramaType != null;
   const overview = String(raw.overview ?? "");
@@ -2369,7 +2447,7 @@ function mapTmdbTv(
     status: "released",
     language: lang,
     countries: origin,
-    genres: [],
+    genres,
     runtime: null,
     seasonCount: raw.number_of_seasons != null
       ? Number(raw.number_of_seasons)

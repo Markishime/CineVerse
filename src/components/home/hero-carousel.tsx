@@ -29,6 +29,10 @@ import {
   hasOfficialTrailer,
 } from "@/lib/content/watch-href";
 import { heroCopyContainer, heroCopyItem } from "@/lib/motion";
+import {
+  cinematicBackdropUrl,
+  normalizeImageUrl,
+} from "@/lib/content/posters";
 
 const SOUND_PREF_KEY = "cineverse_hero_trailer_sound";
 
@@ -512,7 +516,10 @@ export function HeroCarousel({
               isValidYoutubeKey(item.trailer.key)
                 ? item.trailer.key.trim()
                 : null;
-            const poster = item.backdrop?.url || item.poster?.url || null;
+            const poster =
+              normalizeImageUrl(item.backdrop?.url) ||
+              normalizeImageUrl(item.poster?.url) ||
+              cinematicBackdropUrl(item.id, title);
 
             return (
               <div

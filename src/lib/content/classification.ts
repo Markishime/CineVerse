@@ -1,4 +1,9 @@
-import type { AnimeFormat, ContentType, DramaContentType } from "@/types/content";
+import type {
+  AnimeFormat,
+  Content,
+  ContentType,
+  DramaContentType,
+} from "@/types/content";
 import { DRAMA_META } from "@/types/content";
 
 /** Genres that indicate scripted narrative drama suitable for K-drama. */
@@ -204,6 +209,35 @@ export function normalizeAnimeFormat(
     default:
       return "UNKNOWN";
   }
+}
+
+/**
+ * True for the general Series catalog only — never anime and never Asian dramas
+ * (K/C/J/Thai). Those have their own tabs.
+ */
+export function isGeneralSeriesOnly(
+  c: Pick<
+    Content,
+    "contentType" | "language" | "countries" | "genres" | "tags" | "animeFormat"
+  >,
+): boolean {
+  if (c.contentType !== "series") return false;
+  if (c.animeFormat) return false;
+  if (c.genres?.some((g) => /anim/i.test(g.name) || g.id === "16")) {
+    return false;
+  }
+  if (c.tags?.some((t) => /anime|animation/i.test(t))) return false;
+
+  // Asian drama origins live under Dramas tabs, not Series.
+  const dramaCountries = new Set(["KR", "JP", "CN", "TW", "HK", "TH"]);
+  if (c.countries?.some((cn) => dramaCountries.has(cn.toUpperCase()))) {
+    return false;
+  }
+  const dramaLangs = new Set(["ko", "ja", "zh", "th", "cn"]);
+  if (c.language && dramaLangs.has(c.language.toLowerCase())) {
+    return false;
+  }
+  return true;
 }
 
 /**

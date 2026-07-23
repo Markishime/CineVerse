@@ -93,6 +93,7 @@ import type {
   WatchProvider,
 } from "@/types/content";
 import { isDramaType } from "@/types/content";
+import { isGeneralSeriesOnly } from "@/lib/content/classification";
 import type { HomePayload, Paginated } from "@/lib/api/content";
 import {
   cinematicBackdropUrl,
@@ -766,7 +767,7 @@ export class CatalogService {
         // When a country filter was passed, TMDB already filtered via
         // with_origin_country — do NOT re-filter or valid results get dropped.
         // Public catalogs never mix 18+ — adult titles live only on /mature.
-        const items = world.items
+        let items = world.items
           .map((c) => applyMatureFlag(c))
           .map((c) => tagPlayable(c))
           .map((c) => applyRegionPlayable(c, regionCode, isTitlePlayable))
@@ -774,6 +775,18 @@ export class CatalogService {
           .filter((c) => !isMatureContent(c))
           .filter((c) => !isBlockedTitle(c))
           .filter(isAtLeastMinYear);
+
+        // Series tab: never anime, never K/C/J/Thai dramas
+        if (type === "series" && !country) {
+          items = items.filter(isGeneralSeriesOnly);
+        } else if (type === "series" && country) {
+          items = items.filter(
+            (c) =>
+              c.contentType === "series" &&
+              !c.animeFormat &&
+              !c.genres.some((g) => /anim/i.test(g.name)),
+          );
+        }
 
         if (items.length > 0) {
           return {
@@ -804,6 +817,17 @@ export class CatalogService {
         (c) =>
           c.language?.toLowerCase() === cc.toLowerCase() ||
           c.countries?.some((cn) => cn.toUpperCase() === cc),
+      );
+    }
+    // Series tab: never anime, never Asian dramas
+    if (type === "series" && !country) {
+      items = items.filter(isGeneralSeriesOnly);
+    } else if (type === "series" && country) {
+      items = items.filter(
+        (c) =>
+          c.contentType === "series" &&
+          !c.animeFormat &&
+          !c.genres.some((g) => /anim/i.test(g.name)),
       );
     }
     // Anime films vs series split
@@ -919,7 +943,8 @@ export class CatalogService {
     // General movies feeding the "Popular movies" row never include country
     // movies — those live only in their own (18+-gated) rows.
     const movies = allMovies.filter((c) => !isCountryOriginMovie(c));
-    const series = all.filter((c) => c.contentType === "series");
+    // Home "Popular series" = pure series only (no anime, no Asian dramas)
+    const series = all.filter(isGeneralSeriesOnly);
     const anime = all.filter((c) => c.contentType === "anime");
     const kdrama = all.filter((c) => c.contentType === "kdrama");
     const cdrama = all.filter((c) => c.contentType === "cdrama");

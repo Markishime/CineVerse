@@ -42,6 +42,10 @@ import { useAuthStore } from "@/stores/auth-store";
 import { getDeviceRegion } from "@/lib/user/region";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Chip } from "@/components/ui/chip";
+import {
+  normalizeImageUrl,
+  posterFallbackLabel,
+} from "@/lib/content/posters";
 
 export type CatalogSort =
   | "popularity"
@@ -473,7 +477,9 @@ function CatalogListRow({
 }) {
   const title = displayTitle(item);
   const score = primaryScore(item);
-  const poster = item.poster?.url;
+  const poster =
+    normalizeImageUrl(item.poster?.url) ||
+    posterFallbackLabel(title, item.contentType);
   const genres = item.genres
     .slice(0, 4)
     .map((g) => g.name)
@@ -492,19 +498,13 @@ function CatalogListRow({
           href={watchHref}
           className="relative h-[120px] w-[80px] shrink-0 overflow-hidden rounded-lg bg-[var(--surface-elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:h-[140px] sm:w-[94px]"
         >
-          {poster ? (
-            <Image
-              src={poster}
-              alt={title}
-              fill
-              className="object-cover"
-              unoptimized
-            />
-          ) : (
-            <div className="poster-fallback absolute inset-0 text-[10px]">
-              {title}
-            </div>
-          )}
+          <Image
+            src={poster}
+            alt={title}
+            fill
+            className="object-cover"
+            unoptimized
+          />
           <span className="absolute left-1 top-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-[var(--gold)]">
             #{rank}
           </span>

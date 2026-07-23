@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyDrama,
+  isGeneralSeriesOnly,
   isKDrama,
   isValidAnime,
   normalizeAnimeFormat,
@@ -200,5 +201,41 @@ describe("resolveContentType", () => {
     expect(resolveContentType({ override: "series", isMovie: true })).toBe(
       "series",
     );
+  });
+});
+
+describe("isGeneralSeriesOnly", () => {
+  const base = {
+    contentType: "series" as const,
+    language: "en",
+    countries: ["US"],
+    genres: [] as Array<{ id: string; name: string }>,
+    tags: [] as string[],
+  };
+
+  it("keeps pure Western/global series", () => {
+    expect(isGeneralSeriesOnly(base)).toBe(true);
+  });
+
+  it("rejects anime and Asian dramas", () => {
+    expect(
+      isGeneralSeriesOnly({ ...base, contentType: "anime" as const }),
+    ).toBe(false);
+    expect(
+      isGeneralSeriesOnly({ ...base, contentType: "kdrama" as const }),
+    ).toBe(false);
+    expect(
+      isGeneralSeriesOnly({
+        ...base,
+        language: "ko",
+        countries: ["KR"],
+      }),
+    ).toBe(false);
+    expect(
+      isGeneralSeriesOnly({
+        ...base,
+        genres: [{ id: "16", name: "Animation" }],
+      }),
+    ).toBe(false);
   });
 });

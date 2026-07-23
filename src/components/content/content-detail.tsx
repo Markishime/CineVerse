@@ -30,6 +30,11 @@ import { AuthGate } from "@/components/auth/auth-gate";
 import { PinGateModal } from "@/components/content/pin-gate";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import { getTrailerHref, getWatchHref } from "@/lib/content/watch-href";
+import {
+  cinematicBackdropUrl,
+  normalizeImageUrl,
+  posterFallbackLabel,
+} from "@/lib/content/posters";
 import { formatRuntime, formatScore } from "@/lib/utils";
 import { isMatureEnabledClient } from "@/lib/user/local-profile";
 import {
@@ -359,16 +364,18 @@ export function ContentDetail({ slug }: { slug: string }) {
   return (
     <article data-theme={content.contentType === "movie" ? "movies" : content.contentType === "series" ? "series" : content.contentType === "anime" ? "anime" : "kdrama"}>
       <div className="relative min-h-[48vh] pt-16 sm:min-h-[52vh]">
-        {(content.backdrop?.url || content.poster?.url) && (
-          <Image
-            src={content.backdrop?.url || content.poster!.url}
-            alt=""
-            fill
-            className="object-cover object-top opacity-45"
-            priority
-            unoptimized
-          />
-        )}
+        <Image
+          src={
+            normalizeImageUrl(content.backdrop?.url) ||
+            normalizeImageUrl(content.poster?.url) ||
+            cinematicBackdropUrl(content.id, title)
+          }
+          alt=""
+          fill
+          className="object-cover object-top opacity-45"
+          priority
+          unoptimized
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-[var(--background)]/85 to-[var(--background)]/40" />
         <div className="absolute inset-0 bg-gradient-to-r from-[var(--background)]/70 via-transparent to-transparent" />
       </div>
@@ -376,17 +383,16 @@ export function ContentDetail({ slug }: { slug: string }) {
       <div className="relative z-10 mx-auto -mt-36 max-w-7xl px-4 pb-24 sm:-mt-40 sm:px-6">
         <Reveal inView={false} className="flex flex-col gap-8 md:flex-row md:items-start">
           <div className="relative mx-auto h-[320px] w-[210px] shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.75)] sm:mx-0">
-            {content.poster?.url ? (
-              <Image
-                src={content.poster.url}
-                alt={title}
-                fill
-                className="object-cover"
-                unoptimized
-              />
-            ) : (
-              <div className="poster-fallback absolute inset-0">{title}</div>
-            )}
+            <Image
+              src={
+                normalizeImageUrl(content.poster?.url) ||
+                posterFallbackLabel(title, content.contentType)
+              }
+              alt={title}
+              fill
+              className="object-cover"
+              unoptimized
+            />
           </div>
 
           <div className="flex-1 space-y-4">

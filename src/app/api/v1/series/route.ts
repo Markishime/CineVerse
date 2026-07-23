@@ -14,20 +14,30 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("playable") === "1" ||
     request.nextUrl.searchParams.get("playable") === "true" ||
     request.nextUrl.searchParams.get("watchNow") === "1";
-  const region = (
-    request.nextUrl.searchParams.get("region") ?? "US"
-  ).toUpperCase();
+  const regionRaw = request.nextUrl.searchParams.get("region");
+  const region =
+    !regionRaw || regionRaw === "*" || regionRaw.toUpperCase() === "AUTO"
+      ? "*"
+      : regionRaw.toUpperCase();
   const country = request.nextUrl.searchParams.get("country") ?? undefined;
-  return json(
-    await catalog.byType(
-      "series",
-      page,
-      Math.min(pageSize, 100),
-      sort,
-      includeMature,
-      playableOnly,
-      region,
-      country,
-    ),
-  );
+  try {
+    return json(
+      await catalog.byType(
+        "series",
+        page,
+        Math.min(pageSize, 100),
+        sort,
+        includeMature,
+        playableOnly,
+        region,
+        country,
+      ),
+    );
+  } catch (err) {
+    console.warn(
+      "[api/v1/series] byType failed",
+      err instanceof Error ? err.message : err,
+    );
+    return json({ items: [], page: 1, totalPages: 1, total: 0 });
+  }
 }
