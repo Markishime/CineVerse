@@ -154,6 +154,7 @@ export function CatalogPage({
   animeFormat,
   title,
   subtitle,
+  matureOnly,
 }: {
   type: ContentType;
   country?: string;
@@ -161,6 +162,8 @@ export function CatalogPage({
   animeFormat?: "movie" | "series";
   title?: string;
   subtitle?: string;
+  /** When true, the whole page is hidden behind an 18+ gate when off. */
+  matureOnly?: boolean;
 }) {
   const m = meta[type];
   const user = useAuthStore((s) => s.user);
@@ -215,7 +218,39 @@ export function CatalogPage({
     staleTime: 20_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+    enabled: !(matureOnly && !mature),
   });
+
+  // 18+-only catalog (country movies): hidden entirely when the toggle is off.
+  if (matureOnly && !mature) {
+    return (
+      <div data-theme={m.theme} className="min-h-dvh pt-24">
+        <div className="mx-auto max-w-lg px-4 pb-24 text-center">
+          <div className="rounded-2xl border border-white/10 bg-[var(--surface)] p-8">
+            <p className="text-xs font-bold uppercase tracking-wider text-[var(--danger)]">
+              18+ mature content
+            </p>
+            <h1 className="mt-2 font-display text-2xl font-bold text-white">
+              {title ?? m.title}
+            </h1>
+            <p className="mt-3 text-sm text-[var(--text-secondary)]">
+              This collection is only available when &quot;Show 18+ mature
+              titles&quot; is turned on. Enable it in Settings (parental PIN
+              required).
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <Link href="/settings">
+                <Button>Open Settings</Button>
+              </Link>
+              <Link href="/movies">
+                <Button variant="secondary">All Movies</Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div data-theme={m.theme} className="min-h-dvh pt-24">

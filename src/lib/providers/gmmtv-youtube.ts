@@ -6,7 +6,8 @@
 
 import type { Content } from "@/types/content";
 
-const GMMTV_CHANNEL_ID = "UCzFMXnFXmFeVqPfJfPn3bRg";
+// "GMMTV OFFICIAL" — verified via https://www.youtube.com/@GMMTV canonical link
+const GMMTV_CHANNEL_ID = "UC8BzJM6_VbZTdiNLD4R1jxQ";
 const RSS_URL = `https://www.youtube.com/feeds/videos.xml?channel_id=${GMMTV_CHANNEL_ID}`;
 
 /* ------------------------------------------------------------------ */
@@ -85,7 +86,7 @@ function extractAttr(
 export async function fetchGmmtvLatest(limit = 20): Promise<GmmmtvVideo[]> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 14_000);
+    const timer = setTimeout(() => controller.abort(), 8_000);
     const res = await fetch(RSS_URL, {
       signal: controller.signal,
       next: { revalidate: 900 },
@@ -93,14 +94,16 @@ export async function fetchGmmtvLatest(limit = 20): Promise<GmmmtvVideo[]> {
     clearTimeout(timer);
 
     if (!res.ok) {
-      console.error("GMMTV RSS error", res.status);
+      console.warn(`[GMMTV] RSS ${res.status} — skipping`);
       return [];
     }
 
     const xml = await res.text();
     return parseAtomFeed(xml).slice(0, limit);
   } catch (e) {
-    console.error("GMMTV RSS fetch failed", e);
+    console.warn(
+      `[GMMTV] RSS unavailable: ${e instanceof Error ? e.message : "error"}`,
+    );
     return [];
   }
 }

@@ -17,13 +17,20 @@ export class ApiError extends Error {
 async function authHeader(): Promise<Record<string, string>> {
   try {
     const auth = getClientAuth();
-    // Wait briefly for Auth to restore the session (common right after navigation)
-    if (!auth.currentUser) {
-      await auth.authStateReady?.();
+    let user = auth.currentUser;
+
+    // authStateReady can hang in Cloud Function environments, blocking every
+    // API call and keeping the UI on the loading skeleton forever.  Resolve
+    // the race with a short timeout so requests always proceed.
+    if (!user && typeof auth.authStateReady === "function") {
+      await Promise.race([
+        auth.authStateReady(),
+        new Promise<void>((r) => setTimeout(r, 3000)),
+      ]);
+      user = auth.currentUser;
     }
-    const user = auth.currentUser;
+
     if (!user) return {};
-    // Force refresh so server always gets a valid, non-expired token
     const token = await user.getIdToken(/* forceRefresh */ false);
     return { Authorization: `Bearer ${token}` };
   } catch {

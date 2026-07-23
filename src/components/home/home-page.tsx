@@ -15,6 +15,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { Badge } from "@/components/ui/badge";
 import { APP_REGION } from "@/lib/user/region";
 import { landingSection } from "@/lib/motion";
+import { filterPublicCatalog } from "@/lib/content/mature";
 
 const HeroOrbits = dynamic(
   () => import("./hero-orbits").then((m) => m.HeroOrbits),
@@ -67,13 +68,13 @@ export function HomePage() {
 
   const carouselItems = useMemo(() => {
     if (!data) return [];
-    return (
+    const raw = (
       data.featuredCarousel?.length
         ? data.featuredCarousel
         : [data.featured, ...data.trending].filter(Boolean)
-    )
-      .filter(Boolean)
-      .slice(0, 12) as NonNullable<typeof data.featured>[];
+    ).filter(Boolean) as NonNullable<typeof data.featured>[];
+    // Belt-and-suspenders: hero never shows 18+ even if API regresses.
+    return filterPublicCatalog(raw).slice(0, 12);
   }, [data]);
 
   if (isLoading) {
@@ -146,11 +147,12 @@ export function HomePage() {
 
       <motion.div
         id="home-catalog"
-        className="landing-row-enter relative z-10 mx-auto max-w-7xl space-y-12 px-4 pb-28 pt-2 sm:space-y-14 sm:px-6"
+        className="landing-row-enter relative z-10 mx-auto max-w-7xl space-y-12 px-4 pb-28 pt-2 sm:space-y-14 sm:px-6 will-change-transform"
         initial={reduce ? false : "hidden"}
         whileInView={reduce ? undefined : "visible"}
         viewport={{ once: true, amount: 0.02, margin: "0px 0px -40px 0px" }}
         variants={reduce ? undefined : landingSection}
+        style={{ backfaceVisibility: "hidden" }}
       >
         <ContinueWatchingRow />
 
@@ -270,29 +272,7 @@ export function HomePage() {
             items={data.trendingThaidramas}
           />
         </div>
-        {mature &&
-        (data.matureMovies?.length ||
-          data.matureSeries?.length ||
-          data.matureAnime?.length) ? (
-          <>
-            {(data.matureMovies?.length ?? 0) > 0 && (
-              <ContentRow title="18+ Movies" items={data.matureMovies!} />
-            )}
-            {(data.matureSeries?.length ?? 0) > 0 && (
-              <ContentRow title="18+ Series" items={data.matureSeries!} />
-            )}
-            {(data.matureAnime?.length ?? 0) > 0 && (
-              <ContentRow title="18+ Anime" items={data.matureAnime!} />
-            )}
-            {(data.matureKdramas?.length ?? 0) > 0 && (
-              <ContentRow
-                title="18+ K-Drama"
-                subtitle="Explicit & nudity Korean dramas"
-                items={data.matureKdramas!}
-              />
-            )}
-          </>
-        ) : null}
+        {/* 18+ titles never appear on home (popular/trending). Open the 18+ tab. */}
 
         <div className="cinematic-divider" />
         <Reveal className="space-y-4">

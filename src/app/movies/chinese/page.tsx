@@ -10,6 +10,7 @@ export default function ChineseMoviesPage() {
     <CatalogPage
       type="movie"
       country="CN"
+      matureOnly
       title="Chinese Movies"
       subtitle="Explore Chinese cinema — blockbusters, wuxia, and art house"
     />

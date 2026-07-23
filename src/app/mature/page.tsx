@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { motion, useReducedMotion } from "framer-motion";
 import { AlertTriangle, Shield } from "lucide-react";
 import { fetchMatureLibrary } from "@/lib/api/content";
 import { ContentCard } from "@/components/content/content-card";
@@ -18,13 +19,15 @@ import {
   verifyParentalPin,
 } from "@/lib/user/mature-pin";
 import { useAuthStore } from "@/stores/auth-store";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
-type Tab = "all" | "movie" | "series" | "anime";
+type Tab = "all" | "movie" | "series" | "anime" | "kdrama" | "cdrama" | "jdrama" | "thaidrama";
 
 export default function MaturePage() {
   const user = useAuthStore((s) => s.user);
   const settings = useAuthStore((s) => s.settings);
   const loading = useAuthStore((s) => s.loading);
+  const reduce = useReducedMotion();
   const [unlocked, setUnlocked] = useState(false);
   const [gateOpen, setGateOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("all");
@@ -163,6 +166,10 @@ export default function MaturePage() {
     { id: "movie", label: "Movies" },
     { id: "series", label: "Series" },
     { id: "anime", label: "Anime" },
+    { id: "kdrama", label: "K-Drama" },
+    { id: "cdrama", label: "C-Drama" },
+    { id: "jdrama", label: "J-Drama" },
+    { id: "thaidrama", label: "Thai Drama" },
   ];
 
   return (
@@ -176,8 +183,9 @@ export default function MaturePage() {
             Mature library
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-[var(--text-secondary)]">
-            Movies, series, and anime with explicit sexual content or nudity.
-            Soft ecchi and violence-only titles are excluded.
+            Adults-only titles (18+ / R18 / NC-17 / provider-adult / explicit).
+            These never appear on Home or regular Movies · Series · Anime · Drama
+            catalogs — only here when 18+ is enabled.
           </p>
         </div>
         <Badge tone="primary" className="gap-1.5">
@@ -228,11 +236,23 @@ export default function MaturePage() {
 
       {data && data.items.length > 0 && (
         <>
-          <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          <motion.div
+            className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+            variants={reduce ? undefined : staggerContainer}
+            initial={reduce ? false : "hidden"}
+            animate={reduce ? undefined : "visible"}
+          >
             {data.items.map((c) => (
-              <ContentCard key={c.id} content={c} />
+              <motion.div
+                key={c.id}
+                variants={reduce ? undefined : staggerItem}
+                className="will-change-transform"
+              >
+                {/* publicSafe not needed — ContentCard is raw; library is already adult-only */}
+                <ContentCard content={c} className="!w-full !min-w-0" />
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
           {data.totalPages > 1 && (
             <div className="mt-10 flex items-center justify-center gap-3">
               <Button

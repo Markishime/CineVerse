@@ -10,6 +10,7 @@ export default function FilipinoMoviesPage() {
     <CatalogPage
       type="movie"
       country="PH"
+      matureOnly
       title="Filipino Movies"
       subtitle="Explore Filipino cinema — drama, comedy, and indie films"
     />

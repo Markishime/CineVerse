@@ -25,7 +25,9 @@ export function PageTransition({ children }: { children: ReactNode }) {
         initial="initial"
         animate="animate"
         exit="exit"
-        className="min-h-[inherit]"
+        // Transform/opacity only — keeps route changes at 60fps
+        className="min-h-[inherit] will-change-[opacity,transform]"
+        style={{ backfaceVisibility: "hidden" }}
       >
         {children}
       </motion.div>

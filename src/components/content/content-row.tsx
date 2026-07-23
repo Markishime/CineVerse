@@ -7,7 +7,8 @@ import { useRef, useState, useEffect, useMemo, type ReactNode } from "react";
 import type { Content } from "@/types/content";
 import { ContentCard } from "./content-card";
 import { Button } from "@/components/ui/button";
-import { easeOutExpo, inViewOnce } from "@/lib/motion";
+import { inViewOnce, rowEnter } from "@/lib/motion";
+import { filterPublicCatalog } from "@/lib/content/mature";
 
 function LazyRender({
   children,
@@ -51,6 +52,8 @@ export function ContentRow({
   wide,
   className,
   showRank,
+  /** When true (default), strip 18+ so rows never leak adult titles on public surfaces */
+  publicSafe = true,
 }: {
   title: string;
   subtitle?: string;
@@ -58,6 +61,7 @@ export function ContentRow({
   wide?: boolean;
   className?: string;
   showRank?: boolean;
+  publicSafe?: boolean;
 }) {
   const reduce = useReducedMotion() ?? false;
   const [emblaRef, emblaApi] = useEmblaCarousel({
@@ -67,15 +71,16 @@ export function ContentRow({
   });
 
   const uniqueItems = useMemo(() => {
+    const source = publicSafe ? filterPublicCatalog(items ?? []) : (items ?? []);
     const seen = new Set<string>();
     const out: Content[] = [];
-    for (const item of items ?? []) {
+    for (const item of source) {
       if (!item?.id || seen.has(item.id)) continue;
       seen.add(item.id);
       out.push(item);
     }
     return out;
-  }, [items]);
+  }, [items, publicSafe]);
 
   if (!uniqueItems.length) return null;
 
@@ -116,11 +121,11 @@ function ContentRowInner({
 }) {
   return (
     <motion.section
-      className="relative space-y-3"
-      initial={reduce ? false : { opacity: 0, y: 24 }}
-      whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
+      className="relative space-y-3 will-change-transform"
+      initial={reduce ? false : rowEnter.initial}
+      whileInView={reduce ? undefined : rowEnter.animate}
       viewport={inViewOnce}
-      transition={{ duration: 0.4, ease: easeOutExpo }}
+      transition={rowEnter.transition}
       aria-label={title}
     >
       <div className="flex items-end justify-between gap-4 px-1">

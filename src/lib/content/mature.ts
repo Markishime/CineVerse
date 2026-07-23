@@ -271,6 +271,30 @@ export function filterByMatureFlag<
 }
 
 /**
+ * Public surfaces (home popular/trending/featured, Movies/Series/Anime/Drama
+ * catalogs, discover, search): NEVER include 18+ / adult-restricted titles.
+ * Those belong exclusively on the `/mature` (18+) tab when the toggle is on.
+ */
+export function filterPublicCatalog<
+  T extends Pick<
+    Content,
+    "mature" | "ageRating" | "tags" | "contentType" | "overview" | "title"
+  >,
+>(items: T[]): T[] {
+  return items.filter((c) => !isAdultRestricted(c));
+}
+
+/** Keep only adults-only titles for the dedicated 18+ library. */
+export function filterAdultLibrary<
+  T extends Pick<
+    Content,
+    "mature" | "ageRating" | "tags" | "contentType" | "overview" | "title"
+  >,
+>(items: T[]): T[] {
+  return items.filter((c) => isAdultRestricted(c));
+}
+
+/**
  * Normalize flags:
  *  - explicit sexual → mark mature + explicit tags
  *  - adults-only-by-rating (18+/R18/NC-17/provider-adult/ecchi-18+) → mark

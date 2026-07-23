@@ -65,9 +65,9 @@ import {
 } from "@/lib/content/trailers";
 import {
   applyMatureFlag,
+  filterAdultLibrary,
   filterByMatureFlag,
-  filterExplicitMatureLibrary,
-  filterMatureAnimeLibrary,
+  filterPublicCatalog,
   isAccurateAdultAnime,
   isMatureContent,
 } from "@/lib/content/mature";
@@ -126,9 +126,16 @@ export class CatalogService {
   >();
   /** Short TTL so homepage featured / catalog feel real-time */
   private readonly TTL = 90 * 1000;
+  /** Keep serving a previous successful catalog while providers are down */
+  private readonly STALE_TTL = 30 * 60 * 1000;
   private readonly DETAIL_TTL = 5 * 60 * 1000;
+  /** Cap how long a cold catalog build may block the home API */
+  private readonly LOAD_BUDGET_MS = 12_000;
 
   private matureCache: { at: number; items: Content[] } | null = null;
+  /** Single-flight: concurrent loadLive calls share one in-flight promise */
+  private liveInflight: Promise<Content[]> | null = null;
+  private matureInflight: Promise<Content[]> | null = null;
 
   async loadLive(includeMature = false): Promise<Content[]> {
     const cache = includeMature ? this.matureCache : this.liveCache;
@@ -136,8 +143,153 @@ export class CatalogService {
       return cache.items;
     }
 
+    const inflight = includeMature ? this.matureInflight : this.liveInflight;
+    if (inflight) return inflight;
+
+    const run = this.buildLive(includeMature)
+      .catch((err) => {
+        // Prefer any still-fresh-enough stale catalog over empty/throwing.
+        const stale = includeMature ? this.matureCache : this.liveCache;
+        if (stale && Date.now() - stale.at < this.STALE_TTL) {
+          return stale.items;
+        }
+        // Last resort: seed so the app never 500s on provider outages.
+        console.warn(
+          "[catalog] loadLive failed; serving seed catalog",
+          err instanceof Error ? err.message : err,
+        );
+        const seed = includeMature
+          ? SEED_CONTENT.map((c) => applyMatureFlag(c))
+          : SEED_CONTENT.filter((c) => !isMatureContent(c)).map((c) =>
+              applyMatureFlag(c),
+            );
+        return seed;
+      })
+      .finally(() => {
+        if (includeMature) this.matureInflight = null;
+        else this.liveInflight = null;
+      });
+
+    if (includeMature) this.matureInflight = run;
+    else this.liveInflight = run;
+    return run;
+  }
+
+  private async buildLive(includeMature = false): Promise<Content[]> {
+    // Stale-while-revalidate: if we have a recent-enough catalog, return it
+    // immediately while a background refresh would be ideal — for simplicity
+    // we only re-enter buildLive when TTL expired, but still honor STALE_TTL
+    // if the provider fan-out blows the budget.
+    const prior = includeMature ? this.matureCache : this.liveCache;
+
     const COUNTRY_CODES = ["KR", "JP", "CN", "TH", "PH"] as const;
 
+    const emptyToday = {
+      movies: [] as Content[],
+      series: [] as Content[],
+      anime: [] as Content[],
+      kdrama: [] as Content[],
+    };
+
+    const providers = Promise.all([
+      fetchAllAnimeLive(includeMature).catch(() => [] as Content[]),
+      includeMature
+        ? fetchAdultAnimeCatalog().catch(() => [] as Content[])
+        : Promise.resolve([] as Content[]),
+      fetchJikanTop().catch(() => [] as Content[]),
+      fetchTvMazePopular().catch(() => [] as Content[]),
+      fetchTvMazeKdrama().catch(() => [] as Content[]),
+      fetchTmdbDrama("cdrama", includeMature).catch(() => [] as Content[]),
+      fetchTmdbDrama("jdrama", includeMature).catch(() => [] as Content[]),
+      fetchTmdbDrama("thaidrama", includeMature).catch(() => [] as Content[]),
+      fetchTmdbMovies().catch(() => [] as Content[]),
+      fetchTmdbSeries().catch(() => [] as Content[]),
+      fetchTmdbTrending().catch(() => [] as Content[]),
+      fetchTmdbKdrama().catch(() => [] as Content[]),
+      includeMature
+        ? fetchTmdbMature().catch(() => [] as Content[])
+        : Promise.resolve([] as Content[]),
+      fetchTrendingTodayByType().catch(() => emptyToday),
+      // Per-country movie catalogs (Korean / Japanese / Chinese / Thai / Filipino)
+      Promise.all(
+        COUNTRY_CODES.map((cc) =>
+          fetchTmdbMoviesByCountry(cc, includeMature).catch(
+            () => [] as Content[],
+          ),
+        ),
+      ),
+      // Per-country live-action series (anime excluded in the fetcher)
+      Promise.all(
+        COUNTRY_CODES.map((cc) =>
+          fetchTmdbSeriesByCountry(cc).catch(() => [] as Content[]),
+        ),
+      ),
+    ]);
+
+    // If providers hang (e.g. undici connect timeout storms), fall back to
+    // stale cache or seed instead of holding the request for 30s+.
+    const budget = new Promise<"timeout">((resolve) => {
+      setTimeout(() => resolve("timeout"), this.LOAD_BUDGET_MS);
+    });
+    const raced = await Promise.race([
+      providers.then((v) => ({ kind: "ok" as const, v })),
+      budget.then(() => ({ kind: "timeout" as const })),
+    ]);
+
+    if (raced.kind === "timeout") {
+      if (prior && Date.now() - prior.at < this.STALE_TTL) {
+        // Refresh cache timestamp so concurrent callers hit cache, not a new fan-out.
+        if (includeMature) this.matureCache = { at: Date.now(), items: prior.items };
+        else this.liveCache = { at: Date.now(), items: prior.items };
+        void providers
+          .then((v) => this.mergeAndCacheLive(includeMature, v))
+          .catch(() => undefined);
+        return prior.items;
+      }
+      const seed = includeMature
+        ? SEED_CONTENT.map((c) => applyMatureFlag(c))
+        : SEED_CONTENT.filter((c) => !isMatureContent(c)).map((c) =>
+            applyMatureFlag(c),
+          );
+      // Degraded cache: avoid re-storming providers on every home hit.
+      // Background merge overwrites with the full live catalog when ready.
+      if (includeMature) this.matureCache = { at: Date.now(), items: seed };
+      else this.liveCache = { at: Date.now(), items: seed };
+      void providers
+        .then((v) => this.mergeAndCacheLive(includeMature, v))
+        .catch(() => undefined);
+      return seed;
+    }
+
+    return this.mergeAndCacheLive(includeMature, raced.v);
+  }
+
+  private mergeAndCacheLive(
+    includeMature: boolean,
+    buckets: [
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      Content[],
+      {
+        movies: Content[];
+        series: Content[];
+        anime: Content[];
+        kdrama: Content[];
+      },
+      Content[][],
+      Content[][],
+    ],
+  ): Content[] {
     const [
       animeAll,
       adultAnime,
@@ -155,43 +307,7 @@ export class CatalogService {
       todayBuckets,
       countryMovieBuckets,
       countrySeriesBuckets,
-    ] = await Promise.all([
-      fetchAllAnimeLive(includeMature).catch(() => [] as Content[]),
-      includeMature
-        ? fetchAdultAnimeCatalog().catch(() => [] as Content[])
-        : Promise.resolve([] as Content[]),
-      fetchJikanTop().catch(() => [] as Content[]),
-      fetchTvMazePopular().catch(() => [] as Content[]),
-      fetchTvMazeKdrama().catch(() => [] as Content[]),
-      fetchTmdbDrama("cdrama").catch(() => [] as Content[]),
-      fetchTmdbDrama("jdrama").catch(() => [] as Content[]),
-      fetchTmdbDrama("thaidrama").catch(() => [] as Content[]),
-      fetchTmdbMovies().catch(() => [] as Content[]),
-      fetchTmdbSeries().catch(() => [] as Content[]),
-      fetchTmdbTrending().catch(() => [] as Content[]),
-      fetchTmdbKdrama().catch(() => [] as Content[]),
-      includeMature
-        ? fetchTmdbMature().catch(() => [] as Content[])
-        : Promise.resolve([] as Content[]),
-      fetchTrendingTodayByType().catch(() => ({
-        movies: [] as Content[],
-        series: [] as Content[],
-        anime: [] as Content[],
-        kdrama: [] as Content[],
-      })),
-      // Per-country movie catalogs (Korean / Japanese / Chinese / Thai / Filipino)
-      Promise.all(
-        COUNTRY_CODES.map((cc) =>
-          fetchTmdbMoviesByCountry(cc).catch(() => [] as Content[]),
-        ),
-      ),
-      // Per-country live-action series (anime excluded in the fetcher)
-      Promise.all(
-        COUNTRY_CODES.map((cc) =>
-          fetchTmdbSeriesByCountry(cc).catch(() => [] as Content[]),
-        ),
-      ),
-    ]);
+    ] = buckets;
 
     const countryMovies = countryMovieBuckets.flat();
     const countrySeries = countrySeriesBuckets.flat();
@@ -625,6 +741,13 @@ export class CatalogService {
     const { isTitlePlayable } = await import("@/lib/playback/playback-store");
     const size = Math.min(Math.max(pageSize, 1), 100);
 
+    // Country-specific MOVIE catalogs (Korean/Japanese/Chinese/Thai/Filipino)
+    // are 18+-gated in full: when the mature toggle is OFF, show nothing so the
+    // /movies/{country} pages stay empty and their nav entries disappear.
+    if (type === "movie" && country && !includeMature) {
+      return { items: [], page: 1, totalPages: 1, total: 0 };
+    }
+
     // Watch Now / free-only still uses the local playable catalog (not the full world index)
     if (!playableOnly) {
       const world = await this.loadWorldCatalogPage(
@@ -639,12 +762,13 @@ export class CatalogService {
       if (world) {
         // When a country filter was passed, TMDB already filtered via
         // with_origin_country — do NOT re-filter or valid results get dropped.
+        // Public catalogs never mix 18+ — adult titles live only on /mature.
         const items = world.items
           .map((c) => applyMatureFlag(c))
           .map((c) => tagPlayable(c))
           .map((c) => applyRegionPlayable(c, regionCode, isTitlePlayable))
           .map((c) => sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))))
-          .filter((c) => includeMature || !isMatureContent(c))
+          .filter((c) => !isMatureContent(c))
           .filter((c) => !isBlockedTitle(c))
           .filter(isAtLeastMinYear);
 
@@ -657,12 +781,13 @@ export class CatalogService {
       }
     }
 
-    const all = (await this.loadLive(includeMature)).map((c) =>
+    // Regular type catalogs stay family-safe; 18+ is only on the mature tab.
+    const all = (await this.loadLive(false)).map((c) =>
       applyRegionPlayable(c, regionCode, isTitlePlayable),
     );
     let items = all
       .filter((c) => c.contentType === type)
-      .filter((c) => includeMature || !isMatureContent(c))
+      .filter((c) => !isMatureContent(c))
       .filter(isAtLeastMinYear);
     if (playableOnly) {
       items = items.filter((c) => c.playable);
@@ -727,7 +852,13 @@ export class CatalogService {
         );
       }
       if (type === "series") {
-        return await fetchWorldSeriesPage(page, pageSize, sort, country);
+        return await fetchWorldSeriesPage(
+          page,
+          pageSize,
+          sort,
+          country,
+          includeMature,
+        );
       }
       if (isDramaType(type)) {
         return await fetchWorldDramaPage(
@@ -735,6 +866,7 @@ export class CatalogService {
           page,
           pageSize,
           sort,
+          includeMature,
         );
       }
     } catch {
@@ -748,13 +880,37 @@ export class CatalogService {
     const regionCode = "US";
     const { isTitlePlayable } = await import("@/lib/playback/playback-store");
 
-    const raw = filterByMatureFlag(
-      await this.loadLive(includeMature),
-      includeMature,
+    // Home is always a public surface: strip every adults-only title so 18+
+    // never appears in popular/trending/featured (even when the toggle is on).
+    // Adult titles are served only from /api/v1/mature → 18+ tab.
+    const raw = filterPublicCatalog(
+      (await this.loadLive(includeMature)).map((c) => applyMatureFlag(c)),
     );
-    const all = raw.map((c) => applyRegionPlayable(c, regionCode, isTitlePlayable));
+    const allWithRegion = raw.map((c) =>
+      applyRegionPlayable(c, regionCode, isTitlePlayable),
+    );
 
-    const movies = all.filter((c) => c.contentType === "movie");
+    // Country-origin MOVIES are still 18+-toggle-gated on the homepage (product
+    // rule): when the mature toggle is OFF, drop them from every row. They are
+    // not “adult library” titles — just hidden until the user opts into 18+.
+    const isCountryOriginMovie = (c: Content) => {
+      if (c.contentType !== "movie") return false;
+      const lang = (c.language ?? "").toLowerCase();
+      const langHit = ["ko", "ja", "zh", "th", "tl"].includes(lang);
+      const countryHit =
+        c.countries?.some((cn) =>
+          ["KR", "JP", "CN", "TW", "HK", "TH", "PH"].includes(cn.toUpperCase()),
+        ) ?? false;
+      return langHit || countryHit;
+    };
+    const all = includeMature
+      ? allWithRegion
+      : allWithRegion.filter((c) => !isCountryOriginMovie(c));
+
+    const allMovies = all.filter((c) => c.contentType === "movie");
+    // General movies feeding the "Popular movies" row never include country
+    // movies — those live only in their own (18+-gated) rows.
+    const movies = allMovies.filter((c) => !isCountryOriginMovie(c));
     const series = all.filter((c) => c.contentType === "series");
     const anime = all.filter((c) => c.contentType === "anime");
     const kdrama = all.filter((c) => c.contentType === "kdrama");
@@ -779,41 +935,39 @@ export class CatalogService {
       return out;
     };
 
-    // Korean movies: origin country KR or original language ko
+    // Country movie rows appear ONLY when the 18+ toggle is on. When off, they
+    // are empty so no Korean/Japanese/Chinese/Thai/Filipino movies show.
     const isKoreanMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "ko" || c.countries?.some((cn) => cn === "KR"));
-    const koreanMovies = uniqueById(
-      [...movies].filter(isKoreanMovie).sort(byPop),
-    );
-    // Japanese movies
+    const koreanMovies = includeMature
+      ? uniqueById([...allMovies].filter(isKoreanMovie).sort(byPop))
+      : [];
     const isJapaneseMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "ja" || c.countries?.some((cn) => cn === "JP"));
-    const japaneseMovies = uniqueById(
-      [...movies].filter(isJapaneseMovie).sort(byPop),
-    );
-    // Chinese movies
+    const japaneseMovies = includeMature
+      ? uniqueById([...allMovies].filter(isJapaneseMovie).sort(byPop))
+      : [];
     const isChineseMovie = (c: Content) =>
       c.contentType === "movie" &&
-      (c.language === "zh" || c.countries?.some((cn) => cn === "CN"));
-    const chineseMovies = uniqueById(
-      [...movies].filter(isChineseMovie).sort(byPop),
-    );
-    // Thai movies
+      (c.language === "zh" ||
+        c.countries?.some((cn) => ["CN", "TW", "HK"].includes(cn)));
+    const chineseMovies = includeMature
+      ? uniqueById([...allMovies].filter(isChineseMovie).sort(byPop))
+      : [];
     const isThaiMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "th" || c.countries?.some((cn) => cn === "TH"));
-    const thaiMovies = uniqueById(
-      [...movies].filter(isThaiMovie).sort(byPop),
-    );
-    // Filipino movies
+    const thaiMovies = includeMature
+      ? uniqueById([...allMovies].filter(isThaiMovie).sort(byPop))
+      : [];
     const isFilipinoMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "tl" || c.countries?.some((cn) => cn === "PH"));
-    const filipinoMovies = uniqueById(
-      [...movies].filter(isFilipinoMovie).sort(byPop),
-    );
+    const filipinoMovies = includeMature
+      ? uniqueById([...allMovies].filter(isFilipinoMovie).sort(byPop))
+      : [];
     // Filipino series
     const isFilipinoSeries = (c: Content) =>
       c.contentType === "series" &&
@@ -849,13 +1003,6 @@ export class CatalogService {
     const thaiSeries = uniqueById(
       [...all].filter(isThaiSeries).sort(byPop),
     );
-    // Mature K-drama: 18+ explicit/nudity Korean dramas
-    const matureKdramas = includeMature
-      ? uniqueById(
-          filterExplicitMatureLibrary(kdrama).sort(byPop),
-        )
-      : [];
-
     const topMovies = uniqueById([...movies].sort(byPop));
     const topSeries = uniqueById([...series].sort(byPop));
     const topAnime = uniqueById([...anime].sort(byPop));
@@ -1126,28 +1273,11 @@ export class CatalogService {
             c.watchProviders.some((p) => p.type === "free"),
         ),
       ).slice(0, 24),
-      matureMovies: includeMature
-        ? uniqueById(
-            filterExplicitMatureLibrary(movies).sort(
-              (a, b) => (b.popularity ?? 0) - (a.popularity ?? 0),
-            ),
-          ).slice(0, 24)
-        : [],
-      matureSeries: includeMature
-        ? uniqueById(
-            filterExplicitMatureLibrary(series).sort(
-              (a, b) => (b.popularity ?? 0) - (a.popularity ?? 0),
-            ),
-          ).slice(0, 24)
-        : [],
-      matureAnime: includeMature
-        ? uniqueById(
-            filterMatureAnimeLibrary(anime).sort(
-              (a, b) => (b.popularity ?? 0) - (a.popularity ?? 0),
-            ),
-          ).slice(0, 36)
-        : [],
-      matureKdramas,
+      // Intentionally empty on home — 18+ lives only on the Mature tab.
+      matureMovies: [],
+      matureSeries: [],
+      matureAnime: [],
+      matureKdramas: [],
       communityFavorites: rankedToday.slice(0, 18),
       editorial: featuredUnique.slice(0, 8),
       moods: SEED_MOODS,
@@ -1158,30 +1288,19 @@ export class CatalogService {
   }
 
   /**
-   * 18+ Mature library — EXPLICIT sexual content only (nudity / sex / erotica / hentai).
-   * Tabs: movies · series · anime only (no K-drama).
+   * 18+ Mature library — the ONLY place adult-restricted titles appear.
+   * Includes movies, series, anime, and dramas flagged adults-only (18+/R18/
+   * NC-17/provider-adult/hentai/explicit). Requires mature toggle + PIN on the client.
    */
   async matureLibrary(
     page = 1,
     pageSize = 60,
     type?: ContentType | "all",
   ): Promise<Paginated<Content>> {
-    const all = await this.loadLive(true);
-    // Strict sexual/explicit filter — movies, series, anime only
-    let items = filterExplicitMatureLibrary(all)
-      .filter(
-        (c) =>
-          c.contentType === "movie" ||
-          c.contentType === "series" ||
-          c.contentType === "anime",
-      )
-      .filter(isAtLeastMinYear);
+    const all = (await this.loadLive(true)).map((c) => applyMatureFlag(c));
+    let items = filterAdultLibrary(all).filter(isAtLeastMinYear);
     if (type && type !== "all") {
-      if (type === "kdrama") {
-        items = [];
-      } else {
-        items = items.filter((c) => c.contentType === type);
-      }
+      items = items.filter((c) => c.contentType === type);
     }
     items = sortContent(items, "popularity");
     return paginate(items, page, Math.min(pageSize, 100));
@@ -1236,8 +1355,8 @@ export class CatalogService {
       ...(await this.loadLive(includeMature)),
     ]).map((c) => applyMatureFlag(c));
 
-    // Always strip 18+ when mature is off (including remote search hits)
-    results = filterByMatureFlag(results, includeMature);
+    // Public search never surfaces 18+ — mature titles only via /mature.
+    results = filterPublicCatalog(results.map((c) => applyMatureFlag(c)));
     results = filterBlocked(results);
     results = results.filter(isAtLeastMinYear);
 
@@ -1365,10 +1484,14 @@ export class CatalogService {
   async recommendations(contentId: string): Promise<Recommendation[]> {
     const base = await this.byId(contentId);
     if (!base) return [];
-    // Never surface 18+ titles next to non-mature content
+    // Non-mature titles never get 18+ neighbors; mature titles may rec within adult set.
     const safeCatalog = isMatureContent(base)
-      ? await this.loadLive(true)
-      : filterByMatureFlag(await this.loadLive(false), false);
+      ? filterAdultLibrary(
+          (await this.loadLive(true)).map((c) => applyMatureFlag(c)),
+        )
+      : filterPublicCatalog(
+          (await this.loadLive(false)).map((c) => applyMatureFlag(c)),
+        );
     return buildRecommendations({
       catalog: safeCatalog,
       favoriteGenres: base.genres.map((g) => g.name),

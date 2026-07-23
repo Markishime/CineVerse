@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { Play, Star } from "lucide-react";
 import type { Content } from "@/types/content";
 import { cn, formatScore } from "@/lib/utils";
@@ -16,6 +17,7 @@ import {
 } from "@/lib/content/watch-href";
 import { AddToListButton } from "@/components/content/add-to-list-button";
 import { useAuthStore } from "@/stores/auth-store";
+import { cardHover } from "@/lib/motion";
 
 const typeTone: Record<
   Content["contentType"],
@@ -62,16 +64,21 @@ export function ContentCard({
   const detailsHref = getDetailsHref(content);
   const [imgFailed, setImgFailed] = useState(false);
   const user = useAuthStore((s) => s.user);
+  const reduce = useReducedMotion();
   const src =
     !imgFailed &&
     ((wide && content.backdrop?.url) || content.poster?.url || "");
 
   return (
-    <article
+    <motion.article
+      initial="rest"
+      whileHover={reduce ? undefined : "hover"}
+      animate="rest"
+      variants={reduce ? undefined : cardHover}
       className={cn(
-        // GPU-friendly hover: transform + border/shadow only, no JS per frame.
+        // GPU-only hover (transform): keeps homepage rows at 60fps.
         "group relative flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)]",
-        "transition-transform duration-200 ease-out will-change-transform motion-safe:hover:-translate-y-1",
+        "will-change-transform",
         "hover:border-white/18 hover:shadow-[0_14px_40px_-18px_rgba(0,0,0,0.8)]",
         "focus-within:border-[var(--primary)]/40 focus-within:ring-2 focus-within:ring-[var(--ring)]",
         wide ? "min-w-[220px] sm:min-w-[280px]" : "min-w-[140px] w-[140px] sm:w-[160px]",
@@ -170,6 +177,6 @@ export function ContentCard({
           )}
         </div>
       </div>
-    </article>
+    </motion.article>
   );
 }

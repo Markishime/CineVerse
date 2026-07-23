@@ -390,7 +390,7 @@ export function VideoPlayer({
     <div className={cn("relative", className)}>
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
         {status === "loading" && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90 px-4">
             <Loader2 className="h-10 w-10 animate-spin text-[var(--primary)]" />
             <p className="text-sm text-white">
               Loading from{" "}
@@ -402,6 +402,10 @@ export function VideoPlayer({
             <p className="text-xs text-[var(--text-muted)]">
               Provider {activeIndex + 1} of {availableProviders.length}
               {isAnime ? " · anime sources" : ""}
+            </p>
+            <p className="max-w-xs text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Some servers take a few seconds. If this one fails, use{" "}
+              <span className="text-white/80">Servers</span> to switch.
             </p>
           </div>
         )}
@@ -525,6 +529,26 @@ export function VideoPlayer({
               })}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Always visible so users know to try another server if load stalls */}
+      <div
+        role="note"
+        className="mt-3 flex gap-2.5 rounded-xl border border-[var(--gold)]/25 bg-[var(--gold)]/8 px-3.5 py-3 text-left"
+      >
+        <AlertTriangle
+          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--gold)]"
+          aria-hidden
+        />
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--gold)]">
+            Important Notice
+          </p>
+          <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+            If the current server does not work, switch to another server. Some
+            servers may take a few seconds to load.
+          </p>
         </div>
       </div>
     </div>

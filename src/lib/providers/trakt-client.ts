@@ -18,24 +18,30 @@ export async function traktFetch<T>(
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 14_000);
+  const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     const res = await fetch(url, {
       headers: {
         "Content-Type": "application/json",
         "trakt-api-version": API_VERSION,
         "trakt-api-key": clientId,
+        // Cloudflare bot heuristics 403 undici's default fingerprint on
+        // request bursts — a real UA keeps public API reads unblocked.
+        "User-Agent": "CineVerse/1.0 (+https://cineverse-live.web.app)",
       },
       signal: controller.signal,
       next: { revalidate: 300 },
     });
     if (!res.ok) {
-      console.error("Trakt error", res.status, await res.text());
+      // Never dump response bodies (Cloudflare block pages are full HTML docs)
+      console.warn(`[Trakt] ${res.status} on ${path} — skipping`);
       return null;
     }
     return (await res.json()) as T;
   } catch (e) {
-    console.error("Trakt fetch failed", e);
+    console.warn(
+      `[Trakt] unavailable: ${e instanceof Error ? e.message : "error"}`,
+    );
     return null;
   } finally {
     clearTimeout(timer);

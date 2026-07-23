@@ -28,6 +28,9 @@ interface NavItem {
   label: string;
   icon: typeof Film;
   matureOnly?: true;
+  /** When true, `children` only appear (as a dropdown) if 18+ is enabled;
+   *  otherwise the item renders as a plain link. */
+  matureChildren?: true;
   children?: Array<{ href: string; label: string }>;
 }
 
@@ -37,6 +40,9 @@ const baseNav: NavItem[] = [
     href: "/movies",
     label: "Movies",
     icon: Film,
+    // Country movie catalogs are 18+-only — the dropdown appears only when the
+    // mature toggle is on; otherwise Movies is a plain link.
+    matureChildren: true,
     children: [
       { href: "/movies", label: "All Movies" },
       { href: "/movies/korean", label: "Korean Movies" },
@@ -177,13 +183,46 @@ export function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [deviceMature, setDeviceMature] = useState(false);
   const reduce = useReducedMotion();
   const { user, profile, settings } = useAuthStore();
   const isHome = pathname === "/";
-  const matureEnabled = Boolean(settings?.matureContent);
-  const nav = baseNav.filter(
-    (item) => !("matureOnly" in item && item.matureOnly) || matureEnabled,
-  );
+  const settingsMature = Boolean(settings?.matureContent);
+
+  // Mirror the device 18+ flag used across catalog pages so the navbar stays in
+  // sync when server settings haven't loaded yet.
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem("cineverse_mature_flag") === "1") {
+        setDeviceMature(true);
+      } else if (user?.uid) {
+        const raw = window.localStorage.getItem(
+          `cineverse_settings_${user.uid}`,
+        );
+        if (raw) {
+          const s = JSON.parse(raw) as { matureContent?: boolean };
+          setDeviceMature(Boolean(s.matureContent));
+        } else {
+          setDeviceMature(false);
+        }
+      } else {
+        setDeviceMature(false);
+      }
+    } catch {
+      setDeviceMature(false);
+    }
+  }, [user?.uid, settingsMature]);
+
+  const matureEnabled = settingsMature || deviceMature;
+  const nav = baseNav
+    .filter((item) => !("matureOnly" in item && item.matureOnly) || matureEnabled)
+    // Drop 18+-only dropdown children (country movies) when the toggle is off,
+    // so Movies becomes a plain link instead of a dropdown.
+    .map((item) =>
+      item.matureChildren && !matureEnabled
+        ? { ...item, children: undefined }
+        : item,
+    );
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);

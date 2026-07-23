@@ -16,21 +16,23 @@ export async function omdbFetch<T>(
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 14_000);
+  const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
       next: { revalidate: 3600 },
     });
     if (!res.ok) {
-      console.error("OMDb error", res.status, await res.text());
+      console.warn(`[OMDb] ${res.status} — skipping`);
       return null;
     }
     const data = (await res.json()) as T & { Response?: string };
     if (data.Response === "False") return null;
     return data as T;
   } catch (e) {
-    console.error("OMDb fetch failed", e);
+    console.warn(
+      `[OMDb] unavailable: ${e instanceof Error ? e.message : "error"}`,
+    );
     return null;
   } finally {
     clearTimeout(timer);

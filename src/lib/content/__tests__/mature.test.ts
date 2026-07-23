@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyMatureFlag,
+  filterAdultLibrary,
   filterByMatureFlag,
   filterExplicitMatureLibrary,
+  filterPublicCatalog,
   isAdultRestricted,
   isExplicitSexualContent,
   isMatureContent,
@@ -169,6 +171,45 @@ describe("explicit sexual mature library", () => {
     ] as Content[];
     expect(filterByMatureFlag(list, false)).toHaveLength(1);
     expect(filterByMatureFlag(list, true)).toHaveLength(2);
+  });
+
+  it("filterPublicCatalog always strips 18+ (home/catalogs never mix adult)", () => {
+    const list = [
+      base,
+      {
+        ...base,
+        id: "adult",
+        tags: ["18+", "nudity"],
+        mature: true,
+        ageRating: "18+",
+      },
+    ] as Content[];
+    expect(filterPublicCatalog(list).map((c) => c.id)).toEqual(["t1"]);
+  });
+
+  it("filterAdultLibrary keeps only adults-only titles for the 18+ tab", () => {
+    const list = [
+      base,
+      {
+        ...base,
+        id: "adult",
+        tags: ["18+", "nudity"],
+        mature: true,
+        ageRating: "18+",
+      },
+      {
+        ...base,
+        id: "r18-anime",
+        contentType: "anime" as const,
+        ageRating: "R18+",
+        tags: ["r18+", "mature"],
+        mature: true,
+      },
+    ] as Content[];
+    expect(filterAdultLibrary(list).map((c) => c.id).sort()).toEqual([
+      "adult",
+      "r18-anime",
+    ]);
   });
 });
 

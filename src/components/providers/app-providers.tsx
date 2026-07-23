@@ -1,6 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { LazyMotion, domAnimation, MotionConfig } from "framer-motion";
 import { useState, type ReactNode } from "react";
 import { AuthProvider } from "./auth-provider";
 import { PerformanceProvider } from "./performance-provider";
@@ -26,7 +27,15 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <AnalyticsProvider>
         <AuthProvider>
           <PerformanceProvider>
-            <SmoothScrollProvider>{children}</SmoothScrollProvider>
+            {/*
+              LazyMotion + reduced-motion transition skip keeps scroll/home at 60fps.
+              Only load the DOM animation feature set (no layout/drag plugins).
+            */}
+            <LazyMotion features={domAnimation} strict={false}>
+              <MotionConfig reducedMotion="user">
+                <SmoothScrollProvider>{children}</SmoothScrollProvider>
+              </MotionConfig>
+            </LazyMotion>
           </PerformanceProvider>
         </AuthProvider>
       </AnalyticsProvider>

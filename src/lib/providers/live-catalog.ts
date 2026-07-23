@@ -27,11 +27,74 @@ const JIKAN = "https://api.jikan.moe/v4";
 const TMDB = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
+/**
+ * Host-level circuit breaker so a flaky/unreachable provider (e.g. TVMaze
+ * connect timeouts) does not fan out into dozens of 10s stalls and flood
+ * the console. After `CIRCUIT_FAILS` consecutive failures we skip that host
+ * for `CIRCUIT_COOLDOWN_MS`.
+ */
+const CIRCUIT_FAILS = 3;
+const CIRCUIT_COOLDOWN_MS = 60_000;
+const circuitOpenUntil = new Map<string, number>();
+const circuitFailCount = new Map<string, number>();
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+function isCircuitOpen(host: string): boolean {
+  const until = circuitOpenUntil.get(host) ?? 0;
+  return Date.now() < until;
+}
+
+function recordCircuitSuccess(host: string): void {
+  circuitFailCount.set(host, 0);
+  circuitOpenUntil.delete(host);
+}
+
+function recordCircuitFailure(host: string): void {
+  const n = (circuitFailCount.get(host) ?? 0) + 1;
+  circuitFailCount.set(host, n);
+  if (n >= CIRCUIT_FAILS) {
+    circuitOpenUntil.set(host, Date.now() + CIRCUIT_COOLDOWN_MS);
+    circuitFailCount.set(host, 0);
+  }
+}
+
+/** Bound parallel outbound calls so one dead host cannot saturate the event loop. */
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]!, i);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
+}
+
 async function fetchJson<T>(
   url: string,
   init?: RequestInit,
-  timeoutMs = 14_000,
+  // Keep well under undici's default 10s connect timeout so a provider outage
+  // fails fast instead of stacking multi-second stalls per request.
+  timeoutMs = 5_000,
 ): Promise<T | null> {
+  const host = hostOf(url);
+  if (isCircuitOpen(host)) return null;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -41,13 +104,28 @@ async function fetchJson<T>(
       // Short TTL so catalog feels real-time when TMDB token is configured
       next: { revalidate: 300 },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // 5xx from the host counts toward the breaker; 4xx is a client miss.
+      if (res.status >= 500) recordCircuitFailure(host);
+      else recordCircuitSuccess(host);
+      return null;
+    }
+    recordCircuitSuccess(host);
     return (await res.json()) as T;
   } catch {
+    recordCircuitFailure(host);
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** TVMaze-specific fetch: short timeout + shared circuit (api.tvmaze.com). */
+async function fetchTvMazeJson<T>(
+  path: string,
+  timeoutMs = 3_000,
+): Promise<T | null> {
+  return fetchJson<T>(`${TVMAZE}${path}`, undefined, timeoutMs);
 }
 
 function posterFallback(title: string, hue: number): string {
@@ -979,11 +1057,14 @@ function mapTvMaze(s: TvMazeShow, forceType?: ContentType): Content | null {
 }
 
 export async function fetchTvMazePopular(): Promise<Content[]> {
-  // Deeper series catalog — pages 0–7 for fuller browse coverage
-  const pages = await Promise.all(
-    [0, 1, 2, 3, 4, 5, 6, 7].map((p) =>
-      fetchJson<TvMazeShow[]>(`${TVMAZE}/shows?page=${p}`),
-    ),
+  // Skip entirely when the host circuit is open (avoids 8× connect timeouts).
+  if (isCircuitOpen(hostOf(TVMAZE))) return [];
+
+  // Pages 0–7, but only 2 at a time — full parallel was hammering TVMaze
+  // and stacking 10s connect timeouts when the host was unreachable.
+  const pageNums = [0, 1, 2, 3, 4, 5, 6, 7] as const;
+  const pages = await mapPool(pageNums, 2, (p) =>
+    fetchTvMazeJson<TvMazeShow[]>(`/shows?page=${p}`),
   );
   const tagToday = (list: TvMazeShow[] | null | undefined) =>
     (list ?? [])
@@ -1008,8 +1089,8 @@ export async function fetchTvMazePopular(): Promise<Content[]> {
 
 export async function fetchTvMazeSearch(q: string): Promise<Content[]> {
   if (!q.trim()) return [];
-  const data = await fetchJson<Array<{ show: TvMazeShow }>>(
-    `${TVMAZE}/search/shows?q=${encodeURIComponent(q)}`,
+  const data = await fetchTvMazeJson<Array<{ show: TvMazeShow }>>(
+    `/search/shows?q=${encodeURIComponent(q)}`,
   );
   return (data ?? [])
     .map((r) => mapTvMaze(r.show))
@@ -1019,8 +1100,8 @@ export async function fetchTvMazeSearch(q: string): Promise<Content[]> {
 /** Resolve a TVMaze show id by title (single best match). */
 export async function resolveTvMazeShowId(title: string): Promise<number | null> {
   if (!title.trim()) return null;
-  const data = await fetchJson<Array<{ show: TvMazeShow; score?: number }>>(
-    `${TVMAZE}/search/shows?q=${encodeURIComponent(title)}`,
+  const data = await fetchTvMazeJson<Array<{ show: TvMazeShow; score?: number }>>(
+    `/search/shows?q=${encodeURIComponent(title)}`,
   );
   const hit = data?.[0]?.show;
   return hit?.id ?? null;
@@ -1053,8 +1134,8 @@ export async function fetchTvMazeSeasons(
   showId: number,
   contentId: string,
 ): Promise<Season[]> {
-  const data = await fetchJson<TvMazeSeason[]>(
-    `${TVMAZE}/shows/${showId}/seasons`,
+  const data = await fetchTvMazeJson<TvMazeSeason[]>(
+    `/shows/${showId}/seasons`,
   );
   if (!data?.length) return [];
   return data
@@ -1081,8 +1162,8 @@ export async function fetchTvMazeSeasonEpisodes(
   seasonNumber: number,
   contentId: string,
 ): Promise<Episode[]> {
-  const data = await fetchJson<TvMazeEpisode[]>(
-    `${TVMAZE}/shows/${showId}/episodes`,
+  const data = await fetchTvMazeJson<TvMazeEpisode[]>(
+    `/shows/${showId}/episodes`,
   );
   if (!data?.length) return [];
   const seasonId = `${contentId}_s${seasonNumber}`;
@@ -1108,72 +1189,61 @@ export async function fetchTvMazeSeasonEpisodes(
 }
 
 export async function fetchTvMazeKdrama(): Promise<Content[]> {
+  if (isCircuitOpen(hostOf(TVMAZE))) return [];
+
+  // Focused query set (TMDB covers most kdrama when token is present).
+  // High fan-out was a major source of connect-timeout storms.
   const queries = [
     "korean",
-    "korea",
-    "seoul",
-    "netflix korea",
-    "reply",
     "goblin",
     "crash landing",
     "squid game",
     "business proposal",
-    "descendants of the sun",
     "vincenzo",
-    "itaewon class",
-    "hospital playlist",
-    "hometown cha-cha-cha",
     "extraordinary attorney woo",
     "the glory",
     "queen of tears",
     "lovely runner",
     "alchemy of souls",
-    "mr sunshine",
-    "signal",
-    "my love from the star",
-    "descendants",
-    "penthouse",
-    "start-up",
+    "hospital playlist",
   ];
   const results: Content[] = [];
-  await Promise.all(
-    queries.map(async (q) => {
-      const data = await fetchJson<Array<{ show: TvMazeShow }>>(
-        `${TVMAZE}/search/shows?q=${encodeURIComponent(q)}`,
-      );
-      for (const r of data ?? []) {
-        const mappedRaw =
-          mapTvMaze(r.show, "kdrama") ??
-          mapTvMaze({
-            ...r.show,
-            language: r.show.language ?? "Korean",
-          });
-        const mapped = mappedRaw
-          ? {
-              ...mappedRaw,
-              tags: Array.from(
-                new Set([
-                  ...(mappedRaw.tags ?? []),
-                  "trending-today",
-                  "popular",
-                  "kdrama",
-                ]),
-              ),
-              popularity: (mappedRaw.popularity ?? 0) + 20,
-            }
-          : null;
-        if (
-          mapped &&
-          (mapped.contentType === "kdrama" ||
-            mapped.language === "ko" ||
-            mapped.countries.includes("KR") ||
-            mapped.title.toLowerCase().includes("korea"))
-        ) {
-          results.push({ ...mapped, contentType: "kdrama" });
-        }
+  await mapPool(queries, 3, async (q) => {
+    const data = await fetchTvMazeJson<Array<{ show: TvMazeShow }>>(
+      `/search/shows?q=${encodeURIComponent(q)}`,
+    );
+    for (const r of data ?? []) {
+      const mappedRaw =
+        mapTvMaze(r.show, "kdrama") ??
+        mapTvMaze({
+          ...r.show,
+          language: r.show.language ?? "Korean",
+        });
+      const mapped = mappedRaw
+        ? {
+            ...mappedRaw,
+            tags: Array.from(
+              new Set([
+                ...(mappedRaw.tags ?? []),
+                "trending-today",
+                "popular",
+                "kdrama",
+              ]),
+            ),
+            popularity: (mappedRaw.popularity ?? 0) + 20,
+          }
+        : null;
+      if (
+        mapped &&
+        (mapped.contentType === "kdrama" ||
+          mapped.language === "ko" ||
+          mapped.countries.includes("KR") ||
+          mapped.title.toLowerCase().includes("korea"))
+      ) {
+        results.push({ ...mapped, contentType: "kdrama" });
       }
-    }),
-  );
+    }
+  });
   const byId = new Map(results.map((c) => [c.id, c]));
   return Array.from(byId.values());
 }
@@ -1183,8 +1253,8 @@ export async function fetchTvMazeById(id: number): Promise<{
   cast: Credit[];
   crew: Credit[];
 }> {
-  const show = await fetchJson<TvMazeShow>(
-    `${TVMAZE}/shows/${id}?embed[]=cast&embed[]=crew`,
+  const show = await fetchTvMazeJson<TvMazeShow>(
+    `/shows/${id}?embed[]=cast&embed[]=crew`,
   );
   if (!show) return { content: null, cast: [], crew: [] };
   const content = mapTvMaze(show);
@@ -1671,6 +1741,7 @@ export async function fetchWorldSeriesPage(
   pageSize = 60,
   sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
   country?: string,
+  includeMature = false,
 ): Promise<WorldCatalogPage> {
   if (!hasTmdbAccess()) {
     return { items: [], page: 1, totalPages: 1, total: 0 };
@@ -1678,7 +1749,7 @@ export async function fetchWorldSeriesPage(
   const base: Record<string, string> = {
     sort_by: tmdbSortParam(sort, "tv"),
     language: "en-US",
-    include_adult: "false",
+    include_adult: includeMature ? "true" : "false",
     include_null_first_air_dates: "false",
   };
   // Country-specific catalog: filter at TMDB discover level
@@ -1725,6 +1796,7 @@ export async function fetchWorldDramaPage(
   page = 1,
   pageSize = 60,
   sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  includeMature = false,
 ): Promise<WorldCatalogPage> {
   if (!hasTmdbAccess()) {
     return { items: [], page: 1, totalPages: 1, total: 0 };
@@ -1736,7 +1808,7 @@ export async function fetchWorldDramaPage(
     with_origin_country: dramaDiscoverCountries(type),
     // Exclude Animation so anime is never mislabeled as live-action drama.
     without_genres: "16",
-    include_adult: "false",
+    include_adult: includeMature ? "true" : "false",
     language: "en-US",
   };
   if (sort === "rating") {
@@ -1794,6 +1866,8 @@ export async function fetchWorldAnimePage(
 
   // ── Anime films only: AniList MOVIE format (+ TMDB JP animation films) ──
   if (isMovieOnly) {
+    // AniList $isAdult defaults to false — passing null never returns adult
+    // content. When mature mode is on we must fetch both safe and adult pages.
     const [moviePages, tmdbFilms] = await Promise.all([
       Promise.all(
         Array.from({ length: pagesNeeded }, (_, i) =>
@@ -1802,10 +1876,24 @@ export async function fetchWorldAnimePage(
             perPage,
             sort: anilistSort,
             format: "MOVIE",
-            isAdult: includeMature ? undefined : false,
+            isAdult: false,
           }),
         ),
-      ),
+      ).then(async (safe) => {
+        if (!includeMature) return safe;
+        const adult = await Promise.all(
+          Array.from({ length: pagesNeeded }, (_, i) =>
+            fetchAnilistAnimePage({
+              page: start + i,
+              perPage,
+              sort: anilistSort,
+              format: "MOVIE",
+              isAdult: true,
+            }),
+          ),
+        );
+        return [...safe, ...adult];
+      }),
       page === 1
         ? fetchTmdbAnimeMovies().catch(() => [] as Content[])
         : Promise.resolve([] as Content[]),
@@ -1825,13 +1913,17 @@ export async function fetchWorldAnimePage(
     };
     if (page === 1) pushM(tmdbFilms.slice(0, 20));
     pushM(moviePages.flatMap((p) => p.items));
-    const anilistLastM = firstM?.totalPages ?? 1;
+    // When mature mode is on, moviePages[] contains both safe and adult results.
+    const allTotalPagesM = moviePages.map((p) => p.totalPages ?? 1);
+    const allTotalsM = moviePages.map((p) => p.total ?? 0);
+    const anilistLastM = Math.max(...allTotalPagesM);
+    const anilistTotalM = allTotalsM.reduce((a, b) => a + b, 0);
     const totalPagesM = Math.max(1, Math.ceil(anilistLastM / pagesNeeded));
     return {
       items: mergedM.slice(0, pageSize),
       page: Math.min(Math.max(1, page), totalPagesM),
       totalPages: totalPagesM,
-      total: firstM?.total ?? mergedM.length,
+      total: anilistTotalM || mergedM.length,
     };
   }
 
@@ -1843,6 +1935,8 @@ export async function fetchWorldAnimePage(
     !isSeriesOnly && (page === 1 || page % 3 === 0);
   const moviePage = Math.max(1, Math.ceil(page / 3));
 
+  // AniList $isAdult defaults to false — passing null never returns adult
+  // content. When mature mode is on we must fetch both safe and adult pages.
   const [pages, moviePageResult, tmdbAnimeMovies] = await Promise.all([
     Promise.all(
       Array.from({ length: pagesNeeded }, (_, i) =>
@@ -1850,18 +1944,47 @@ export async function fetchWorldAnimePage(
           page: start + i,
           perPage,
           sort: anilistSort,
-          isAdult: includeMature ? undefined : false,
+          isAdult: false,
         }),
       ),
-    ),
+    ).then(async (safe) => {
+      if (!includeMature) return safe;
+      const adult = await Promise.all(
+        Array.from({ length: pagesNeeded }, (_, i) =>
+          fetchAnilistAnimePage({
+            page: start + i,
+            perPage,
+            sort: anilistSort,
+            isAdult: true,
+          }),
+        ),
+      );
+      return [...safe, ...adult];
+    }),
     injectMovies
       ? fetchAnilistAnimePage({
           page: moviePage,
           perPage: Math.min(25, perPage),
           sort: anilistSort,
           format: "MOVIE",
-          isAdult: includeMature ? undefined : false,
-        }).catch(() => ({ items: [] as Content[], total: 0, totalPages: 1 }))
+          isAdult: false,
+        })
+          .then(async (safe) => {
+            if (!includeMature) return safe;
+            const adult = await fetchAnilistAnimePage({
+              page: moviePage,
+              perPage: Math.min(25, perPage),
+              sort: anilistSort,
+              format: "MOVIE",
+              isAdult: true,
+            });
+            return {
+              items: [...safe.items, ...(adult?.items ?? [])],
+              total: safe.total + (adult?.total ?? 0),
+              totalPages: Math.max(safe.totalPages, adult?.totalPages ?? 1),
+            };
+          })
+          .catch(() => ({ items: [] as Content[], total: 0, totalPages: 1 }))
       : Promise.resolve({ items: [] as Content[], total: 0, totalPages: 1 }),
     // Page 1 also blends TMDB JP Animation films (AniList/MAL pairing later)
     !isSeriesOnly && page === 1
@@ -1893,9 +2016,14 @@ export async function fetchWorldAnimePage(
 
   const items = merged.slice(0, pageSize);
 
-  const anilistLast = first?.totalPages ?? 1;
+  // When mature mode is on, pages[] contains both safe and adult results.
+  // Use the max totalPages across all pages and sum all totals.
+  const allTotalPages = pages.map((p) => p.totalPages ?? 1);
+  const allTotals = pages.map((p) => p.total ?? 0);
+  const anilistLast = Math.max(...allTotalPages);
+  const anilistTotal = allTotals.reduce((a, b) => a + b, 0);
   const totalPages = Math.max(1, Math.ceil(anilistLast / pagesNeeded));
-  const total = (first?.total ?? items.length) + (moviePageResult.total ?? 0);
+  const total = anilistTotal + (moviePageResult.total ?? 0);
 
   return {
     items,
@@ -2448,15 +2576,17 @@ export async function fetchTmdbMovies(): Promise<Content[]> {
  */
 export async function fetchTmdbMoviesByCountry(
   country: string,
+  includeMature = false,
 ): Promise<Content[]> {
   const cc = country.toUpperCase();
+  const adult = includeMature ? "true" : "false";
   const [popular, top, recent] = await Promise.all([
     tmdbFetchManyPages(
       "/discover/movie",
       {
         with_origin_country: cc,
         sort_by: "popularity.desc",
-        include_adult: "false",
+        include_adult: adult,
         language: "en-US",
       },
       8,
@@ -2467,7 +2597,7 @@ export async function fetchTmdbMoviesByCountry(
         with_origin_country: cc,
         sort_by: "vote_average.desc",
         "vote_count.gte": "20",
-        include_adult: "false",
+        include_adult: adult,
         language: "en-US",
       },
       4,
@@ -2479,7 +2609,7 @@ export async function fetchTmdbMoviesByCountry(
         sort_by: "primary_release_date.desc",
         "primary_release_date.lte": new Date().toISOString().slice(0, 10),
         "vote_count.gte": "5",
-        include_adult: "false",
+        include_adult: adult,
         language: "en-US",
       },
       4,
@@ -2507,15 +2637,17 @@ export async function fetchTmdbMoviesByCountry(
  */
 export async function fetchTmdbSeriesByCountry(
   country: string,
+  includeMature = false,
 ): Promise<Content[]> {
   const cc = country.toUpperCase();
+  const adult = includeMature ? "true" : "false";
   const [popular, recent] = await Promise.all([
     tmdbFetchManyPages(
       "/discover/tv",
       {
         with_origin_country: cc,
         without_genres: "16",
-        include_adult: "false",
+        include_adult: adult,
         sort_by: "popularity.desc",
         language: "en-US",
       },
@@ -2526,7 +2658,7 @@ export async function fetchTmdbSeriesByCountry(
       {
         with_origin_country: cc,
         without_genres: "16",
-        include_adult: "false",
+        include_adult: adult,
         sort_by: "first_air_date.desc",
         "vote_count.gte": "5",
         language: "en-US",
@@ -2798,6 +2930,7 @@ function dramaDiscoverCountries(type: DramaContentType): string {
 
 export async function fetchTmdbDrama(
   type: DramaContentType,
+  includeMature = false,
 ): Promise<Content[]> {
   const country = dramaDiscoverCountries(type);
   // Exclude Animation (16) so anime never gets mislabeled as a live-action
@@ -2805,9 +2938,9 @@ export async function fetchTmdbDrama(
   const base = {
     with_origin_country: country,
     without_genres: "16",
-    include_adult: "false",
+    include_adult: includeMature ? "true" : "false",
     language: "en-US",
-  } as const;
+  };
   const [popular, top, newest, all] = await Promise.all([
     tmdbFetchManyPages(
       "/discover/tv",

@@ -9,7 +9,7 @@ export async function anilistQuery<T>(
   variables?: Record<string, unknown>,
 ): Promise<T | null> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
+  const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     const res = await fetch(ENDPOINT, {
       method: "POST",
@@ -22,17 +22,19 @@ export async function anilistQuery<T>(
       next: { revalidate: 1800 },
     });
     if (!res.ok) {
-      console.error("AniList error", res.status);
+      console.warn(`[AniList] ${res.status} — skipping`);
       return null;
     }
     const json = (await res.json()) as { data?: T; errors?: unknown };
     if (json.errors) {
-      console.error("AniList GraphQL errors", json.errors);
+      console.warn("[AniList] GraphQL errors — skipping");
       return null;
     }
     return json.data ?? null;
   } catch (e) {
-    console.error("AniList fetch failed", e);
+    console.warn(
+      `[AniList] unavailable: ${e instanceof Error ? e.message : "error"}`,
+    );
     return null;
   } finally {
     clearTimeout(timer);

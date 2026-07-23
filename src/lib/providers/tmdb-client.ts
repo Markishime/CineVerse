@@ -16,7 +16,7 @@ export async function tmdbFetch<T>(
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
+  const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     const res = await fetch(url, {
       headers: {
@@ -27,12 +27,14 @@ export async function tmdbFetch<T>(
       next: { revalidate: 300 },
     });
     if (!res.ok) {
-      console.error("TMDB error", res.status, await res.text());
+      console.warn(`[TMDB] ${res.status} on ${path} — skipping`);
       return null;
     }
     return (await res.json()) as T;
   } catch (e) {
-    console.error("TMDB fetch failed", e);
+    console.warn(
+      `[TMDB] unavailable: ${e instanceof Error ? e.message : "error"}`,
+    );
     return null;
   } finally {
     clearTimeout(timer);

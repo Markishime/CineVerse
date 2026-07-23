@@ -10,6 +10,7 @@ export default function JapaneseMoviesPage() {
     <CatalogPage
       type="movie"
       country="JP"
+      matureOnly
       title="Japanese Movies"
       subtitle="Explore Japanese cinema — anime, drama, and classics"
     />
