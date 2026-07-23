@@ -64,14 +64,14 @@ export interface HomePayload {
 }
 
 export function fetchHome(region?: string, mature?: boolean) {
-  // Client hard-timeout so a hung SSR function never leaves the home skeleton up forever.
+  // Short client timeout — seed placeholder already paints the page.
   const path = `/home${buildQuery({ region, mature: mature ? "1" : undefined })}`;
   return Promise.race([
-    apiFetch<HomePayload>(path, { auth: true }),
+    apiFetch<HomePayload>(path, { auth: false }),
     new Promise<never>((_, reject) =>
       setTimeout(
         () => reject(new Error("Home catalog timed out — try again")),
-        12_000,
+        6_000,
       ),
     ),
   ]);

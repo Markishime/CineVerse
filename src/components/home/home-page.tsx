@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { fetchHome } from "@/lib/api/content";
+import { seedHomePayload } from "@/lib/api/home-fallback";
 import { ContentRow } from "@/components/content/content-row";
 import { ContinueWatchingRow } from "@/components/content/continue-watching-row";
 import { HeroCarousel } from "./hero-carousel";
@@ -56,75 +57,35 @@ export function HomePage() {
   const mature = settingsMature || deviceMature;
   const region = APP_REGION;
 
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+  // Instant seed so the homepage NEVER sits on a full-screen skeleton while
+  // /api/v1/home hangs on Cloud Functions cold starts or provider outages.
+  const fallback = useMemo(() => seedHomePayload(), []);
+
+  const { data, isError, refetch, isFetching } = useQuery({
     queryKey: ["home", mature, region],
     queryFn: () => fetchHome(region, mature),
     staleTime: 15_000,
-    // One retry only — never sit on the skeleton through endless 500/timeout loops.
+    // Seed is already on screen — one soft retry is enough.
     retry: 1,
-    retryDelay: 800,
+    retryDelay: 600,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchIntervalInBackground: false,
+    placeholderData: fallback,
   });
 
+  // Always have something to render (live or seed).
+  const home = data ?? fallback;
+
   const carouselItems = useMemo(() => {
-    if (!data) return [];
     const raw = (
-      data.featuredCarousel?.length
-        ? data.featuredCarousel
-        : [data.featured, ...data.trending].filter(Boolean)
-    ).filter(Boolean) as NonNullable<typeof data.featured>[];
-    // Belt-and-suspenders: hero never shows 18+ even if API regresses.
+      home.featuredCarousel?.length
+        ? home.featuredCarousel
+        : [home.featured, ...home.trending].filter(Boolean)
+    ).filter(Boolean) as NonNullable<typeof home.featured>[];
     return filterPublicCatalog(raw).slice(0, 12);
-  }, [data]);
-
-  if (isLoading) {
-    return (
-      <div className="overflow-x-hidden bg-[var(--background)]">
-        <div className="relative min-h-[100dvh] w-full">
-          <div className="absolute inset-0 skeleton opacity-40" />
-          <div className="relative z-10 mx-auto flex h-[100dvh] max-w-7xl items-end px-4 pb-28 sm:items-center sm:px-6">
-            <div className="w-full max-w-xl space-y-4">
-              <div className="h-4 w-40 skeleton rounded-full" />
-              <div className="h-12 w-full skeleton rounded-xl" />
-              <div className="h-12 w-4/5 skeleton rounded-xl" />
-              <div className="h-20 w-full skeleton rounded-xl" />
-              <div className="flex gap-3 pt-2">
-                <div className="h-11 w-32 skeleton rounded-full" />
-                <div className="h-11 w-32 skeleton rounded-full" />
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="mx-auto max-w-7xl space-y-10 px-4 py-12 sm:px-6">
-          <div className="h-48 skeleton rounded-xl" />
-          <div className="h-48 skeleton rounded-xl" />
-        </div>
-      </div>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <div className="mx-auto max-w-lg px-4 pt-32 text-center">
-        <h1 className="font-display text-2xl font-semibold text-white">
-          Couldn&apos;t load the cosmos
-        </h1>
-        <p className="mt-2 text-[var(--text-secondary)]">
-          Something went wrong. Try again shortly.
-        </p>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          className="mt-6 rounded-full bg-[var(--primary)] px-5 py-2.5 text-sm font-medium text-white transition-transform hover:scale-105 active:scale-95"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
+  }, [home]);
 
   return (
     <div className="overflow-x-hidden bg-[var(--background)]">
@@ -157,122 +118,138 @@ export function HomePage() {
         variants={reduce ? undefined : landingSection}
         style={{ backfaceVisibility: "hidden" }}
       >
+        {isError && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--gold)]/25 bg-[var(--gold)]/10 px-4 py-3">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Live catalog is slow right now — showing offline picks.{" "}
+              {isFetching ? "Refreshing…" : null}
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white hover:bg-white/15"
+            >
+              Retry live
+            </button>
+          </div>
+        )}
+
         <ContinueWatchingRow />
 
         <ContentRow
           title="Trending today"
           subtitle="Movies · series · anime · K-drama"
-          items={data.trending}
+          items={home.trending}
           showRank
         />
 
         <ContentRow
           title="Popular movies today"
           subtitle="Trending & popular right now"
-          items={data.popularMovies}
+          items={home.popularMovies}
           wide
         />
         <ContentRow
           title="Popular series today"
           subtitle="Top TV this moment"
-          items={data.popularSeries}
+          items={home.popularSeries}
         />
         <ContentRow
           title="Popular anime today"
           subtitle="Trending Japanese animation"
-          items={data.airingAnime}
+          items={home.airingAnime}
         />
         <ContentRow
           title="Popular K-dramas today"
           subtitle="Top Korean series"
-          items={data.trendingKdramas}
+          items={home.trendingKdramas}
         />
         <ContentRow
           title="Popular Korean movies today"
           subtitle="Top Korean cinema"
-          items={data.koreanMovies}
+          items={home.koreanMovies}
           wide
         />
-        {(data.koreanSeries?.length ?? 0) > 0 && (
+        {(home.koreanSeries?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Korean series today"
             subtitle="Korean TV beyond K-drama"
-            items={data.koreanSeries}
+            items={home.koreanSeries}
           />
         )}
-        {(data.japaneseMovies?.length ?? 0) > 0 && (
+        {(home.japaneseMovies?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Japanese movies today"
             subtitle="Top Japanese cinema"
-            items={data.japaneseMovies}
+            items={home.japaneseMovies}
             wide
           />
         )}
-        {(data.japaneseSeries?.length ?? 0) > 0 && (
+        {(home.japaneseSeries?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Japanese series today"
             subtitle="Japanese TV beyond J-drama"
-            items={data.japaneseSeries}
+            items={home.japaneseSeries}
           />
         )}
-        {(data.chineseMovies?.length ?? 0) > 0 && (
+        {(home.chineseMovies?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Chinese movies today"
             subtitle="Top Chinese cinema"
-            items={data.chineseMovies}
+            items={home.chineseMovies}
             wide
           />
         )}
-        {(data.chineseSeries?.length ?? 0) > 0 && (
+        {(home.chineseSeries?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Chinese series today"
             subtitle="Chinese TV beyond C-drama"
-            items={data.chineseSeries}
+            items={home.chineseSeries}
           />
         )}
-        {(data.thaiMovies?.length ?? 0) > 0 && (
+        {(home.thaiMovies?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Thai movies today"
             subtitle="Top Thai cinema"
-            items={data.thaiMovies}
+            items={home.thaiMovies}
           />
         )}
-        {(data.thaiSeries?.length ?? 0) > 0 && (
+        {(home.thaiSeries?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Thai series today"
             subtitle="Thai TV beyond drama"
-            items={data.thaiSeries}
+            items={home.thaiSeries}
           />
         )}
-        {(data.filipinoMovies?.length ?? 0) > 0 && (
+        {(home.filipinoMovies?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Filipino movies today"
             subtitle="Top Filipino cinema"
-            items={data.filipinoMovies}
+            items={home.filipinoMovies}
           />
         )}
-        {(data.filipinoSeries?.length ?? 0) > 0 && (
+        {(home.filipinoSeries?.length ?? 0) > 0 && (
           <ContentRow
             title="Popular Filipino series today"
             subtitle="Top Filipino TV"
-            items={data.filipinoSeries}
+            items={home.filipinoSeries}
           />
         )}
         <div className="cinematic-glow relative">
           <ContentRow
             title="Popular J-dramas today"
             subtitle="Top Japanese series"
-            items={data.trendingJdramas}
+            items={home.trendingJdramas}
           />
           <ContentRow
             title="Popular C-dramas today"
             subtitle="Top Chinese series"
-            items={data.trendingCdramas}
+            items={home.trendingCdramas}
           />
           <ContentRow
             title="Popular Thai dramas today"
             subtitle="Top Thai series"
-            items={data.trendingThaidramas}
+            items={home.trendingThaidramas}
           />
         </div>
         {/* 18+ titles never appear on home (popular/trending). Open the 18+ tab. */}
@@ -283,7 +260,7 @@ export function HomePage() {
             Explore by mood
           </h2>
           <RevealStagger className="flex flex-wrap gap-2">
-            {data.moods.map((m) => (
+            {home.moods.map((m) => (
               <RevealItem key={m.id}>
                 <Link
                   href={`/discover?mood=${m.id}`}
@@ -306,7 +283,7 @@ export function HomePage() {
             Explore by genre
           </h2>
           <RevealStagger className="flex flex-wrap gap-2">
-            {data.genres.map((g) => (
+            {home.genres.map((g) => (
               <RevealItem key={g.id}>
                 <Link
                   href={`/discover?genre=${encodeURIComponent(g.name)}`}

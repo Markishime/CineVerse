@@ -1,99 +1,55 @@
-import { SEED_CONTENT, SEED_GENRES, SEED_MOODS } from "@/data/seed-content";
 import { catalog } from "@/lib/content/catalog-service";
-import {
-  applyMatureFlag,
-  filterPublicCatalog,
-  isMatureContent,
-} from "@/lib/content/mature";
-import { errorJson, json } from "@/lib/server/http";
+import { seedHomePayload } from "@/lib/api/home-fallback";
 import type { HomePayload } from "@/lib/api/content";
+import { json } from "@/lib/server/http";
 import { NextRequest } from "next/server";
 
-function seedHomePayload(): HomePayload {
-  const safe = filterPublicCatalog(
-    SEED_CONTENT.filter((c) => !isMatureContent(c)).map((c) =>
-      applyMatureFlag(c),
-    ),
-  );
-  const byPop = [...safe].sort(
-    (a, b) => (b.popularity ?? 0) - (a.popularity ?? 0),
-  );
-  const movies = byPop.filter((c) => c.contentType === "movie").slice(0, 24);
-  const series = byPop.filter((c) => c.contentType === "series").slice(0, 24);
-  const anime = byPop.filter((c) => c.contentType === "anime").slice(0, 24);
-  const kdrama = byPop.filter((c) => c.contentType === "kdrama").slice(0, 24);
-  const featured = byPop.slice(0, 12);
-  return {
-    featured: featured[0] ?? null,
-    featuredCarousel: featured,
-    featuredUpdatedAt: new Date().toISOString(),
-    region: "US",
-    trending: byPop.slice(0, 36),
-    popularMovies: movies,
-    popularSeries: series,
-    airingAnime: anime,
-    trendingKdramas: kdrama,
-    trendingCdramas: [],
-    trendingJdramas: [],
-    trendingThaidramas: [],
-    koreanMovies: [],
-    koreanSeries: [],
-    japaneseMovies: [],
-    japaneseSeries: [],
-    chineseMovies: [],
-    chineseSeries: [],
-    thaiMovies: [],
-    thaiSeries: [],
-    filipinoMovies: [],
-    filipinoSeries: [],
-    newReleases: byPop.slice(0, 16),
-    comingSoon: [],
-    topRated: byPop.slice(0, 16),
-    animeNextEpisode: [],
-    freeLegal: byPop
-      .filter((c) => c.tags?.includes("public-domain") || c.tags?.includes("free-stream"))
-      .slice(0, 16),
-    matureMovies: [],
-    matureSeries: [],
-    matureAnime: [],
-    matureKdramas: [],
-    communityFavorites: byPop.slice(0, 12),
-    editorial: featured.slice(0, 8),
-    moods: SEED_MOODS,
-    genres: SEED_GENRES,
-    traktTrending: [],
-    gmmtvDramas: [],
-  };
-}
+/** Live providers may hang on Cloud Functions — never wait longer than this. */
+const LIVE_BUDGET_MS = 2_500;
 
 export async function GET(request: NextRequest) {
-  // US-only market for featured + catalog personalization
   const region = "US";
   const includeMature =
     request.nextUrl.searchParams.get("mature") === "1" ||
     request.nextUrl.searchParams.get("mature") === "true";
+
+  // Always have a ready payload so the SPA never spins on a hung provider fan-out.
+  const seed = seedHomePayload();
+
   try {
-    // Absolute ceiling so Cloud Function cold starts + provider flakiness never
-    // leave the client skeleton spinning forever.
-    const payload = await Promise.race([
-      catalog.home(region, includeMature),
-      new Promise<HomePayload>((resolve) =>
-        setTimeout(() => resolve(seedHomePayload()), 9_000),
+    const livePromise = catalog
+      .home(region, includeMature)
+      .then((p) => p as HomePayload)
+      .catch((err) => {
+        console.warn(
+          "[api/v1/home] catalog.home error",
+          err instanceof Error ? err.message : err,
+        );
+        return null;
+      });
+
+    const live = await Promise.race([
+      livePromise,
+      new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), LIVE_BUDGET_MS),
       ),
     ]);
-    return json(payload);
-  } catch (err) {
-    // Never 500 the home shell — seed is always better than a blank spinner.
-    console.warn(
-      "[api/v1/home] catalog.home failed; serving seed",
-      err instanceof Error ? err.message : err,
-    );
-    try {
-      return json(seedHomePayload());
-    } catch {
-      return errorJson("Home catalog temporarily unavailable", 503, {
-        retryable: true,
+
+    // Warm cache in the background if we fell back to seed (best-effort).
+    if (!live) {
+      void livePromise.then((p) => {
+        if (p) {
+          /* catalog caches internally on success */
+        }
       });
     }
+
+    return json(live ?? seed);
+  } catch (err) {
+    console.warn(
+      "[api/v1/home] unexpected failure; seed fallback",
+      err instanceof Error ? err.message : err,
+    );
+    return json(seed);
   }
 }
