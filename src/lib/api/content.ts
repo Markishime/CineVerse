@@ -73,12 +73,14 @@ export function fetchHome(region?: string, mature?: boolean) {
         ? region
         : undefined,
   })}`;
+  // Allow time for live day-trending (server budgets ~12s). Seed is already
+  // on screen via placeholderData, so a longer wait upgrades the hero correctly.
   return Promise.race([
     apiFetch<HomePayload>(path, { auth: false }),
     new Promise<never>((_, reject) =>
       setTimeout(
         () => reject(new Error("Home catalog timed out — try again")),
-        6_000,
+        14_000,
       ),
     ),
   ]);

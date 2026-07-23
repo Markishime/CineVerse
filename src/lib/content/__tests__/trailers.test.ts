@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterOfficialTrailers,
   isTrailerType,
+  pickHeroTrailer,
   pickOfficialTrailer,
   sanitizeContentTrailer,
 } from "@/lib/content/trailers";
@@ -59,5 +60,32 @@ describe("official trailers only", () => {
       }),
     });
     expect(c.trailer).toBeNull();
+  });
+
+  it("hero trailer falls back to teaser when no Trailer exists", () => {
+    const list = [
+      yt({ key: "aaaaaaaaaaa", type: "Clip", name: "Clip" }),
+      yt({
+        key: "ttttttttttt",
+        type: "Teaser",
+        name: "Official Teaser",
+        official: true,
+      }),
+    ];
+    expect(pickOfficialTrailer(list)).toBeNull();
+    expect(pickHeroTrailer(list)?.key).toBe("ttttttttttt");
+  });
+
+  it("hero trailer prefers Trailer over Teaser", () => {
+    const list = [
+      yt({ key: "ttttttttttt", type: "Teaser", name: "Teaser", official: true }),
+      yt({
+        key: "bbbbbbbbbbb",
+        type: "Trailer",
+        name: "Official Trailer",
+        official: true,
+      }),
+    ];
+    expect(pickHeroTrailer(list)?.key).toBe("bbbbbbbbbbb");
   });
 });

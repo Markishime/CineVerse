@@ -13,6 +13,25 @@ export function isValidYoutubeKey(key?: string | null): boolean {
   return Boolean(key && /^[\w-]{11}$/.test(key.trim()));
 }
 
+/** Reject truncated / known-dead keys at selection time */
+const DEAD_KEYS = new Set([
+  "pkKu9yvy1bw",
+  "EXeq9FDrBc",
+  "SWm2FqR7GA",
+  "y0ugUzF2X4",
+  "YoHD9XEInc0",
+  "LaLzIQ1s0c4",
+  "BcWRrvaZb9I",
+  "F1B9Fk_SgI0",
+  "S8_YwFLCh4U",
+  "YoHD9XEK0xo",
+]);
+
+function isSelectableKey(key?: string | null): boolean {
+  if (!isValidYoutubeKey(key)) return false;
+  return !DEAD_KEYS.has(String(key).trim());
+}
+
 /** Non-trailer video kinds we never promote as "the trailer" */
 const NON_TRAILER_TYPES = new Set(
   [
@@ -46,7 +65,7 @@ export function isTrailerType(t: Pick<Trailer, "type" | "name">): boolean {
 
 /** Prefer official studio trailers */
 export function isOfficialTrailer(t: Trailer): boolean {
-  if (!isValidYoutubeKey(t.key)) return false;
+  if (!isSelectableKey(t.key)) return false;
   if (t.site !== "youtube") return false;
   if (!isTrailerType(t)) return false;
   if (t.official === true) return true;
@@ -59,7 +78,7 @@ export function isOfficialTrailer(t: Trailer): boolean {
  * Official Trailer >> any Trailer >> nothing else.
  */
 export function officialTrailerScore(t: Trailer): number {
-  if (!isValidYoutubeKey(t.key) || t.site !== "youtube") return -1;
+  if (!isSelectableKey(t.key) || t.site !== "youtube") return -1;
   if (!isTrailerType(t)) return -1;
   let s = 10;
   if (t.official) s += 20;
@@ -78,7 +97,7 @@ export function filterOfficialTrailers(list: Trailer[]): Trailer[] {
   for (const raw of list) {
     if (!raw?.key || raw.site !== "youtube") continue;
     const key = raw.key.trim();
-    if (!isValidYoutubeKey(key)) continue;
+    if (!isSelectableKey(key)) continue;
     const t: Trailer = {
       ...raw,
       key,
@@ -117,6 +136,48 @@ export function pickOfficialTrailer(
 }
 
 /**
+ * Hero background video: prefer official Trailer, then any Trailer,
+ * then official Teaser (many Asian dramas / anime only ship teasers on TMDB).
+ * Never uses clips, featurettes, BTS, openings, or recaps.
+ */
+export function pickHeroTrailer(
+  list: Trailer[] | null | undefined,
+  fallback?: Trailer | null,
+): Trailer | null {
+  const primary = pickOfficialTrailer(list, fallback);
+  if (primary) return primary;
+
+  const raw = [...(list ?? []), ...(fallback ? [fallback] : [])];
+  const teasers: Trailer[] = [];
+  for (const item of raw) {
+    if (!item?.key || item.site !== "youtube") continue;
+    const key = item.key.trim();
+    if (!isSelectableKey(key)) continue;
+    const type = (item.type ?? "").trim().toLowerCase();
+    const name = item.name ?? "";
+    const isTeaser =
+      type === "teaser" ||
+      (/\bteaser\b/i.test(name) && !/\btrailer\b/i.test(name));
+    if (!isTeaser) continue;
+    teasers.push({
+      ...item,
+      key,
+      id: item.id || `yt_${key}`,
+      site: "youtube",
+      name: name || "Official Teaser",
+      official: Boolean(item.official || /official/i.test(name)),
+      type: item.type || "Teaser",
+    });
+  }
+  teasers.sort((a, b) => {
+    const ao = a.official ? 1 : 0;
+    const bo = b.official ? 1 : 0;
+    return bo - ao;
+  });
+  return teasers[0] ?? null;
+}
+
+/**
  * If the stored content.trailer is not a Trailer-type video, drop it
  * so we never show clips/featurettes as the primary trailer.
  */
@@ -124,7 +185,7 @@ export function sanitizeContentTrailer<T extends { trailer?: Trailer | null }>(
   c: T,
 ): T {
   if (!c.trailer) return c;
-  if (!isTrailerType(c.trailer) || !isValidYoutubeKey(c.trailer.key)) {
+  if (!isTrailerType(c.trailer) || !isSelectableKey(c.trailer.key)) {
     return { ...c, trailer: null };
   }
   const key = c.trailer.key.trim();

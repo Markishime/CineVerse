@@ -793,7 +793,7 @@ export const SEED_CONTENT: Content[] = [
     genres: [{ id: "28", name: "Action" }, { id: "80", name: "Crime" }, { id: "18", name: "Drama" }],
     runtime: 152, ageRating: "PG-13", scores: [{ source: "tmdb", score: 8.5, count: 31000 }],
     popularity: 95, providerIds: { tmdb: 155, tmdbMediaType: "movie" },
-    trailer: { id: "yt_EXeq9FDrBc", key: "EXeq9FDrBc", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
+    trailer: { id: "yt_EXeTwQWrcwY", key: "EXeTwQWrcwY", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["Warner Bros."], tags: ["superhero", "batman", "dc"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -809,7 +809,7 @@ export const SEED_CONTENT: Content[] = [
     genres: [{ id: "28", name: "Action" }, { id: "878", name: "Science Fiction" }, { id: "12", name: "Adventure" }],
     runtime: 148, ageRating: "PG-13", scores: [{ source: "tmdb", score: 8.4, count: 34000 }],
     popularity: 90, providerIds: { tmdb: 27205, tmdbMediaType: "movie" },
-    trailer: { id: "yt_YoHD9XEK0xo", key: "YoHD9XEK0xo", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
+    trailer: { id: "yt_8hP9D6kZseM", key: "8hP9D6kZseM", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["Warner Bros.", "Legendary"], tags: ["mind-bending", "dreams", "sci-fi"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -825,7 +825,7 @@ export const SEED_CONTENT: Content[] = [
     genres: [{ id: "12", name: "Adventure" }, { id: "18", name: "Drama" }, { id: "878", name: "Science Fiction" }],
     runtime: 169, ageRating: "PG-13", scores: [{ source: "tmdb", score: 8.4, count: 32000 }],
     popularity: 88, providerIds: { tmdb: 157336, tmdbMediaType: "movie" },
-    trailer: { id: "yt_SWm2FqR7GA", key: "SWm2FqR7GA", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
+    trailer: { id: "yt_zSWdZVtXT7E", key: "zSWdZVtXT7E", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["Paramount", "Legendary"], tags: ["space", "time", "emotional"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -958,6 +958,8 @@ export const SEED_CONTENT: Content[] = [
     genres: [{ id: "16", name: "Animation" }, { id: "28", name: "Action" }, { id: "14", name: "Fantasy" }],
     runtime: 25, scores: [{ source: "tmdb", score: 8.5, count: 4000 }], popularity: 90,
     providerIds: { anilist: 113415, tmdb: 95557, tmdbMediaType: "tv" },
+    // Crunchyroll official trailer (embeddable)
+    trailer: { id: "yt_pkKu9hLT-t8", key: "pkKu9hLT-t8", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["MAPPA"], tags: ["shonen", "curses", "supernatural"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -1109,7 +1111,7 @@ export const SEED_CONTENT: Content[] = [
     genres: [{ id: "18", name: "Drama" }, { id: "10765", name: "Sci-Fi & Fantasy" }, { id: "9648", name: "Mystery" }],
     runtime: 50, scores: [{ source: "tmdb", score: 8.6, count: 16000 }], popularity: 95,
     providerIds: { tmdb: 66732, tmdbMediaType: "tv" },
-    trailer: { id: "yt_BcWRrvaZb9I", key: "BcWRrvaZb9I", site: "youtube", name: "Season 4 Trailer", official: true, type: "Trailer" },
+    trailer: { id: "yt_b9EkMc79ZSU", key: "b9EkMc79ZSU", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["Netflix"], tags: ["supernatural", "80s", "kids"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -1157,7 +1159,7 @@ export const SEED_CONTENT: Content[] = [
     genres: [{ id: "18", name: "Drama" }, { id: "10765", name: "Sci-Fi & Fantasy" }],
     runtime: 60, scores: [{ source: "tmdb", score: 8.5, count: 6000 }], popularity: 92,
     providerIds: { tmdb: 100088, tmdbMediaType: "tv" },
-    trailer: { id: "yt_LaLzIQ1s0c4", key: "LaLzIQ1s0c4", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
+    trailer: { id: "yt_uLtkt8BonwM", key: "uLtkt8BonwM", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["HBO"], tags: ["post-apocalyptic", "zombie", "survival"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -1400,7 +1402,7 @@ export const SEED_CONTENT: Content[] = [
     genres: [{ id: "35", name: "Comedy" }, { id: "18", name: "Drama" }],
     runtime: 30, scores: [{ source: "tmdb", score: 8.3, count: 1500 }], popularity: 90,
     providerIds: { tmdb: 136315, tmdbMediaType: "tv" },
-    trailer: { id: "yt_y0ugUzF2X4", key: "y0ugUzF2X4", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
+    trailer: { id: "yt_gBmkI4jlaIo", key: "gBmkI4jlaIo", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["FX"], tags: ["kitchen", "comedy-drama", "family"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -1469,7 +1471,7 @@ export const SEED_CONTENT: Content[] = [
     scores: [{ source: "anilist", score: 9.0 }, { source: "tmdb", score: 8.8, count: 800 }],
     popularity: 96, providerIds: { anilist: 154587, tmdb: 209867, tmdbMediaType: "tv" },
     animeFormat: "TV",
-    trailer: { id: "yt_F1B9Fk_SgI0", key: "F1B9Fk_SgI0", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
+    trailer: { id: "yt_Iwr1aLEDpe4", key: "Iwr1aLEDpe4", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["Madhouse"], tags: ["fantasy", "slice-of-life", "adventure"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -1532,7 +1534,7 @@ export const SEED_CONTENT: Content[] = [
     scores: [{ source: "anilist", score: 8.6 }, { source: "tmdb", score: 8.6, count: 4000 }],
     popularity: 98, providerIds: { anilist: 113415, tmdb: 95479, tmdbMediaType: "tv" },
     animeFormat: "TV",
-    trailer: { id: "yt_pkKu9yvy1bw", key: "pkKu9yvy1bw", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
+    trailer: { id: "yt_pkKu9hLT-t8", key: "pkKu9hLT-t8", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["MAPPA"], tags: ["shonen", "curses", "action"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {
@@ -1569,6 +1571,7 @@ export const SEED_CONTENT: Content[] = [
     genres: [{ id: "18", name: "Drama" }, { id: "10749", name: "Romance" }, { id: "35", name: "Comedy" }],
     runtime: 70, scores: [{ source: "tmdb", score: 8.5, count: 1500 }], popularity: 91,
     providerIds: { tmdb: 234277, tmdbMediaType: "tv" },
+    trailer: { id: "yt_Gg2D8zrzlOA", key: "Gg2D8zrzlOA", site: "youtube", name: "Official Trailer", official: true, type: "Trailer" },
     alternateTitles: [], watchProviders: [], studios: ["tvN"], tags: ["romance", "marriage", "korean"], approved: true, mature: false, lastSyncedAt: new Date().toISOString(),
   },
   {

@@ -33,76 +33,161 @@ import {
   cinematicBackdropUrl,
   normalizeImageUrl,
 } from "@/lib/content/posters";
+import { pickHeroTrailer } from "@/lib/content/trailers";
+import {
+  ensureKnownTrailers,
+  isPlayableTrailerKey,
+  lookupKnownTrailerKeys,
+} from "@/lib/content/known-trailers";
 
 const SOUND_PREF_KEY = "cineverse_hero_trailer_sound";
-
-function isValidYoutubeKey(key?: string | null): boolean {
-  return Boolean(key && /^[\w-]{11}$/.test(key.trim()));
-}
 
 type YtPlayer = {
   playVideo?: () => void;
   pauseVideo?: () => void;
+  stopVideo?: () => void;
   mute?: () => void;
   unMute?: () => void;
   isMuted?: () => boolean;
   setVolume?: (n: number) => void;
   getPlayerState?: () => number;
+  destroy?: () => void;
 };
+
+function hardSilence(p: YtPlayer | null | undefined) {
+  if (!p) return;
+  try {
+    p.mute?.();
+    p.pauseVideo?.();
+    p.stopVideo?.();
+  } catch {
+    /* ignore */
+  }
+}
+
+function applyPlayback(
+  p: YtPlayer | null | undefined,
+  opts: { play: boolean; soundOn: boolean },
+) {
+  if (!p) return;
+  try {
+    if (!opts.play) {
+      hardSilence(p);
+      return;
+    }
+    p.playVideo?.();
+    if (opts.soundOn) {
+      p.unMute?.();
+      p.setVolume?.(72);
+    } else {
+      p.mute?.();
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 function HeroTrailerBg({
   trailerKey,
+  alternateKeys = [],
   title,
   poster,
   active,
-  nearActive,
   soundOn,
+  playbackAllowed,
   reduceMotion,
+  onPlayer,
 }: {
   trailerKey: string | null;
+  /** Extra keys to try if the primary video is unavailable */
+  alternateKeys?: string[];
   title: string;
   poster: string | null;
   active: boolean;
-  nearActive: boolean;
   soundOn: boolean;
+  /** False when hero is scrolled off-screen or tab is hidden */
+  playbackAllowed: boolean;
   reduceMotion: boolean;
+  onPlayer?: (player: YtPlayer | null) => void;
 }) {
-  const validKey =
-    trailerKey && isValidYoutubeKey(trailerKey) ? trailerKey.trim() : null;
+  const keyQueue = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of [trailerKey, ...alternateKeys]) {
+      if (!raw || !isPlayableTrailerKey(raw)) continue;
+      const k = raw.trim();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(k);
+    }
+    return out;
+  }, [trailerKey, alternateKeys]);
+
+  const [keyIndex, setKeyIndex] = useState(0);
+  const [failedAll, setFailedAll] = useState(false);
+
+  // Reset attempt chain when slide / keys change
+  useEffect(() => {
+    setKeyIndex(0);
+    setFailedAll(false);
+  }, [keyQueue.join("|")]);
+
+  const activeKey =
+    !failedAll && keyQueue[keyIndex] ? keyQueue[keyIndex]! : null;
+
+  // Only the active, visible slide may own a live YouTube iframe.
+  const shouldPlay = Boolean(
+    active && playbackAllowed && activeKey && !reduceMotion,
+  );
+
   const [showPlayer, setShowPlayer] = useState(false);
   const playerRef = useRef<YtPlayer | null>(null);
+  const shouldPlayRef = useRef(shouldPlay);
+  const soundOnRef = useRef(soundOn);
+  shouldPlayRef.current = shouldPlay;
+  soundOnRef.current = soundOn;
 
+  // Mount / unmount player with hard silence on every leave
   useEffect(() => {
-    playerRef.current = null;
-    if (!active || !validKey) {
+    if (!shouldPlay) {
+      hardSilence(playerRef.current);
+      playerRef.current = null;
+      onPlayer?.(null);
       const t = window.setTimeout(() => setShowPlayer(false), 0);
       return () => window.clearTimeout(t);
     }
-    const t = window.setTimeout(() => setShowPlayer(true), 380);
-    return () => window.clearTimeout(t);
-  }, [validKey, active]);
+    const t = window.setTimeout(() => setShowPlayer(true), 220);
+    return () => {
+      window.clearTimeout(t);
+      hardSilence(playerRef.current);
+      playerRef.current = null;
+      onPlayer?.(null);
+    };
+  }, [shouldPlay, activeKey, onPlayer]);
 
+  // Keep mute / play state in sync (sound toggle, re-show, etc.)
   useEffect(() => {
-    const p = playerRef.current;
-    if (!p || !active) return;
-    try {
-      if (soundOn) {
-        p.unMute?.();
-        p.setVolume?.(72);
-        p.playVideo?.();
-      } else {
-        p.mute?.();
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [soundOn, active, showPlayer]);
+    applyPlayback(playerRef.current, {
+      play: shouldPlay,
+      soundOn: shouldPlay && soundOn,
+    });
+  }, [soundOn, shouldPlay, showPlayer]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      hardSilence(playerRef.current);
+      playerRef.current = null;
+      onPlayer?.(null);
+    };
+  }, [onPlayer]);
 
   const opts: YouTubeProps["opts"] = useMemo(
     () => ({
       width: "100%",
       height: "100%",
-      host: "https://www.youtube.com",
+      // nocookie host is more reliable for third-party hero embeds
+      host: "https://www.youtube-nocookie.com",
       playerVars: {
         autoplay: 1,
         mute: 1,
@@ -111,53 +196,62 @@ function HeroTrailerBg({
         modestbranding: 1,
         playsinline: 1,
         loop: 1,
-        playlist: validKey ?? undefined,
+        playlist: activeKey ?? undefined,
         iv_load_policy: 3,
         disablekb: 1,
         fs: 0,
         cc_load_policy: 0,
+        // Required by YT for some rights-holder trailers on custom domains
+        origin:
+          typeof window !== "undefined" ? window.location.origin : undefined,
       },
     }),
-    [validKey],
+    [activeKey],
   );
 
   const onReady = useCallback(
     (event: YouTubeEvent) => {
       const p = event.target as unknown as YtPlayer;
       playerRef.current = p;
-      try {
-        p.playVideo?.();
-        if (soundOn) {
-          p.unMute?.();
-          p.setVolume?.(72);
-        } else {
-          p.mute?.();
-        }
-      } catch {
-        /* ignore */
-      }
+      onPlayer?.(p);
+      applyPlayback(p, {
+        play: shouldPlayRef.current,
+        soundOn: shouldPlayRef.current && soundOnRef.current,
+      });
     },
-    [soundOn],
+    [onPlayer],
   );
 
-  const onStateChange = useCallback(
-    (event: YouTubeEvent<number>) => {
-      if (!active) return;
-      if (event.data === 0 || event.data === 2 || event.data === 5) {
-        try {
-          event.target.playVideo?.();
-          if (soundOn) {
-            (event.target as unknown as YtPlayer).unMute?.();
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-    },
-    [active, soundOn],
-  );
+  const onStateChange = useCallback((event: YouTubeEvent<number>) => {
+    const p = event.target as unknown as YtPlayer;
+    if (!shouldPlayRef.current) {
+      hardSilence(p);
+      return;
+    }
+    // Loop only when ended (0) or cued (5) — never fight mute on pause (2)
+    if (event.data === 0 || event.data === 5) {
+      applyPlayback(p, {
+        play: true,
+        soundOn: soundOnRef.current,
+      });
+    }
+  }, []);
 
-  const shouldMountPlayer = active || nearActive;
+  // YouTube error 100/101/150 = unavailable / embed blocked → try next key
+  const onError = useCallback(() => {
+    hardSilence(playerRef.current);
+    playerRef.current = null;
+    onPlayer?.(null);
+    setKeyIndex((i) => {
+      const next = i + 1;
+      if (next >= keyQueue.length) {
+        setFailedAll(true);
+        setShowPlayer(false);
+        return i;
+      }
+      return next;
+    });
+  }, [keyQueue.length, onPlayer]);
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-[var(--background)]">
@@ -186,18 +280,19 @@ function HeroTrailerBg({
       <div
         className={cn(
           "absolute inset-0 z-[1] overflow-hidden transition-opacity duration-700",
-          showPlayer && validKey && active ? "opacity-100" : "opacity-0",
+          showPlayer && activeKey && shouldPlay ? "opacity-100" : "opacity-0",
         )}
         aria-hidden
       >
-        {shouldMountPlayer && validKey ? (
+        {showPlayer && shouldPlay && activeKey ? (
           <div className="absolute left-1/2 top-1/2 aspect-video h-[56.25vw] min-h-full w-[177.78vh] min-w-full -translate-x-1/2 -translate-y-1/2">
             <YouTube
-              key={`yt-hero-${validKey}`}
-              videoId={validKey}
+              key={`yt-hero-${activeKey}-${keyIndex}`}
+              videoId={activeKey}
               opts={opts}
               onReady={onReady}
               onStateChange={onStateChange}
+              onError={onError}
               className="pointer-events-none absolute inset-0 h-full w-full"
               iframeClassName="pointer-events-none absolute inset-0 h-full w-full border-0"
               title={`${title} official trailer`}
@@ -209,7 +304,7 @@ function HeroTrailerBg({
       <div
         className={cn(
           "pointer-events-none absolute inset-0 z-[2] transition-colors duration-500",
-          soundOn ? "bg-black/20" : "bg-black/25",
+          soundOn && shouldPlay ? "bg-black/20" : "bg-black/25",
         )}
       />
     </div>
@@ -232,7 +327,7 @@ function HeroCopy({
   const title = displayTitle(item);
   const score = primaryScore(item);
   const trailerKey =
-    item.trailer?.site === "youtube" && isValidYoutubeKey(item.trailer.key)
+    item.trailer?.site === "youtube" && isPlayableTrailerKey(item.trailer.key)
       ? item.trailer.key.trim()
       : null;
   const watchHref = getWatchHref(item);
@@ -356,34 +451,145 @@ export function HeroCarousel({
 }) {
   const reduceMotion = useReducedMotion() ?? false;
 
+  // Client hydration: primary trailer + alternate keys for each slide
+  const [hydratedTrailers, setHydratedTrailers] = useState<
+    Record<string, Content["trailer"]>
+  >({});
+  const [alternateKeysById, setAlternateKeysById] = useState<
+    Record<string, string[]>
+  >({});
+
+  useEffect(() => {
+    // Hydrate every featured slide (missing keys + alternates for recovery)
+    const targets = items.filter((c) => c?.id).slice(0, 12);
+    if (!targets.length) return;
+
+    let cancelled = false;
+    const ctrl = new AbortController();
+
+    void (async () => {
+      const trailerUpdates: Record<string, Content["trailer"]> = {};
+      const altUpdates: Record<string, string[]> = {};
+
+      await Promise.all(
+        targets.map(async (c) => {
+          try {
+            const res = await fetch(
+              `/api/v1/content/${encodeURIComponent(c.id)}/trailers`,
+              { signal: ctrl.signal, cache: "no-store" },
+            );
+            if (!res.ok) return;
+            const data = (await res.json()) as {
+              trailers?: Array<{
+                id?: string;
+                key?: string;
+                site?: string;
+                name?: string;
+                official?: boolean;
+                type?: string;
+              }>;
+            };
+            const mapped = (data.trailers ?? [])
+              .map((t) => ({
+                id: t.id ?? `yt_${t.key}`,
+                key: String(t.key ?? "").trim(),
+                site: "youtube" as const,
+                name: t.name ?? "Official Trailer",
+                official: Boolean(t.official),
+                type: t.type ?? "Trailer",
+              }))
+              .filter((t) => isPlayableTrailerKey(t.key));
+
+            const best = pickHeroTrailer(mapped);
+            const alts = mapped
+              .map((t) => t.key)
+              .filter((k) => k !== best?.key);
+
+            if (best && !isPlayableTrailerKey(c.trailer?.key)) {
+              trailerUpdates[c.id] = best;
+            }
+            if (alts.length) altUpdates[c.id] = alts.slice(0, 4);
+          } catch {
+            /* ignore */
+          }
+        }),
+      );
+
+      if (cancelled) return;
+      if (Object.keys(trailerUpdates).length) {
+        setHydratedTrailers((prev) => ({ ...prev, ...trailerUpdates }));
+      }
+      if (Object.keys(altUpdates).length) {
+        setAlternateKeysById((prev) => ({ ...prev, ...altUpdates }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+    };
+  }, [items]);
+
+  // Preserve server order. Always pin curated keys client-side so a bad
+  // TMDB/seed id never blocks JJK / Last of Us / Stranger Things / etc.
   const slides = useMemo(() => {
     const seen = new Set<string>();
     const out: Content[] = [];
-    const sorted = [...items].sort((a, b) => {
-      const at =
-        a.trailer?.site === "youtube" && isValidYoutubeKey(a.trailer.key)
-          ? 1
-          : 0;
-      const bt =
-        b.trailer?.site === "youtube" && isValidYoutubeKey(b.trailer.key)
-          ? 1
-          : 0;
-      return bt - at;
-    });
-    for (const item of sorted) {
-      if (!item?.id || seen.has(item.id)) continue;
-      seen.add(item.id);
+    for (const c of items) {
+      if (!c?.id || seen.has(c.id)) continue;
+      seen.add(c.id);
+      const extra = hydratedTrailers[c.id];
+      let item: Content =
+        extra && !isPlayableTrailerKey(c.trailer?.key)
+          ? { ...c, trailer: extra }
+          : c.trailer && !isPlayableTrailerKey(c.trailer.key)
+            ? { ...c, trailer: extra ?? null }
+            : c;
+      item = ensureKnownTrailers(item);
       if (!item.poster?.url && !item.backdrop?.url && !item.trailer?.key) {
         continue;
       }
       out.push(item);
     }
     return out.slice(0, 12);
-  }, [items]);
+  }, [items, hydratedTrailers]);
 
   const [soundOn, setSoundOn] = useState(false);
   const [soundHint, setSoundHint] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [heroInView, setHeroInView] = useState(true);
+  const [docVisible, setDocVisible] = useState(true);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const activePlayerRef = useRef<YtPlayer | null>(null);
+
+  const playbackAllowed = heroInView && docVisible;
+
+  // Pause / mute when hero leaves the viewport (scroll down)
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        // Require a meaningful share of the hero still on screen
+        setHeroInView(entry.isIntersecting && entry.intersectionRatio >= 0.28);
+      },
+      { threshold: [0, 0.15, 0.28, 0.45, 0.7, 1] },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  // Pause when the browser tab is hidden
+  useEffect(() => {
+    const onVis = () => {
+      setDocVisible(document.visibilityState === "visible");
+    };
+    onVis();
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   useEffect(() => {
     try {
@@ -400,7 +606,7 @@ export function HeroCarousel({
     }
   }, []);
 
-  const autoplayDelay = soundOn ? 28_000 : 12_000;
+  const autoplayDelay = soundOn && playbackAllowed ? 28_000 : 12_000;
 
   const autoplayPlugin = useMemo(
     () =>
@@ -423,10 +629,18 @@ export function HeroCarousel({
     [autoplayPlugin],
   );
   const [index, setIndex] = useState(0);
+  const indexRef = useRef(0);
 
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
-    setIndex(emblaApi.selectedScrollSnap());
+    const next = emblaApi.selectedScrollSnap();
+    // Only kill audio when the snap actually changes (not on reInit/same index)
+    if (next !== indexRef.current) {
+      hardSilence(activePlayerRef.current);
+      activePlayerRef.current = null;
+      indexRef.current = next;
+    }
+    setIndex(next);
     setProgress(0);
   }, [emblaApi]);
 
@@ -442,14 +656,39 @@ export function HeroCarousel({
     };
   }, [emblaApi, onSelect]);
 
+  // Force-sync active player when leaving view, muting, or after slide settle
+  useEffect(() => {
+    const p = activePlayerRef.current;
+    if (!playbackAllowed) {
+      hardSilence(p);
+      return;
+    }
+    if (!soundOn) {
+      try {
+        p?.mute?.();
+        p?.playVideo?.();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    applyPlayback(p, { play: true, soundOn: true });
+  }, [playbackAllowed, soundOn, index]);
+
   useEffect(() => {
     if (!emblaApi) return;
     try {
-      emblaApi.plugins()?.autoplay?.reset?.();
+      const ap = emblaApi.plugins()?.autoplay;
+      if (!playbackAllowed) {
+        ap?.stop?.();
+      } else {
+        ap?.play?.();
+        ap?.reset?.();
+      }
     } catch {
       /* ignore */
     }
-  }, [emblaApi, soundOn]);
+  }, [emblaApi, soundOn, playbackAllowed]);
 
   useEffect(() => {
     if (reduceMotion || slides.length < 2) return;
@@ -465,6 +704,10 @@ export function HeroCarousel({
     return () => cancelAnimationFrame(raf);
   }, [index, autoplayDelay, reduceMotion, slides.length]);
 
+  const registerActivePlayer = useCallback((player: YtPlayer | null) => {
+    activePlayerRef.current = player;
+  }, []);
+
   const toggleSound = useCallback(() => {
     setSoundOn((prev) => {
       const next = !prev;
@@ -473,12 +716,30 @@ export function HeroCarousel({
       } catch {
         /* ignore */
       }
+      // Apply immediately so mute doesn't wait on a re-render race
+      const p = activePlayerRef.current;
+      if (p) {
+        applyPlayback(p, {
+          play: true,
+          soundOn: next,
+        });
+        if (!next) {
+          try {
+            p.mute?.();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
       return next;
     });
     setSoundHint(false);
   }, []);
 
   const scrollToCatalog = useCallback(() => {
+    // Silence before scrolling away so audio doesn't linger mid-scroll
+    hardSilence(activePlayerRef.current);
+    setHeroInView(false);
     const el = document.getElementById("home-catalog");
     if (el) {
       el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
@@ -492,7 +753,7 @@ export function HeroCarousel({
 
   const activeHasTrailer = Boolean(
     slides[index]?.trailer?.site === "youtube" &&
-      isValidYoutubeKey(slides[index]?.trailer?.key),
+      isPlayableTrailerKey(slides[index]?.trailer?.key),
   );
 
   if (!slides.length) {
@@ -504,18 +765,26 @@ export function HeroCarousel({
   }
 
   return (
-    <section className="relative min-h-[100dvh] w-full overflow-hidden bg-[var(--background)]">
+    <section
+      ref={sectionRef}
+      className="relative min-h-[100dvh] w-full overflow-hidden bg-[var(--background)]"
+    >
       <div className="h-[100dvh] w-full overflow-hidden" ref={emblaRef}>
         <div className="flex h-full">
           {slides.map((item, i) => {
             const title = displayTitle(item);
             const isActive = i === index;
-            const nearActive = Math.abs(i - index) <= 1;
+            const knownKeys = lookupKnownTrailerKeys(item);
             const trailerKey =
-              item.trailer?.site === "youtube" &&
-              isValidYoutubeKey(item.trailer.key)
+              (item.trailer?.site === "youtube" &&
+              isPlayableTrailerKey(item.trailer.key)
                 ? item.trailer.key.trim()
-                : null;
+                : null) || knownKeys[0] || null;
+            // Known alts + API alts (skip primary)
+            const altKeys = [
+              ...knownKeys.slice(trailerKey === knownKeys[0] ? 1 : 0),
+              ...(alternateKeysById[item.id] ?? []),
+            ].filter((k) => k !== trailerKey && isPlayableTrailerKey(k));
             const poster =
               normalizeImageUrl(item.backdrop?.url) ||
               normalizeImageUrl(item.poster?.url) ||
@@ -528,12 +797,14 @@ export function HeroCarousel({
               >
                 <HeroTrailerBg
                   trailerKey={trailerKey}
+                  alternateKeys={altKeys}
                   title={title}
                   poster={poster}
                   active={isActive}
-                  nearActive={nearActive}
-                  soundOn={soundOn}
+                  soundOn={soundOn && isActive}
+                  playbackAllowed={playbackAllowed && isActive}
                   reduceMotion={reduceMotion}
+                  onPlayer={isActive ? registerActivePlayer : undefined}
                 />
 
                 <div className="absolute inset-0 z-[3] bg-gradient-to-t from-[var(--background)] via-[var(--background)]/65 to-black/30" />

@@ -62,7 +62,8 @@ export async function GET(request: NextRequest) {
   }
 
   // Optional live upgrade. Dynamic import so a broken provider module cannot
-  // prevent seed from shipping. Hard 2s ceiling.
+  // prevent seed from shipping. Client already shows seed via placeholderData,
+  // so allow enough time for day-trending + trailer hydrate (was 2s → always seed).
   try {
     const live = await Promise.race([
       (async (): Promise<HomePayload | null> => {
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
         );
         return null;
       }),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_000)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 12_000)),
     ]);
     if (live) return json(live);
   } catch (err) {

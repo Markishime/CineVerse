@@ -110,7 +110,13 @@ export function getDetailsHref(c: Pick<Content, "slug" | "id">): string {
 export function hasOfficialTrailer(
   c: Pick<Content, "trailer">,
 ): boolean {
-  return Boolean(c.trailer?.site === "youtube" && c.trailer?.key);
+  const key = c.trailer?.key;
+  // Exact 11-char YouTube id only — reject truncated/dead keys
+  return Boolean(
+    c.trailer?.site === "youtube" &&
+      key &&
+      /^[\w-]{11}$/.test(key.trim()),
+  );
 }
 
 export function watchCtaLabel(

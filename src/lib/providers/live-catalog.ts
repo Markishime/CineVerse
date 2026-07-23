@@ -2924,7 +2924,7 @@ export async function fetchTmdbTrending(): Promise<Content[]> {
   ].filter(Boolean) as Content[];
 }
 
-/** Explicit day-trending buckets for homepage featured (US market) */
+/** Explicit day-trending buckets for homepage featured (global — no US lock) */
 export async function fetchTrendingTodayByType(): Promise<{
   movies: Content[];
   series: Content[];
@@ -2933,7 +2933,9 @@ export async function fetchTrendingTodayByType(): Promise<{
 }> {
   const [
     moviesDay,
+    moviesWeek,
     tvDay,
+    tvWeek,
     animeDay,
     animeDay2,
     kdramaDay,
@@ -2944,7 +2946,9 @@ export async function fetchTrendingTodayByType(): Promise<{
     popularTv2,
   ] = await Promise.all([
       tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/movie/day"),
+      tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/movie/week"),
       tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/tv/day"),
+      tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/tv/week"),
       tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
         with_genres: "16",
         with_original_language: "ja",
@@ -2971,12 +2975,11 @@ export async function fetchTrendingTodayByType(): Promise<{
         sort_by: "popularity.desc",
         page: "2",
       }),
+      // Global popular — do not force region=US
       tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
-        region: "US",
         page: "1",
       }),
       tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
-        region: "US",
         page: "2",
       }),
       tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/popular", {
@@ -2989,36 +2992,66 @@ export async function fetchTrendingTodayByType(): Promise<{
 
   const movies = [
     ...(moviesDay?.results ?? []),
+    ...(moviesWeek?.results ?? []).slice(0, 12),
     ...(popularMovies?.results ?? []),
     ...(popularMovies2?.results ?? []),
   ]
-    .map((r) => {
+    .map((r, i) => {
       const c = mapTmdbMovie(r);
       if (!c) return null;
+      // Day-trending ranks above week/popular for hero selection
+      const dayBoost = i < (moviesDay?.results?.length ?? 0) ? 80 : 50;
       return {
         ...c,
-        tags: Array.from(new Set([...(c.tags ?? []), "trending-today", "popular"])),
-        popularity: (c.popularity ?? 0) + 50,
+        tags: Array.from(
+          new Set([...(c.tags ?? []), "trending-today", "popular"]),
+        ),
+        popularity: (c.popularity ?? 0) + dayBoost,
       };
     })
     .filter(Boolean) as Content[];
 
   const series = [
     ...(tvDay?.results ?? []),
+    ...(tvWeek?.results ?? []).slice(0, 12),
     ...(popularTv?.results ?? []),
     ...(popularTv2?.results ?? []),
   ]
-    .map((r) => {
+    .map((r, i) => {
       const c = mapTmdbTv(r);
-      if (!c || c.contentType === "kdrama") return null;
-      // Exclude JP animation from generic series when possible
+      if (!c) return null;
+      // Keep general series pure — no anime / Asian dramas in this bucket
+      if (
+        c.contentType === "kdrama" ||
+        c.contentType === "cdrama" ||
+        c.contentType === "jdrama" ||
+        c.contentType === "thaidrama" ||
+        c.contentType === "anime"
+      ) {
+        return null;
+      }
       if (c.language === "ja" && c.genres.some((g) => /anim/i.test(g.name))) {
         return null;
       }
+      // KR/CN/TH live-action TV → leave for drama buckets, not general series
+      if (
+        c.language === "ko" ||
+        c.language === "zh" ||
+        c.language === "th" ||
+        c.countries?.some((cn) =>
+          ["KR", "CN", "TW", "HK", "TH"].includes(cn.toUpperCase()),
+        )
+      ) {
+        return null;
+      }
+      const dayBoost = i < (tvDay?.results?.length ?? 0) ? 70 : 40;
       return {
         ...c,
-        tags: Array.from(new Set([...(c.tags ?? []), "trending-today", "popular"])),
-        popularity: (c.popularity ?? 0) + 40,
+        contentType: "series" as const,
+        tags: Array.from(
+          new Set([...(c.tags ?? []), "trending-today", "popular"]),
+        ),
+        popularity: (c.popularity ?? 0) + dayBoost,
       };
     })
     .filter(Boolean) as Content[];
@@ -3290,10 +3323,12 @@ export async function fetchTmdbSearch(q: string): Promise<Content[]> {
  * TMDB videos → official YouTube trailers only.
  * Movies, TV, anime, and K-drama all use this path.
  * Excludes Clip / Featurette / Behind the Scenes / Teaser / etc.
+ * Pass includeTeasers for hero backgrounds when no Trailer exists.
  */
 export async function fetchTmdbVideos(
   mediaType: "movie" | "tv",
   id: number,
+  opts?: { includeTeasers?: boolean },
 ): Promise<Trailer[]> {
   const data = await tmdbGet<{
     results?: Array<{
@@ -3307,7 +3342,10 @@ export async function fetchTmdbVideos(
   }>(`/${mediaType}/${id}/videos`);
 
   const mapped: Trailer[] = (data?.results ?? [])
-    .filter((v) => v.site === "YouTube" && v.key)
+    .filter((v) => {
+      const site = (v.site ?? "").toLowerCase();
+      return site === "youtube" && Boolean(v.key);
+    })
     .map((v) => ({
       id: v.id ?? `yt_${String(v.key).trim()}`,
       key: String(v.key).trim(),
@@ -3318,7 +3356,16 @@ export async function fetchTmdbVideos(
     }));
 
   // Strict: Trailer type only, official preferred (see filterOfficialTrailers)
-  return filterOfficialTrailers(mapped);
+  const trailers = filterOfficialTrailers(mapped);
+  if (trailers.length || !opts?.includeTeasers) return trailers;
+
+  // Hero-only fallback: official / any Teaser when TMDB has no Trailer
+  return mapped
+    .filter((v) => {
+      const type = (v.type ?? "").toLowerCase();
+      return type === "teaser" || /\bteaser\b/i.test(v.name ?? "");
+    })
+    .sort((a, b) => Number(b.official) - Number(a.official));
 }
 
 export async function fetchTmdbCredits(

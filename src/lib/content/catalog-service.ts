@@ -60,9 +60,16 @@ import {
 import {
   filterOfficialTrailers,
   isValidYoutubeKey,
+  pickHeroTrailer,
   pickOfficialTrailer,
   sanitizeContentTrailer,
 } from "@/lib/content/trailers";
+import {
+  ensureKnownTrailers,
+  filterPlayableTrailers,
+  isPlayableTrailerKey,
+  lookupKnownTrailer,
+} from "@/lib/content/known-trailers";
 import {
   applyMatureFlag,
   filterAdultLibrary,
@@ -522,42 +529,42 @@ export class CatalogService {
         const [detail, credits, videos] = await Promise.all([
           fetchTmdbDetail(mt, tid, base.contentType === "kdrama"),
           fetchTmdbCredits(mt, tid, base.id),
-          fetchTmdbVideos(mt, tid),
+          fetchTmdbVideos(mt, tid, { includeTeasers: true }),
         ]);
-        const best = pickOfficialTrailer(videos, content.trailer);
+        const best = pickHeroTrailer(videos, content.trailer);
         if (detail) {
-          content = sanitizeContentTrailer({
+          content = {
             ...content,
             ...detail,
             id: base.id,
             slug: base.slug,
             contentType: base.contentType,
             trailer: best ?? detail.trailer ?? content.trailer,
-          });
+          };
         }
         cast = credits.cast;
         crew = credits.crew;
-        trailers = mergeTrailers(trailers, videos);
+        trailers = [...trailers, ...videos];
       } else if (base.id.startsWith("tmdb_movie_")) {
         const tid = Number(base.id.replace("tmdb_movie_", ""));
         const [detail, credits, videos] = await Promise.all([
           fetchTmdbDetail("movie", tid),
           fetchTmdbCredits("movie", tid, base.id),
-          fetchTmdbVideos("movie", tid),
+          fetchTmdbVideos("movie", tid, { includeTeasers: true }),
         ]);
-        const best = pickOfficialTrailer(videos, content.trailer);
+        const best = pickHeroTrailer(videos, content.trailer);
         if (detail) {
-          content = sanitizeContentTrailer({
+          content = {
             ...content,
             ...detail,
             id: base.id,
             slug: base.slug,
             trailer: best ?? content.trailer ?? detail.trailer,
-          });
+          };
         }
         cast = credits.cast;
         crew = credits.crew;
-        trailers = mergeTrailers(trailers, videos);
+        trailers = [...trailers, ...videos];
       } else if (
         base.id.startsWith("tmdb_tv_") ||
         base.id.startsWith("tmdb_kdrama_") ||
@@ -572,22 +579,22 @@ export class CatalogService {
         const [detail, credits, videos] = await Promise.all([
           fetchTmdbDetail("tv", tid, base.contentType === "kdrama"),
           fetchTmdbCredits("tv", tid, base.id),
-          fetchTmdbVideos("tv", tid),
+          fetchTmdbVideos("tv", tid, { includeTeasers: true }),
         ]);
-        const best = pickOfficialTrailer(videos, content.trailer);
+        const best = pickHeroTrailer(videos, content.trailer);
         if (detail) {
-          content = sanitizeContentTrailer({
+          content = {
             ...content,
             ...detail,
             id: base.id,
             slug: base.slug,
             contentType: base.contentType,
             trailer: best ?? content.trailer ?? detail.trailer,
-          });
+          };
         }
         cast = credits.cast;
         crew = credits.crew;
-        trailers = mergeTrailers(trailers, videos);
+        trailers = [...trailers, ...videos];
       }
     } catch {
       // keep base
@@ -606,8 +613,16 @@ export class CatalogService {
     }
 
     content = ensurePoster(content);
-    trailers = filterOfficialTrailers(trailers);
-    const primary = pickOfficialTrailer(trailers, content.trailer);
+    const officialOnly = filterOfficialTrailers(trailers);
+    const primary = pickHeroTrailer(
+      officialOnly.length ? officialOnly : trailers,
+      content.trailer,
+    );
+    trailers = officialOnly.length
+      ? officialOnly
+      : primary
+        ? [primary]
+        : [];
     content = {
       ...content,
       trailer: primary,
@@ -1065,11 +1080,12 @@ export class CatalogService {
       36,
     );
 
-    // Popular & trending *today* only — never fill with random catalog/PD
+    // Popular & trending *today* only — prefer explicit day-trending tags.
+    // Fall back to highest-pop of that type only when the day feed is empty
+    // (provider outage), never mix in random PD/seed noise when live tags exist.
     const todayOnly = (list: Content[], n: number) => {
       const today = uniqueById(list.filter(isToday).sort(byPop));
       if (today.length > 0) return today.slice(0, n);
-      // Provider outage fallback: still prefer highest-pop of that type
       return list.slice(0, n);
     };
 
@@ -1091,29 +1107,48 @@ export class CatalogService {
     const todayChineseSeries = todayOnly(chineseSeries, 36);
     const todayThaiSeries = todayOnly(thaiSeries, 36);
 
-    // Featured hero: balanced mix of today's movies · series · anime · kdrama
+    // Dramas for hero: K + C + J + Thai, ranked by popularity among today
+    const todayDramas = uniqueById([
+      ...todayKdrama,
+      ...todayCdrama,
+      ...todayJdrama,
+      ...todayThaidrama,
+    ]).sort(byPop);
+
+    // Featured hero: strict interleave of today's movies · series · anime · dramas
+    // so "Popular & trending today" is a balanced, correct mix — not trailer-sorted.
     const movieFeat = todayMovies.slice(0, 4);
     const seriesFeat = todaySeries.slice(0, 4);
     const animeFeat = todayAnime.slice(0, 4);
-    const kdramaFeat = todayKdrama.slice(0, 4);
+    const dramaFeat = todayDramas.slice(0, 4);
 
     const featuredPool: Content[] = [];
-    const buckets = [movieFeat, seriesFeat, animeFeat, kdramaFeat];
-    const maxLen = Math.max(...buckets.map((b) => b.length), 0);
+    const featBuckets = [movieFeat, seriesFeat, animeFeat, dramaFeat];
+    const maxLen = Math.max(...featBuckets.map((b) => b.length), 0);
     for (let i = 0; i < maxLen; i++) {
-      for (const b of buckets) {
+      for (const b of featBuckets) {
         if (b[i]) featuredPool.push(b[i]!);
       }
     }
-    const slot = Math.floor(Date.now() / 60_000);
-    const rotate = <T,>(arr: T[], s: number): T[] => {
-      if (arr.length <= 1) return arr;
-      const o = ((s % arr.length) + arr.length) % arr.length;
-      return [...arr.slice(o), ...arr.slice(0, o)];
+    // Light hourly rotation so the lead title changes, but type order stays
+    // movie → series → anime → drama within each round-robin slot.
+    const slot = Math.floor(Date.now() / 3_600_000);
+    const rotateGroups = (arr: Content[], s: number): Content[] => {
+      if (arr.length <= 4) return arr;
+      const groups: Content[][] = [];
+      for (let i = 0; i < arr.length; i += 4) {
+        groups.push(arr.slice(i, i + 4));
+      }
+      const o = ((s % groups.length) + groups.length) % groups.length;
+      return [...groups.slice(o), ...groups.slice(0, o)].flat();
     };
-    let featuredUnique = uniqueById(rotate(featuredPool, slot));
+    let featuredUnique = uniqueById(rotateGroups(featuredPool, slot)).slice(
+      0,
+      16,
+    );
 
-    // Trailer enrichment is best-effort — never block home for oEmbed/TMDB.
+    // Trailer enrichment is best-effort and short — client also hydrates.
+    // Keep budget low so /home can win the route race with live trending data.
     featuredUnique = await Promise.race([
       enrichTrailersForFeatured(featuredUnique),
       new Promise<Content[]>((resolve) =>
@@ -1121,15 +1156,8 @@ export class CatalogService {
       ),
     ]);
 
-    // Prefer slides that actually have a playable YouTube trailer key
-    const hasYt = (c: Content) =>
-      c.trailer?.site === "youtube" && isValidYoutubeKey(c.trailer.key);
-    const withTrailer = featuredUnique.filter(hasYt);
-    const withoutTrailer = featuredUnique.filter((c) => !hasYt(c));
-    featuredUnique = uniqueById([...withTrailer, ...withoutTrailer]).slice(
-      0,
-      16,
-    );
+    // Keep the balanced order. Do NOT re-sort by trailer (that buried real
+    // trending titles behind seed hits that happened to have YouTube keys).
 
     const year = new Date().getFullYear();
     const generatedAt = new Date().toISOString();
@@ -1501,14 +1529,17 @@ export class CatalogService {
   async trailers(contentId: string): Promise<Trailer[]> {
     const h = await this.hydrate(contentId);
     if (!h) return [];
-    // Official trailers only (movies · series · anime · kdrama)
-    return filterOfficialTrailers(
-      h.trailers.length
-        ? h.trailers
-        : h.content.trailer
-          ? [h.content.trailer]
-          : [],
-    );
+    // Prefer official Trailer-type videos for API consumers.
+    const pool = [
+      ...(h.trailers ?? []),
+      ...(h.content.trailer ? [h.content.trailer] : []),
+    ];
+    const official = filterOfficialTrailers(pool);
+    if (official.length) return official;
+
+    // Hero / UI fallback: single teaser when TMDB has no Trailer
+    const hero = pickHeroTrailer(pool);
+    return hero ? [hero] : [];
   }
 
   async providers(
@@ -2231,164 +2262,113 @@ function ensurePoster(c: Content): Content {
   return next;
 }
 
-/** Quick check that a YouTube id is still public/embeddable (oEmbed). */
-async function youtubeKeyLooksLive(key: string): Promise<boolean> {
-  const k = key.trim();
-  if (!isValidYoutubeKey(k)) return false;
-  try {
-    const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(
-      `https://www.youtube.com/watch?v=${k}`,
-    )}&format=json`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3500);
-    const res = await fetch(url, {
-      method: "GET",
-      signal: ctrl.signal,
-      // no-store: a mid-stream abort must not throw at Next's fetch-cache layer
-      // and 500 the home route.
-      cache: "no-store",
-    });
-    clearTimeout(timer);
-    return res.ok;
-  } catch {
-    // Network/oEmbed flake — keep the key; client still has poster/thumb fallback
-    return true;
+function attachHeroTrailer(c: Content, t: Trailer | null): Content {
+  // Prefer curated known-good key over provider/dead keys
+  const known = lookupKnownTrailer(c);
+  const pick = known ?? t;
+  if (!pick || !isPlayableTrailerKey(pick.key)) {
+    const keep =
+      c.trailer && isPlayableTrailerKey(c.trailer.key) ? c.trailer : null;
+    return { ...c, trailer: keep };
   }
+  const key = pick.key.trim();
+  return {
+    ...c,
+    trailer: {
+      ...pick,
+      key,
+      id: pick.id || `yt_${key}`,
+      site: "youtube",
+      name: pick.name || "Official Trailer",
+      official: Boolean(pick.official || /official/i.test(pick.name ?? "")),
+      type: pick.type || "Trailer",
+    },
+  };
 }
 
 /**
- * Attach official YouTube trailers for featured titles.
- * Official Trailer type only — never teaser/clip/featurette.
+ * Attach YouTube trailers for featured hero titles (movies · series · anime · dramas).
+ * Known-good keys win; dead keys are stripped; TMDB fills the rest.
  */
 async function enrichTrailersForFeatured(items: Content[]): Promise<Content[]> {
   const out = await Promise.all(
     items.map(async (c) => {
-      const attachOfficial = async (t: Trailer): Promise<Content> => {
-        const best = pickOfficialTrailer([t]);
-        if (!best) return { ...c, trailer: null };
-        const live = await youtubeKeyLooksLive(best.key);
-        if (!live) return { ...c, trailer: null };
-        return {
-          ...c,
-          trailer: {
-            ...best,
-            name: best.name || "Official Trailer",
-            official: true,
-            type: "Trailer",
-          },
-        };
-      };
-
-      // Already has official trailer
-      const existing = pickOfficialTrailer(
-        c.trailer ? [c.trailer] : [],
+      // Pin known-good keys first so dead seed/TMDB keys never win
+      const pinned = ensureKnownTrailers(c);
+      const existing = pickHeroTrailer(
+        filterPlayableTrailers(pinned.trailer ? [pinned.trailer] : []),
       );
-      if (existing) {
-        return attachOfficial(existing);
-      }
+      if (existing) return attachHeroTrailer(pinned, existing);
 
-      const tmdbId = c.providerIds.tmdb;
-      const mediaType =
-        c.providerIds.tmdbMediaType ??
-        (c.contentType === "movie" ? "movie" : "tv");
+      let tmdbId = c.providerIds?.tmdb;
+      let mediaType: "movie" | "tv" =
+        c.providerIds?.tmdbMediaType ??
+        (c.contentType === "movie" || c.animeFormat === "MOVIE"
+          ? "movie"
+          : "tv");
 
-      if (tmdbId) {
+      if (!tmdbId && hasTmdbAccess()) {
         try {
-          // fetchTmdbVideos already returns official trailers only
-          const videos = await fetchTmdbVideos(mediaType, tmdbId);
-          const best = pickOfficialTrailer(videos);
-          if (best) return attachOfficial(best);
+          const resolved = await resolveTmdbIdForTitle({
+            title: c.title,
+            year: c.year,
+            preferMovie:
+              c.contentType === "movie" || c.animeFormat === "MOVIE",
+            alternateTitles: [
+              c.englishTitle,
+              c.romajiTitle,
+              c.originalTitle,
+              c.nativeTitle,
+              ...(c.alternateTitles ?? []),
+            ].filter(Boolean) as string[],
+            requireAnimation: c.contentType === "anime",
+          });
+          if (resolved) {
+            tmdbId = resolved.tmdb;
+            mediaType = resolved.tmdbMediaType;
+          }
         } catch {
           /* ignore */
         }
       }
 
-      const known = sanitizeContentTrailer(ensureKnownTrailers(c));
-      if (known.trailer) return attachOfficial(known.trailer);
-      return { ...c, trailer: null };
+      if (tmdbId) {
+        try {
+          let videos = filterPlayableTrailers(
+            await fetchTmdbVideos(mediaType, tmdbId, { includeTeasers: true }),
+          );
+          let best = pickHeroTrailer(videos);
+          if (!best) {
+            const alt: "movie" | "tv" =
+              mediaType === "movie" ? "tv" : "movie";
+            videos = filterPlayableTrailers(
+              await fetchTmdbVideos(alt, tmdbId, { includeTeasers: true }),
+            );
+            best = pickHeroTrailer(videos);
+            if (best) mediaType = alt;
+          }
+          if (best) {
+            return attachHeroTrailer(
+              {
+                ...pinned,
+                providerIds: {
+                  ...pinned.providerIds,
+                  tmdb: tmdbId,
+                  tmdbMediaType: mediaType,
+                },
+              },
+              best,
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      return attachHeroTrailer(pinned, null);
     }),
   );
   return out;
-}
-
-/** Hard-coded embeddable trailers for popular titles when providers omit them */
-const KNOWN_TRAILERS: Array<{
-  match: RegExp;
-  key: string;
-  name: string;
-}> = [
-  {
-    match: /attack on titan|shingeki no kyojin/i,
-    key: "LHtdKWJdif4",
-    name: "Attack on Titan Official Trailer",
-  },
-  {
-    match: /^inception$/i,
-    key: "YoHD9XEInc0",
-    name: "Inception Official Trailer",
-  },
-  {
-    match: /spirited away|sen to chihiro/i,
-    key: "ByXuk9QqQkk",
-    name: "Spirited Away Trailer",
-  },
-  {
-    match: /cowboy bebop/i,
-    key: "gY5nDXOtv_o",
-    name: "Cowboy Bebop Opening",
-  },
-  {
-    match: /fullmetal alchemist/i,
-    key: "2uq34TeWEdQ",
-    name: "FMA Brotherhood Trailer",
-  },
-  {
-    match: /dark$/i,
-    key: "rrwycJ08PSA",
-    name: "Dark Trailer",
-  },
-  {
-    match: /arrival/i,
-    key: "tFMo3UJ4B4g",
-    name: "Arrival Trailer",
-  },
-  {
-    match: /crash landing on you/i,
-    key: "GNRhW5T_5Vg",
-    name: "Crash Landing on You Trailer",
-  },
-  {
-    match: /goblin|lonely and great god/i,
-    key: "S8_YwFLCh4U",
-    name: "Goblin Trailer",
-  },
-];
-
-function ensureKnownTrailers(c: Content): Content {
-  if (c.trailer?.site === "youtube" && c.trailer.key) {
-    const key = c.trailer.key.trim();
-    if (key !== c.trailer.key) {
-      return {
-        ...c,
-        trailer: { ...c.trailer, key, id: `yt_${key}` },
-      };
-    }
-    return c;
-  }
-  const hay = `${c.title} ${c.englishTitle ?? ""} ${c.romajiTitle ?? ""} ${c.originalTitle ?? ""}`;
-  const hit = KNOWN_TRAILERS.find((t) => t.match.test(hay));
-  if (!hit) return c;
-  return {
-    ...c,
-    trailer: {
-      id: `yt_${hit.key}`,
-      key: hit.key,
-      site: "youtube",
-      name: hit.name,
-      official: true,
-      type: "Trailer",
-    },
-  };
 }
 
 /** Merge + keep only official Trailer-type YouTube videos */
