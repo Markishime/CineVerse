@@ -44,6 +44,7 @@ import {
   fetchWorldSeriesPage,
   fetchWorldDramaPage,
   fetchWorldAnimePage,
+  fetchWorldHentaiPage,
   hasTmdbAccess,
   LEGAL_FULL_PLAYBACK,
 } from "@/lib/providers/live-catalog";
@@ -74,8 +75,10 @@ import {
   applyMatureFlag,
   filterAdultLibrary,
   filterByMatureFlag,
+  filterHentaiLibrary,
   filterPublicCatalog,
   isAccurateAdultAnime,
+  isHentaiContent,
   isMatureContent,
 } from "@/lib/content/mature";
 import {
@@ -104,6 +107,7 @@ import { isDramaType } from "@/types/content";
 import {
   isAnimeLikeContent,
   isGeneralSeriesOnly,
+  matchesAnimeFormatCategory,
 } from "@/lib/content/classification";
 import type { HomePayload, Paginated } from "@/lib/api/content";
 import {
@@ -816,6 +820,16 @@ export class CatalogService {
           items = items.filter((c) => !isAnimeLikeContent(c));
         }
 
+        // Anime Series / Movies: strict format split + never hentai on public tabs
+        if (type === "anime") {
+          items = items.filter((c) => !isHentaiContent(c));
+          if (animeFormat) {
+            items = items.filter((c) =>
+              matchesAnimeFormatCategory(c, animeFormat),
+            );
+          }
+        }
+
         if (items.length > 0) {
           return {
             items,
@@ -865,13 +879,14 @@ export class CatalogService {
           !c.genres.some((g) => /anim/i.test(g.name)),
       );
     }
-    // Anime films vs series split
-    if (type === "anime" && animeFormat) {
-      items = items.filter((c) =>
-        animeFormat === "movie"
-          ? c.animeFormat === "MOVIE"
-          : c.animeFormat !== "MOVIE",
-      );
+    // Anime films vs series split + never hentai on public series/movies tabs
+    if (type === "anime") {
+      items = items.filter((c) => !isHentaiContent(c));
+      if (animeFormat) {
+        items = items.filter((c) =>
+          matchesAnimeFormatCategory(c, animeFormat),
+        );
+      }
     }
     items = sortContent(items, sort);
     return paginate(items, page, size);
@@ -1085,9 +1100,15 @@ export class CatalogService {
     const topMovies = uniqueById([...movies].sort(byPop));
     const topSeries = uniqueById([...series].sort(byPop));
     // Home "Popular anime" should surface TV/OVA series first, not only films.
-    const animeSeriesOnly = anime.filter((c) => c.animeFormat !== "MOVIE");
+    // Never mix hentai into public home rows.
+    const animeSeriesOnly = anime.filter(
+      (c) =>
+        matchesAnimeFormatCategory(c, "series") && !isHentaiContent(c),
+    );
     const topAnime = uniqueById(
-      [...(animeSeriesOnly.length ? animeSeriesOnly : anime)].sort(byPop),
+      [...(animeSeriesOnly.length ? animeSeriesOnly : anime.filter((c) => !isHentaiContent(c)))].sort(
+        byPop,
+      ),
     );
     const topKdrama = uniqueById([...kdrama].sort(byPop));
     // Tag top cdrama/jdrama/thaidrama as trending-today so they appear in the
@@ -1144,7 +1165,9 @@ export class CatalogService {
     const todayThaiSeries = todayOnly(thaiSeries, POPULAR_N);
 
     const animeMovies = allPopular(
-      anime.filter((c) => c.animeFormat === "MOVIE"),
+      anime.filter(
+        (c) => matchesAnimeFormatCategory(c, "movie") && !isHentaiContent(c),
+      ),
       POPULAR_N,
     );
 
@@ -1459,22 +1482,55 @@ export class CatalogService {
   }
 
   /**
-   * 18+ Mature library — the ONLY place adult-restricted titles appear.
-   * Includes movies, series, anime, and dramas flagged adults-only (18+/R18/
-   * NC-17/provider-adult/hentai/explicit). Requires mature toggle + PIN on the client.
+   * Restricted adult library.
+   * - type=anime (Anime → Hentai tab): on-demand AniList isAdult pages
+   *   (thousands of titles) + Jikan Rx / scrapers on page 1. Never ecchi-only.
+   * - other types: adults-only titles from the mature warm catalog.
    */
   async matureLibrary(
     page = 1,
     pageSize = 60,
     type?: ContentType | "all",
   ): Promise<Paginated<Content>> {
+    const size = Math.min(pageSize, 100);
+
+    // Hentai tab: live paginated adult anime (not limited to warm-cache size)
+    if (type === "anime") {
+      try {
+        const world = await fetchWorldHentaiPage(page, size, "popularity");
+        let items = world.items
+          .map((c) => applyMatureFlag(c))
+          .filter((c) => isHentaiContent(c))
+          .filter(isAtLeastMinYear)
+          .map((c) =>
+            sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))),
+          );
+        if (items.length > 0) {
+          return {
+            items,
+            page: world.page,
+            totalPages: Math.max(world.totalPages, 1),
+            total: world.total || items.length,
+          };
+        }
+      } catch {
+        // fall through to warm mature catalog
+      }
+      const all = (await this.loadLive(true)).map((c) => applyMatureFlag(c));
+      const items = sortContent(
+        filterHentaiLibrary(all).filter(isAtLeastMinYear),
+        "popularity",
+      );
+      return paginate(items, page, size);
+    }
+
     const all = (await this.loadLive(true)).map((c) => applyMatureFlag(c));
     let items = filterAdultLibrary(all).filter(isAtLeastMinYear);
     if (type && type !== "all") {
       items = items.filter((c) => c.contentType === type);
     }
     items = sortContent(items, "popularity");
-    return paginate(items, page, Math.min(pageSize, 100));
+    return paginate(items, page, size);
   }
 
   async search(params: {

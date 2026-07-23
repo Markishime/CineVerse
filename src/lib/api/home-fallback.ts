@@ -6,11 +6,13 @@ import { SEED_CONTENT, SEED_GENRES, SEED_MOODS } from "@/data/seed-content";
 import {
   applyMatureFlag,
   filterPublicCatalog,
+  isHentaiContent,
   isMatureContent,
 } from "@/lib/content/mature";
 import {
   isAnimeLikeContent,
   isGeneralSeriesOnly,
+  matchesAnimeFormatCategory,
 } from "@/lib/content/classification";
 import { isDramaType, type Content } from "@/types/content";
 import type { HomePayload } from "@/lib/api/content";
@@ -93,9 +95,15 @@ export function seedHomePayload(): HomePayload {
   const byPop = [...safe].sort(byPopSort);
   const movies = byPop.filter((c) => c.contentType === "movie");
   const series = byPop.filter(isGeneralSeriesOnly);
-  const animeAll = byPop.filter((c) => c.contentType === "anime");
-  const animeSeries = animeAll.filter((c) => c.animeFormat !== "MOVIE");
-  const animeMovies = animeAll.filter((c) => c.animeFormat === "MOVIE");
+  const animeAll = byPop.filter(
+    (c) => c.contentType === "anime" && !isHentaiContent(c),
+  );
+  const animeSeries = animeAll.filter((c) =>
+    matchesAnimeFormatCategory(c, "series"),
+  );
+  const animeMovies = animeAll.filter((c) =>
+    matchesAnimeFormatCategory(c, "movie"),
+  );
   const anime = animeSeries.length > 0 ? animeSeries : animeAll;
 
   const kdrama = byPop.filter((c) => c.contentType === "kdrama");

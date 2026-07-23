@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { useAuthStore } from "@/stores/auth-store";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,11 @@ import { setDeviceRegion } from "@/lib/user/region";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function SettingsPage() {
-  const { user, profile, settings, setProfile, setSettings } = useAuthStore();
+  const router = useRouter();
+  const { user, profile, settings, setProfile, setSettings, reset } =
+    useAuthStore();
   const queryClient = useQueryClient();
+  const [signingOut, setSigningOut] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
@@ -386,18 +390,29 @@ export default function SettingsPage() {
       )}
 
       <div className="mt-6 flex flex-wrap gap-3">
-        <Button onClick={save} disabled={saving}>
+        <Button onClick={save} disabled={saving || signingOut}>
           {saving ? "Saving…" : "Save settings"}
         </Button>
         <Button
-          variant="secondary"
+          variant="danger"
+          disabled={signingOut}
           onClick={async () => {
-            if (isFirebaseConfigured()) {
-              await signOut(getClientAuth());
+            setSigningOut(true);
+            setError(null);
+            try {
+              if (isFirebaseConfigured()) {
+                await signOut(getClientAuth());
+              }
+            } catch {
+              // Still clear local session and leave
+            } finally {
+              reset();
+              queryClient.clear();
+              router.replace("/login");
             }
           }}
         >
-          Sign out
+          {signingOut ? "Signing out…" : "Sign out"}
         </Button>
       </div>
 

@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   classifyDrama,
   isAnimeLikeContent,
+  isAnimeMovieFormat,
+  isAnimeSeriesFormat,
   isGeneralSeriesOnly,
   isKDrama,
   isValidAnime,
+  matchesAnimeFormatCategory,
   normalizeAnimeFormat,
   resolveContentType,
 } from "../classification";
@@ -267,5 +270,49 @@ describe("isGeneralSeriesOnly", () => {
         genres: [{ id: "16", name: "Animation" }],
       }),
     ).toBe(false);
+  });
+});
+
+describe("anime format tab split (series vs movies)", () => {
+  const series = {
+    contentType: "anime" as const,
+    animeFormat: "TV" as const,
+    providerIds: {},
+  };
+  const movie = {
+    contentType: "anime" as const,
+    animeFormat: "MOVIE" as const,
+    providerIds: {},
+  };
+  const ova = {
+    contentType: "anime" as const,
+    animeFormat: "OVA" as const,
+    providerIds: {},
+  };
+
+  it("puts TV/OVA/ONA on series, MOVIE on movies", () => {
+    expect(isAnimeSeriesFormat(series)).toBe(true);
+    expect(isAnimeMovieFormat(series)).toBe(false);
+    expect(isAnimeSeriesFormat(movie)).toBe(false);
+    expect(isAnimeMovieFormat(movie)).toBe(true);
+    expect(isAnimeSeriesFormat(ova)).toBe(true);
+    expect(isAnimeMovieFormat(ova)).toBe(false);
+  });
+
+  it("matchesAnimeFormatCategory mirrors tab filters", () => {
+    expect(matchesAnimeFormatCategory(series, "series")).toBe(true);
+    expect(matchesAnimeFormatCategory(series, "movie")).toBe(false);
+    expect(matchesAnimeFormatCategory(movie, "movie")).toBe(true);
+    expect(matchesAnimeFormatCategory(movie, "series")).toBe(false);
+  });
+
+  it("never treats missing format as a theatrical movie", () => {
+    const unknown = {
+      contentType: "anime" as const,
+      animeFormat: undefined,
+      providerIds: { tmdbMediaType: "tv" as const },
+    };
+    expect(isAnimeMovieFormat(unknown)).toBe(false);
+    expect(isAnimeSeriesFormat(unknown)).toBe(true);
   });
 });

@@ -221,14 +221,14 @@ export function ContentDetail({ slug }: { slug: string }) {
         <h1 className="font-display text-2xl">Title not found</h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">
           This title may have left the live catalog, or the link was incomplete.
-          Mature titles need the 18+ library enabled to stay in the catalog.
+          Adult titles are only available in the restricted Hentai library.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link
-            href="/mature"
+            href="/anime/hentai"
             className="text-[var(--primary-light)] underline-offset-2 hover:underline"
           >
-            Back to 18+ mature
+            Back to Hentai
           </Link>
           <Link
             href="/discover"
@@ -311,7 +311,7 @@ export function ContentDetail({ slug }: { slug: string }) {
         </h1>
         <p className="mt-3 text-sm text-[var(--text-secondary)]">
           Enable &quot;Show 18+ mature titles&quot; in Settings (parental PIN
-          required). The 18+ tab only appears when mature content is on.
+          required). Restricted titles are under Anime → Hentai when allowed.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link href="/settings">

@@ -12,7 +12,7 @@ import {
   signInWithPopup,
 } from "firebase/auth";
 import { Suspense, useState } from "react";
-import { Eye, EyeOff, Mail } from "lucide-react";
+import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AuthShell } from "@/components/auth/auth-shell";
@@ -26,6 +26,29 @@ const schema = z.object({
 
 type Form = z.infer<typeof schema>;
 
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden>
+      <path
+        fill="#EA4335"
+        d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.9 1.5l2.6-2.5C16.8 3.3 14.6 2.3 12 2.3 6.9 2.3 2.8 6.4 2.8 11.5S6.9 20.7 12 20.7c5.5 0 9.1-3.9 9.1-9.3 0-.6-.1-1.1-.2-1.6H12z"
+      />
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+      />
+    </svg>
+  );
+}
+
 function LoginForm() {
   const router = useRouter();
   const search = useSearchParams();
@@ -33,6 +56,7 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [showPw, setShowPw] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const {
     register,
     handleSubmit,
@@ -66,8 +90,10 @@ function LoginForm() {
 
   const google = async () => {
     setError(null);
+    setGoogleLoading(true);
     if (!isFirebaseConfigured()) {
       setError("Firebase is not configured.");
+      setGoogleLoading(false);
       return;
     }
     try {
@@ -77,6 +103,8 @@ function LoginForm() {
       goNext();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Google sign-in failed");
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -104,6 +132,8 @@ function LoginForm() {
     }
   };
 
+  const busy = isSubmitting || googleLoading;
+
   return (
     <AuthShell
       side="login"
@@ -114,7 +144,7 @@ function LoginForm() {
         <>
           <Link
             href="/forgot-password"
-            className="text-[var(--primary-light)] underline-offset-2 hover:underline"
+            className="text-[var(--primary-light)] underline-offset-2 transition-colors hover:text-white hover:underline"
           >
             Forgot password
           </Link>
@@ -122,7 +152,7 @@ function LoginForm() {
           New here?{" "}
           <Link
             href="/signup"
-            className="text-[var(--primary-light)] underline-offset-2 hover:underline"
+            className="font-medium text-[var(--primary-light)] underline-offset-2 transition-colors hover:text-white hover:underline"
           >
             Create free account
           </Link>
@@ -132,43 +162,22 @@ function LoginForm() {
       <Button
         type="button"
         variant="secondary"
-        className="h-12 w-full gap-2.5 text-[15px] transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
+        className="h-12 w-full gap-2.5 border-white/12 bg-white/[0.06] text-[15px] shadow-none transition-all duration-200 hover:scale-[1.01] hover:border-white/20 hover:bg-white/[0.09] active:scale-[0.99]"
         onClick={google}
+        disabled={busy}
       >
-        <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
-          <path
-            fill="#EA4335"
-            d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.9 1.5l2.6-2.5C16.8 3.3 14.6 2.3 12 2.3 6.9 2.3 2.8 6.4 2.8 11.5S6.9 20.7 12 20.7c5.5 0 9.1-3.9 9.1-9.3 0-.6-.1-1.1-.2-1.6H12z"
-          />
-          <path
-            fill="#34A853"
-            d="M3.9 14.5l3.2-2.4c.9 2.3 2.8 3.4 4.9 3.4 1.2 0 2.3-.3 3.1-.9l3.2 2.5c-1.9 1.8-4.4 2.8-7.1 2.8-4.1 0-7.6-2.5-9.1-6.1z"
-            opacity="0"
-          />
-          <path
-            fill="currentColor"
-            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-          />
-          <path
-            fill="currentColor"
-            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-          />
-          <path
-            fill="currentColor"
-            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-          />
-          <path
-            fill="currentColor"
-            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-          />
-        </svg>
+        {googleLoading ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : (
+          <GoogleIcon className="h-5 w-5 shrink-0" />
+        )}
         Continue with Google
       </Button>
 
       <div className="my-6 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
-        <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/12" />
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/14 to-transparent" />
         or email
-        <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/12" />
+        <div className="h-px flex-1 bg-gradient-to-l from-transparent via-white/14 to-transparent" />
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
@@ -179,20 +188,23 @@ function LoginForm() {
           >
             Email
           </label>
-          <Input
-            id="login-email"
-            type="email"
-            placeholder="you@email.com"
-            autoComplete="email"
-            inputMode="email"
-            aria-invalid={Boolean(errors.email)}
-            className={cn(
-              "h-12 transition-[border-color,box-shadow] duration-200",
-              errors.email &&
-                "border-[var(--danger)]/60 focus-visible:ring-[var(--danger)]/40",
-            )}
-            {...register("email")}
-          />
+          <div className="relative">
+            <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <Input
+              id="login-email"
+              type="email"
+              placeholder="you@email.com"
+              autoComplete="email"
+              inputMode="email"
+              aria-invalid={Boolean(errors.email)}
+              className={cn(
+                "h-12 bg-black/25 pl-10 transition-[border-color,box-shadow] duration-200",
+                errors.email &&
+                  "border-[var(--danger)]/60 focus-visible:ring-[var(--danger)]/40",
+              )}
+              {...register("email")}
+            />
+          </div>
           {errors.email && (
             <p className="mt-1.5 text-xs text-[var(--danger)]" role="alert">
               {errors.email.message}
@@ -216,6 +228,7 @@ function LoginForm() {
             </Link>
           </div>
           <div className="relative">
+            <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
             <Input
               id="login-password"
               type={showPw ? "text" : "password"}
@@ -223,7 +236,7 @@ function LoginForm() {
               autoComplete="current-password"
               aria-invalid={Boolean(errors.password)}
               className={cn(
-                "h-12 pr-12 transition-[border-color,box-shadow] duration-200",
+                "h-12 bg-black/25 pl-10 pr-12 transition-[border-color,box-shadow] duration-200",
                 errors.password &&
                   "border-[var(--danger)]/60 focus-visible:ring-[var(--danger)]/40",
               )}
@@ -268,22 +281,34 @@ function LoginForm() {
 
         <Button
           type="submit"
-          className="h-12 w-full text-[15px] transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
-          disabled={isSubmitting}
+          className="h-12 w-full text-[15px] font-semibold transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
+          disabled={busy}
         >
-          {isSubmitting ? "Signing in…" : "Sign in"}
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Signing in…
+            </>
+          ) : (
+            "Sign in"
+          )}
         </Button>
       </form>
 
       <Button
         type="button"
         variant="outline"
-        className="mt-3 h-11 w-full gap-2 text-sm transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
+        className="mt-3 h-11 w-full gap-2 border-dashed text-sm transition-all duration-200 hover:scale-[1.01] hover:border-[var(--primary)]/40 hover:bg-[var(--primary)]/5 active:scale-[0.99]"
         onClick={emailLink}
+        disabled={busy}
       >
         <Mail className="h-4 w-4" />
         Email me a sign-in link
       </Button>
+
+      <p className="mt-5 text-center text-[11px] text-[var(--text-muted)]">
+        Free unlimited membership · No credit card
+      </p>
     </AuthShell>
   );
 }

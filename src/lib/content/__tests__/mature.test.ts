@@ -4,9 +4,11 @@ import {
   filterAdultLibrary,
   filterByMatureFlag,
   filterExplicitMatureLibrary,
+  filterHentaiLibrary,
   filterPublicCatalog,
   isAdultRestricted,
   isExplicitSexualContent,
+  isHentaiContent,
   isMatureContent,
 } from "@/lib/content/mature";
 import type { Content } from "@/types/content";
@@ -229,8 +231,41 @@ describe("adult-restricted gate (18+ toggle OFF hides ALL adult content)", () =>
     expect(isMatureContent(overflow)).toBe(true);
     // Not curated into the *sexual* 18+ library (it's ecchi, not hentai).
     expect(isExplicitSexualContent(overflow)).toBe(false);
+    expect(isHentaiContent(overflow)).toBe(false);
+    expect(filterHentaiLibrary([overflow])).toHaveLength(0);
     expect(filterByMatureFlag([overflow], false)).toHaveLength(0);
     expect(filterByMatureFlag([overflow], true)).toHaveLength(1);
+  });
+
+  it("hentai library keeps AniList isAdult / Rx only, not ecchi", () => {
+    const hentai = {
+      ...base,
+      id: "h1",
+      contentType: "anime" as const,
+      mature: true,
+      ageRating: "18+",
+      tags: ["anilist-adult", "adult-anime", "hentai", "explicit", "anime"],
+    } as Content;
+    const ecchi = {
+      ...base,
+      id: "e1",
+      contentType: "anime" as const,
+      mature: true,
+      ageRating: "R+",
+      tags: ["r+", "mature", "adults-only", "anime-adult-genre", "anime"],
+    } as Content;
+    const series = {
+      ...base,
+      id: "s1",
+      contentType: "anime" as const,
+      mature: false,
+      tags: ["anime"],
+      animeFormat: "TV",
+    } as Content;
+    const out = filterHentaiLibrary([hentai, ecchi, series]);
+    expect(out.map((c) => c.id)).toEqual(["h1"]);
+    expect(isHentaiContent(hentai)).toBe(true);
+    expect(isHentaiContent(series)).toBe(false);
   });
 
   it("hides adult age ratings across all types (18+/R18/R+/NC-17)", () => {

@@ -24,15 +24,21 @@ import { useAuthStore } from "@/stores/auth-store";
 import { isRestrictedContentUser } from "@/lib/content/mature";
 import { Button } from "@/components/ui/button";
 
+interface NavChild {
+  href: string;
+  label: string;
+  /** Only visible to the restricted-content allowlist email. */
+  restrictedOnly?: true;
+}
+
 interface NavItem {
   href: string;
   label: string;
   icon: typeof Film;
-  matureOnly?: true;
-  /** When true, `children` only appear (as a dropdown) if 18+ is enabled;
+  /** When true, `children` only appear (as a dropdown) if restricted user;
    *  otherwise the item renders as a plain link. */
   matureChildren?: true;
-  children?: Array<{ href: string; label: string }>;
+  children?: NavChild[];
 }
 
 const baseNav: NavItem[] = [
@@ -41,8 +47,8 @@ const baseNav: NavItem[] = [
     href: "/movies",
     label: "Movies",
     icon: Film,
-    // Country movie catalogs are 18+-only — the dropdown appears only when the
-    // mature toggle is on; otherwise Movies is a plain link.
+    // Country movie catalogs are restricted — the dropdown appears only for
+    // the allowlisted email; otherwise Movies is a plain link.
     matureChildren: true,
     children: [
       { href: "/movies", label: "All Movies" },
@@ -62,6 +68,7 @@ const baseNav: NavItem[] = [
       { href: "/anime", label: "All Anime" },
       { href: "/anime/series", label: "Anime Series" },
       { href: "/anime/movies", label: "Anime Movies" },
+      { href: "/anime/hentai", label: "Hentai", restrictedOnly: true },
     ],
   },
   {
@@ -76,7 +83,6 @@ const baseNav: NavItem[] = [
       { href: "/series/filipino", label: "Filipino Drama" },
     ],
   },
-  { href: "/mature", label: "18+", icon: Sparkles, matureOnly: true },
   { href: "/discover", label: "Discover", icon: Compass },
   { href: "/search", label: "Search", icon: Search },
   { href: "/watchlist", label: "My List", icon: ListVideo },
@@ -188,16 +194,23 @@ export function Header() {
   const { user, profile } = useAuthStore();
   const isHome = pathname === "/";
 
-  const matureEnabled = isRestrictedContentUser(user?.email);
-  const nav = baseNav
-    .filter((item) => !("matureOnly" in item && item.matureOnly) || matureEnabled)
-    // Drop 18+-only dropdown children (country movies) when the toggle is off,
-    // so Movies becomes a plain link instead of a dropdown.
-    .map((item) =>
-      item.matureChildren && !matureEnabled
-        ? { ...item, children: undefined }
-        : item,
-    );
+  const restrictedUser = isRestrictedContentUser(user?.email);
+  const nav = baseNav.map((item) => {
+    // Country movie catalogs: dropdown only for the allowlisted email.
+    if (item.matureChildren && !restrictedUser) {
+      return { ...item, children: undefined };
+    }
+    // Hentai (and any restrictedOnly child): only for allowlisted email.
+    if (item.children?.some((c) => c.restrictedOnly)) {
+      return {
+        ...item,
+        children: item.children.filter(
+          (c) => !c.restrictedOnly || restrictedUser,
+        ),
+      };
+    }
+    return item;
+  });
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);

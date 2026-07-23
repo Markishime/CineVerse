@@ -321,7 +321,7 @@ export function HomePage() {
             items={home.filipinoMovies}
           />
         )}
-        {/* 18+ titles never appear on home (popular/trending). Open the 18+ tab. */}
+        {/* Adult titles never appear on home; restricted users use Anime → Hentai. */}
 
         <div className="cinematic-divider" />
         <Reveal className="space-y-4">

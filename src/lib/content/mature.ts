@@ -108,16 +108,11 @@ export function isExplicitSexualContent(
   const rating = (c.ageRating ?? "").trim();
   const overview = c.overview ?? "";
 
-  // ── Anime: AniList isAdult / Jikan Rx / sexual tags only ──
+  // ── Anime / hentai: AniList isAdult / Jikan Rx / explicit hentai only ──
+  // Ecchi / R+ fanservice (anime-adult-genre) is adults-only for the hide-gate
+  // but is NOT hentai — it must never enter the Hentai tab.
   if (c.contentType === "anime") {
-    if (tags.includes("anilist-adult") || tags.includes("jikan-rx")) return true;
-    if (tags.includes("hentai") || tags.includes("adult-anime")) return true;
-    if (hasExplicitSexualTag(tags)) return true;
-    if (/Rx\s*-?\s*Hentai|^18\+$/i.test(rating)) return true;
-    // mature:true alone is not enough (violence anime must not pass)
-    if (c.mature && hasExplicitSexualTag(tags)) return true;
-    if (c.mature && SEXUAL_OVERVIEW.test(overview)) return true;
-    return false;
+    return isHentaiContent(c);
   }
 
   // ── Movies / series / kdrama ──
@@ -288,7 +283,7 @@ export function filterByMatureFlag<
 /**
  * Public surfaces (home popular/trending/featured, Movies/Series/Anime/Drama
  * catalogs, discover, search): NEVER include 18+ / adult-restricted titles.
- * Those belong exclusively on the `/mature` (18+) tab when the toggle is on.
+ * Those belong exclusively on Anime → Hentai for the allowlisted user.
  */
 export function filterPublicCatalog<
   T extends Pick<
@@ -299,7 +294,7 @@ export function filterPublicCatalog<
   return items.filter((c) => !isAdultRestricted(c));
 }
 
-/** Keep only adults-only titles for the dedicated 18+ library. */
+/** Keep only adults-only titles for the dedicated hentai / mature library. */
 export function filterAdultLibrary<
   T extends Pick<
     Content,
@@ -392,6 +387,90 @@ export function filterMatureAnimeLibrary(items: Content[]): Content[] {
   return items.filter(
     (c) => c.contentType === "anime" && isExplicitSexualContent(c),
   );
+}
+
+/**
+ * True only for real hentai / Rx adult anime — never mild ecchi or violence 18+.
+ * Ground truth: AniList isAdult, Jikan Rx, hentai genre/provider tags.
+ */
+export function isHentaiContent(
+  c:
+    | Pick<
+        Content,
+        "mature" | "ageRating" | "tags" | "contentType" | "overview" | "title"
+      >
+    | null
+    | undefined,
+): boolean {
+  if (!c || c.contentType !== "anime") return false;
+
+  const tags = tagList(c);
+  const rating = (c.ageRating ?? "").trim();
+  const overview = c.overview ?? "";
+
+  // Ecchi / soft adult-oriented genres alone are NOT hentai.
+  const onlyEcchiGate =
+    tags.includes("anime-adult-genre") &&
+    !tags.includes("anilist-adult") &&
+    !tags.includes("jikan-rx") &&
+    !tags.includes("hentai") &&
+    !tags.includes("hentaianime") &&
+    !tags.includes("hentaiocean") &&
+    !tags.includes("anipub") &&
+    !hasExplicitSexualTag(tags.filter((t) => t !== "explicit" && t !== "adult-anime"));
+  if (onlyEcchiGate && !/rx/i.test(rating)) return false;
+
+  // Provider ground truth
+  if (tags.includes("anilist-adult") || tags.includes("jikan-rx")) return true;
+  if (tags.includes("hentai")) return true;
+  // Dedicated hentai scrapers (always adult). AniPub only when tagged hentai above.
+  if (tags.includes("hentaianime") || tags.includes("hentaiocean")) {
+    return true;
+  }
+
+  // adult-anime is set only for AniList isAdult / dedicated adult packs
+  if (tags.includes("adult-anime") && !tags.includes("anime-adult-genre")) {
+    return true;
+  }
+
+  // Explicit sexual tags (nudity/sex/erotica/xxx) — not generic "explicit" alone
+  // when it was bulk-applied with false positives.
+  if (
+    tags.some((t) =>
+      [
+        "nudity",
+        "sex",
+        "sexual",
+        "sexual-content",
+        "sexual content",
+        "erotica",
+        "erotic",
+        "xxx",
+        "softcore",
+        "hardcore",
+        "pornographic",
+      ].includes(t),
+    )
+  ) {
+    return true;
+  }
+
+  // Jikan / MAL Rx rating only (not bare 18+ — that catches non-hentai too)
+  if (/rx/i.test(rating) || /hentai/i.test(rating)) return true;
+
+  if (c.mature && SEXUAL_OVERVIEW.test(overview)) return true;
+
+  return false;
+}
+
+/** Hentai tab: only true hentai anime (excludes ecchi, live-action 18+, etc.). */
+export function filterHentaiLibrary<
+  T extends Pick<
+    Content,
+    "mature" | "ageRating" | "tags" | "contentType" | "overview" | "title"
+  >,
+>(items: T[]): T[] {
+  return items.filter((c) => isHentaiContent(c));
 }
 
 export function isAnimeType(t?: ContentType | string | null): boolean {

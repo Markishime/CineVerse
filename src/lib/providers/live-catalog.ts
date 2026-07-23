@@ -877,52 +877,54 @@ export async function fetchAllAnimeLive(
     ...maturePages.flat(),
   ];
 
-  // Accurate adult tags only when AniList isAdult (mapAnilist already set mature)
+  // Preserve accurate tags:
+  // - AniList isAdult (hentai) already has anilist-adult / adult-anime / explicit
+  // - Ecchi (anime-adult-genre) stays adults-only for the hide-gate but must NOT
+  //   be upgraded to hentai tags (that wrongly put Overflow etc. in Hentai)
   return [...todayAnime, ...rest].map((c) => {
     if (!c.mature) return { ...c, mature: false };
+    const tags = c.tags ?? [];
+    const isHentai =
+      tags.includes("anilist-adult") ||
+      tags.includes("jikan-rx") ||
+      tags.includes("hentai") ||
+      tags.includes("hentaianime") ||
+      tags.includes("hentaiocean") ||
+      tags.includes("anipub");
+    if (isHentai) {
+      return {
+        ...c,
+        mature: true,
+        ageRating: c.ageRating || "18+",
+        tags: Array.from(
+          new Set([
+            ...tags,
+            "18+",
+            "mature",
+            "adult-anime",
+            "anilist-adult",
+            "anime",
+            "explicit",
+            "hentai",
+          ]),
+        ),
+      };
+    }
+    // Ecchi / soft adult — keep mature for hide-gate, no hentai tags
     return {
       ...c,
       mature: true,
-      ageRating: c.ageRating || "18+",
+      ageRating: c.ageRating || "R+",
       tags: Array.from(
-        new Set([
-          ...(c.tags ?? []),
-          "18+",
-          "mature",
-          "adult-anime",
-          "anilist-adult",
-          "anime",
-          "explicit",
-        ]),
+        new Set([...tags, "mature", "anime", "anime-adult-genre"]),
       ),
     };
   });
 }
 
-/**
- * Dedicated adult anime pack (AniList isAdult + Jikan Rx).
- * Metadata only — never streams. Only used when mature catalog is on.
- */
-export async function fetchAdultAnimeCatalog(): Promise<Content[]> {
-  const pages = await Promise.all([
-    fetchAnilistAnime({ page: 1, perPage: 50, sort: "POPULARITY_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 2, perPage: 50, sort: "POPULARITY_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 3, perPage: 50, sort: "POPULARITY_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 4, perPage: 50, sort: "POPULARITY_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 5, perPage: 50, sort: "POPULARITY_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 6, perPage: 50, sort: "POPULARITY_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 7, perPage: 50, sort: "POPULARITY_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 8, perPage: 50, sort: "POPULARITY_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 1, perPage: 50, sort: "TRENDING_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 2, perPage: 50, sort: "TRENDING_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 1, perPage: 50, sort: "SCORE_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 2, perPage: 50, sort: "SCORE_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 1, perPage: 50, sort: "FAVOURITES_DESC", isAdult: true }),
-    fetchAnilistAnime({ page: 1, perPage: 40, sort: "START_DATE_DESC", isAdult: true }),
-    fetchJikanAdultAnime().catch(() => [] as Content[]),
-  ]);
-
-  return pages.flat().map((c) => ({
+/** Tag pack applied to every true-hentai catalog entry. */
+function withHentaiTags(c: Content): Content {
+  return {
     ...c,
     contentType: "anime" as const,
     mature: true,
@@ -933,11 +935,235 @@ export async function fetchAdultAnimeCatalog(): Promise<Content[]> {
         "18+",
         "mature",
         "adult-anime",
+        "anilist-adult",
         "anime",
         "explicit",
+        "hentai",
       ]),
     ),
-  }));
+  };
+}
+
+/**
+ * On-demand paginated hentai catalog (AniList isAdult + supplemental providers).
+ * Powers Anime → Hentai with thousands of titles — not limited to the warm cache.
+ */
+export async function fetchWorldHentaiPage(
+  page = 1,
+  pageSize = 48,
+  sort:
+    | "popularity"
+    | "rating"
+    | "newest"
+    | "oldest"
+    | "title_asc"
+    | "title_desc"
+    | "runtime" = "popularity",
+): Promise<WorldCatalogPage> {
+  const perPage = Math.min(50, pageSize);
+  const pagesNeeded = Math.max(1, Math.ceil(pageSize / perPage));
+  const start = (Math.max(1, page) - 1) * pagesNeeded + 1;
+
+  const anilistSort =
+    sort === "rating"
+      ? "SCORE_DESC"
+      : sort === "newest"
+        ? "START_DATE_DESC"
+        : sort === "oldest"
+          ? "START_DATE_ASC"
+          : sort === "title_asc"
+            ? "TITLE_ROMAJI"
+            : sort === "title_desc"
+              ? "TITLE_ROMAJI_DESC"
+              : "POPULARITY_DESC";
+
+  // Main popularity stream + format-specific streams so OVAs/ONAs/films fill
+  // pages that pure popularity would otherwise repeat.
+  const formatLane =
+    page % 4 === 2
+      ? "OVA"
+      : page % 4 === 3
+        ? "ONA"
+        : page % 4 === 0
+          ? "MOVIE"
+          : undefined;
+
+  const [mainPages, formatPages, supplemental] = await Promise.all([
+    Promise.all(
+      Array.from({ length: pagesNeeded }, (_, i) =>
+        fetchAnilistAnimePage({
+          page: start + i,
+          perPage,
+          sort: anilistSort,
+          isAdult: true,
+        }),
+      ),
+    ),
+    formatLane
+      ? Promise.all(
+          Array.from({ length: pagesNeeded }, (_, i) =>
+            fetchAnilistAnimePage({
+              page: Math.max(1, Math.ceil(start / 2) + i),
+              perPage,
+              sort: anilistSort,
+              isAdult: true,
+              format: formatLane,
+            }),
+          ),
+        )
+      : Promise.resolve([] as WorldCatalogPage[]),
+    // Page 1 injects Jikan Rx + scrape providers for extra coverage
+    page === 1
+      ? Promise.all([
+          fetchJikanAdultAnime().catch(() => [] as Content[]),
+          fetchHentaiAnimeCatalog().catch(() => [] as Content[]),
+          fetchHentaiOceanCatalog().catch(() => [] as Content[]),
+        ]).then((lists) => lists.flat())
+      : Promise.resolve([] as Content[]),
+  ]);
+
+  const seen = new Set<string>();
+  const merged: Content[] = [];
+  const push = (list: Content[]) => {
+    for (const raw of list) {
+      if (!raw?.id || seen.has(raw.id)) continue;
+      const c = withHentaiTags(raw);
+      seen.add(c.id);
+      merged.push(c);
+    }
+  };
+
+  if (page === 1) push(supplemental);
+  push(mainPages.flatMap((p) => p.items));
+  push(formatPages.flatMap((p) => p.items));
+
+  // Prefer higher popularity first within the page
+  merged.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+
+  const allTotalPages = mainPages.map((p) => p.totalPages ?? 1);
+  const allTotals = mainPages.map((p) => p.total ?? 0);
+  const anilistLast = Math.max(1, ...allTotalPages);
+  const anilistTotal = Math.max(...allTotals, 0);
+  const totalPages = Math.max(1, Math.ceil(anilistLast / pagesNeeded));
+
+  return {
+    items: merged.slice(0, pageSize),
+    page: Math.min(Math.max(1, page), totalPages),
+    totalPages,
+    total: anilistTotal || merged.length,
+  };
+}
+
+/**
+ * Dedicated adult anime warm-pack for mature catalog merge.
+ * Deep AniList + Jikan Rx + scrapers — used when includeMature is on.
+ * Prefer `fetchWorldHentaiPage` for the Hentai tab (paginated, larger total).
+ */
+export async function fetchAdultAnimeCatalog(): Promise<Content[]> {
+  // Batched AniList popularity (40 pages × 50 = ~2000) + multi-sort + formats
+  const popularityPages = Array.from({ length: 40 }, (_, i) => i + 1);
+  const extraSorts: Array<{ sort: string; pages: number }> = [
+    { sort: "TRENDING_DESC", pages: 8 },
+    { sort: "SCORE_DESC", pages: 8 },
+    { sort: "FAVOURITES_DESC", pages: 6 },
+    { sort: "START_DATE_DESC", pages: 8 },
+    { sort: "END_DATE_DESC", pages: 4 },
+  ];
+  const formats = ["TV", "OVA", "ONA", "MOVIE", "SPECIAL"] as const;
+  const years = [
+    2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015,
+    2014, 2013, 2012, 2011, 2010, 2008, 2005, 2000, 1995, 1990,
+  ];
+
+  // Chunk popularity into parallel batches of 10 to avoid hammering AniList
+  const popBatches: number[][] = [];
+  for (let i = 0; i < popularityPages.length; i += 10) {
+    popBatches.push(popularityPages.slice(i, i + 10));
+  }
+
+  const popResults: Content[][] = [];
+  for (const batch of popBatches) {
+    const chunk = await Promise.all(
+      batch.map((p) =>
+        fetchAnilistAnime({
+          page: p,
+          perPage: 50,
+          sort: "POPULARITY_DESC",
+          isAdult: true,
+        }).catch(() => [] as Content[]),
+      ),
+    );
+    popResults.push(...chunk);
+  }
+
+  const [sortPages, formatPages, yearPages, jikan, hentaiAnime, ocean, anipub] =
+    await Promise.all([
+      Promise.all(
+        extraSorts.flatMap(({ sort, pages }) =>
+          Array.from({ length: pages }, (_, i) =>
+            fetchAnilistAnime({
+              page: i + 1,
+              perPage: 50,
+              sort,
+              isAdult: true,
+            }).catch(() => [] as Content[]),
+          ),
+        ),
+      ),
+      Promise.all(
+        formats.flatMap((format) =>
+          [1, 2, 3, 4, 5, 6, 7, 8].map((p) =>
+            fetchAnilistAnime({
+              page: p,
+              perPage: 50,
+              sort: "POPULARITY_DESC",
+              isAdult: true,
+              format,
+            }).catch(() => [] as Content[]),
+          ),
+        ),
+      ),
+      Promise.all(
+        years.flatMap((seasonYear) =>
+          [1, 2, 3].map((p) =>
+            fetchAnilistAnime({
+              page: p,
+              perPage: 50,
+              sort: "POPULARITY_DESC",
+              isAdult: true,
+              seasonYear,
+            }).catch(() => [] as Content[]),
+          ),
+        ),
+      ),
+      fetchJikanAdultAnime().catch(() => [] as Content[]),
+      fetchHentaiAnimeCatalog().catch(() => [] as Content[]),
+      fetchHentaiOceanCatalog().catch(() => [] as Content[]),
+      fetchAniPubCatalog().catch(() => [] as Content[]),
+    ]);
+
+  const all = [
+    ...popResults.flat(),
+    ...sortPages.flat(),
+    ...formatPages.flat(),
+    ...yearPages.flat(),
+    ...jikan,
+    ...hentaiAnime,
+    ...ocean,
+    // AniPub often returns ecchi; only keep entries already tagged hentai
+    ...anipub.filter((c) =>
+      (c.tags ?? []).some((t) => /hentai|anilist-adult|jikan-rx/i.test(t)),
+    ),
+  ];
+
+  const seen = new Set<string>();
+  const unique: Content[] = [];
+  for (const c of all) {
+    if (!c?.id || seen.has(c.id)) continue;
+    seen.add(c.id);
+    unique.push(withHentaiTags(c));
+  }
+  return unique;
 }
 
 /* ─── TVMaze ──────────────────────────────────────────────── */
@@ -1520,19 +1746,428 @@ function mapJikan(a: JikanAnime): Content | null {
 /**
  * Jikan Rx (Hentai) catalog — accurate adult anime only.
  * Uses rating=rx so mild R+ fanservice is NOT included.
+ * Deep pagination: members + score + start_date + favorites (~25×28 ≈ 700).
  */
 export async function fetchJikanAdultAnime(): Promise<Content[]> {
+  const memberPages = Array.from({ length: 20 }, (_, i) => i + 1);
   const pages = await Promise.all(
-    [1, 2, 3, 4, 5, 6].map((page) =>
+    memberPages.map((page) =>
       fetchJson<{ data?: JikanAnime[] }>(
         `${JIKAN}/anime?rating=rx&order_by=members&sort=desc&page=${page}&limit=25&sfw=false`,
-      ),
+      ).catch(() => null),
     ),
   );
-  return pages
-    .flatMap((r) => r?.data ?? [])
-    .map(mapJikan)
-    .filter((c): c is Content => Boolean(c?.mature));
+  // Also fetch by score, start_date, and favorites for broader coverage
+  const extraPages = await Promise.all(
+    [1, 2, 3, 4].flatMap((page) => [
+      fetchJson<{ data?: JikanAnime[] }>(
+        `${JIKAN}/anime?rating=rx&order_by=score&sort=desc&page=${page}&limit=25&sfw=false`,
+      ).catch(() => null),
+      fetchJson<{ data?: JikanAnime[] }>(
+        `${JIKAN}/anime?rating=rx&order_by=start_date&sort=desc&page=${page}&limit=25&sfw=false`,
+      ).catch(() => null),
+      fetchJson<{ data?: JikanAnime[] }>(
+        `${JIKAN}/anime?rating=rx&order_by=favorites&sort=desc&page=${page}&limit=25&sfw=false`,
+      ).catch(() => null),
+    ]),
+  );
+  const seen = new Set<string>();
+  const out: Content[] = [];
+  for (const r of [...pages, ...extraPages]) {
+    for (const row of r?.data ?? []) {
+      const c = mapJikan(row);
+      if (!c?.mature || seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push(c);
+    }
+  }
+  return out;
+}
+
+const HENTAI_ANIME_API = "https://hentaianime.me";
+
+/**
+ * HentaiAnime.me provider — supplementary hentai anime catalog.
+ * Fetches from the HentaiAnime browse/search API for additional titles
+ * beyond AniList and Jikan. Falls back gracefully on failure.
+ */
+export async function fetchHentaiAnimeCatalog(): Promise<Content[]> {
+  const results: Content[] = [];
+
+  // Deep browse: latest + popular + genre pages for more titles
+  const latestPages = [1, 2, 3, 4, 5, 6, 7, 8];
+  const genrePages = [1, 2, 3, 4, 5, 6];
+  const browsePages = await Promise.all([
+    ...latestPages.map((p) =>
+      fetchHentaiAnimePage(
+        `${HENTAI_ANIME_API}/ajax/home/widget_tab/9999/latest?page=${p}`,
+      ),
+    ),
+    ...latestPages.map((p) =>
+      fetchHentaiAnimePage(
+        `${HENTAI_ANIME_API}/ajax/home/widget_tab/9999/trending?page=${p}`,
+      ),
+    ),
+    ...genrePages.map((p) => fetchHentaiAnimeGenre("hentai", p)),
+    ...genrePages.map((p) => fetchHentaiAnimeGenre("uncensored", p)),
+    ...genrePages.map((p) => fetchHentaiAnimeGenre("vanila", p)),
+    ...genrePages.map((p) => fetchHentaiAnimeGenre("vanilla", p)),
+  ]);
+
+  for (const page of browsePages) {
+    results.push(...page);
+  }
+
+  // Deduplicate by title
+  const seen = new Set<string>();
+  return results.filter((c) => {
+    const key = c.title.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchHentaiAnimePage(url: string): Promise<Content[]> {
+  try {
+    const html = await fetchText(url);
+    return parseHentaiAnimeHtml(html);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchHentaiAnimeGenre(
+  genre: string,
+  page: number,
+): Promise<Content[]> {
+  try {
+    const html = await fetchText(
+      `${HENTAI_ANIME_API}/genre/${genre}?page=${page}`,
+    );
+    return parseHentaiAnimeHtml(html);
+  } catch {
+    return [];
+  }
+}
+
+function parseHentaiAnimeHtml(html: string): Content[] {
+  const results: Content[] = [];
+  // Match anime item blocks from the HTML
+  const itemRegex =
+    /<a[^>]*href="\/video\/([^"]*)"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[\s\S]*?<\/a>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = itemRegex.exec(html)) !== null) {
+    const [, slug, poster, title] = match;
+    if (!title || !slug) continue;
+    const posterUrl = poster?.startsWith("http")
+      ? poster
+      : poster
+        ? `${HENTAI_ANIME_API}${poster}`
+        : "";
+    results.push({
+      id: `hentaianime_${slug}`,
+      slug,
+      title: title.trim(),
+      originalTitle: title.trim(),
+      englishTitle: title.trim(),
+      alternateTitles: [],
+      overview: "",
+      poster: posterUrl
+        ? { url: posterUrl, source: "local" as const }
+        : undefined,
+      backdrop: undefined,
+      year: undefined,
+      runtime: undefined,
+      episodeCount: undefined,
+      seasonCount: undefined,
+      status: "unknown" as const,
+      ageRating: "18+",
+      mature: true,
+      contentType: "anime" as const,
+      animeFormat: "OVA" as const,
+      genres: [{ id: "hentai", name: "Hentai" }],
+      tags: [
+        "hentai",
+        "adult-anime",
+        "18+",
+        "mature",
+        "explicit",
+        "hentaianime",
+      ],
+      language: "ja",
+      countries: ["JP"],
+      popularity: 0,
+      scores: [],
+      watchProviders: [],
+      studios: [],
+      approved: true,
+      providerIds: {},
+    });
+  }
+  return results;
+}
+
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9",
+    },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
+const HENTAI_OCEAN = "https://hentaiocean.com";
+const ANIPUB = "https://api.anipub.xyz";
+
+/**
+ * HentaiOcean provider — parses RSS feed for latest hentai anime.
+ * Each RSS item represents an episode; we group by series slug.
+ */
+export async function fetchHentaiOceanCatalog(): Promise<Content[]> {
+  try {
+    const xml = await fetchText(`${HENTAI_OCEAN}/rss.xml`);
+    return parseHentaiOceanRss(xml);
+  } catch {
+    return [];
+  }
+}
+
+function parseHentaiOceanRss(xml: string): Content[] {
+  const seriesMap = new Map<string, Content>();
+
+  // Parse RSS items — each is an episode of a series
+  const itemRegex =
+    /<item>[\s\S]*?<guid>([^<]*)<\/guid>[\s\S]*?<title>([^<]*)<\/title>[\s\S]*?<link>([^<]*)<\/link>[\s\S]*?<description>([^<]*)<\/description>[\s\S]*?<media:thumbnail[^>]*url="([^"]*)"[\s\S]*?<\/item>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const [, guid, title, , , thumbnail] = match;
+    if (!title || !guid) continue;
+
+    // Extract series slug (remove trailing -N episode number)
+    const seriesSlug = guid.replace(/-\d+$/, "");
+    const seriesTitle = title
+      .replace(/\s+\d+$/, "")
+      .trim();
+
+    // Extract episode number from the end of the guid
+    const epMatch = guid.match(/-(\d+)$/);
+    const epNum = epMatch ? parseInt(epMatch[1], 10) : 1;
+
+    if (!seriesMap.has(seriesSlug)) {
+      const posterUrl = thumbnail || "";
+      seriesMap.set(seriesSlug, {
+        id: `hentaiocn_${seriesSlug}`,
+        slug: seriesSlug,
+        title: seriesTitle,
+        originalTitle: seriesTitle,
+        englishTitle: seriesTitle,
+        alternateTitles: [],
+        overview: "",
+        poster: posterUrl
+          ? { url: posterUrl, source: "local" as const }
+          : undefined,
+        backdrop: undefined,
+        year: undefined,
+        runtime: undefined,
+        episodeCount: 1,
+        seasonCount: undefined,
+        status: "unknown" as const,
+        ageRating: "18+",
+        mature: true,
+        contentType: "anime" as const,
+        animeFormat: "OVA" as const,
+        genres: [{ id: "hentai", name: "Hentai" }],
+        tags: [
+          "hentai",
+          "adult-anime",
+          "18+",
+          "mature",
+          "explicit",
+          "hentaiocn",
+        ],
+        language: "ja",
+        countries: ["JP"],
+        popularity: 0,
+        scores: [],
+        watchProviders: [],
+        studios: [],
+        approved: true,
+        providerIds: {},
+      });
+    } else {
+      // Update episode count
+      const existing = seriesMap.get(seriesSlug)!;
+      existing.episodeCount = Math.max(existing.episodeCount ?? 0, epNum);
+    }
+  }
+
+  return Array.from(seriesMap.values());
+}
+
+/**
+ * AniPub provider — free API, no auth. Fetches hentai-adjacent genres
+ * (ecchi, harem, ecchi-harem) to supplement AniList/Jikan coverage.
+ */
+export async function fetchAniPubCatalog(): Promise<Content[]> {
+  const results: Content[] = [];
+
+  // Prefer true hentai genre pages; ecchi kept for hide-gate only (not Hentai tab)
+  const hentaiGenres = ["hentai", "ecchi", "harem"];
+
+  const genrePages = await Promise.all(
+    hentaiGenres.flatMap((genre) =>
+      [1, 2, 3, 4, 5].map((p) => fetchAniPubGenrePage(genre, p)),
+    ),
+  );
+
+  for (const page of genrePages) {
+    results.push(...page);
+  }
+
+  // Also fetch top-rated (may include hentai/ecchi)
+  const topRated = await Promise.all([
+    fetchAniPubTopRated(1),
+    fetchAniPubTopRated(2),
+    fetchAniPubTopRated(3),
+  ]);
+  for (const page of topRated) {
+    results.push(...page);
+  }
+
+  // Deduplicate by title
+  const seen = new Set<string>();
+  return results.filter((c) => {
+    const key = c.title.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchAniPubGenrePage(
+  genre: string,
+  page: number,
+): Promise<Content[]> {
+  try {
+    const data = await fetchJson<{
+      currentPage?: number;
+      wholePage?: Array<{
+        _id?: number;
+        Name?: string;
+        ImagePath?: string;
+        MALScore?: string;
+        DescripTion?: string;
+        Genres?: string[];
+        finder?: string;
+      }>;
+    }>(`${ANIPUB}/api/findbyGenre/${genre}?Page=${page}`);
+    return (data?.wholePage ?? [])
+      .map((a) => mapAniPubAnime(a, genre))
+      .filter((c): c is Content => Boolean(c));
+  } catch {
+    return [];
+  }
+}
+
+async function fetchAniPubTopRated(page: number): Promise<Content[]> {
+  try {
+    const data = await fetchJson<{
+      currentPage?: number;
+      AniData?: Array<{
+        _id?: number;
+        Name?: string;
+        ImagePath?: string;
+        MALScore?: string;
+        DescripTion?: string;
+        Genres?: string[];
+        finder?: string;
+      }>;
+    }>(`${ANIPUB}/api/findbyrating?page=${page}`);
+    return (data?.AniData ?? [])
+      .map((a) => mapAniPubAnime(a, "ecchi"))
+      .filter((c): c is Content => Boolean(c));
+  } catch {
+    return [];
+  }
+}
+
+function mapAniPubAnime(
+  a: {
+    _id?: number;
+    Name?: string;
+    ImagePath?: string;
+    MALScore?: string;
+    DescripTion?: string;
+    Genres?: string[];
+    finder?: string;
+  },
+  genreHint: string,
+): Content | null {
+  if (!a.Name) return null;
+  const posterUrl = a.ImagePath?.startsWith("https://")
+    ? a.ImagePath
+    : a.ImagePath
+      ? `${ANIPUB}/${a.ImagePath}`
+      : "";
+  const genres = (a.Genres ?? []).map((g) => ({
+    id: g.toLowerCase().replace(/\s+/g, "-"),
+    name: g,
+  }));
+  // Only true hentai genre — never treat plain ecchi/harem as hentai.
+  const isTrueHentai =
+    genreHint === "hentai" ||
+    (a.Genres ?? []).some((g) => g.toLowerCase() === "hentai");
+  const isEcchi =
+    !isTrueHentai &&
+    (genreHint === "ecchi" ||
+      genreHint === "harem" ||
+      (a.Genres ?? []).some(
+        (g) =>
+          g.toLowerCase() === "ecchi" || g.toLowerCase() === "harem",
+      ));
+
+  return {
+    id: `anipub_${a._id ?? a.Name.toLowerCase().replace(/\s+/g, "-")}`,
+    slug: a.finder ?? a.Name.toLowerCase().replace(/\s+/g, "-"),
+    title: a.Name,
+    originalTitle: a.Name,
+    englishTitle: a.Name,
+    alternateTitles: [],
+    overview: a.DescripTion ?? "",
+    poster: posterUrl
+      ? { url: posterUrl, source: "local" as const }
+      : undefined,
+    backdrop: undefined,
+    year: undefined,
+    runtime: undefined,
+    episodeCount: undefined,
+    seasonCount: undefined,
+    status: "unknown" as const,
+    ageRating: isTrueHentai ? "18+" : isEcchi ? "R+" : null,
+    mature: isTrueHentai || isEcchi,
+    contentType: "anime" as const,
+    animeFormat: "TV" as const,
+    genres: genres.length > 0 ? genres : [{ id: genreHint, name: genreHint }],
+    tags: isTrueHentai
+      ? ["hentai", "adult-anime", "18+", "mature", "explicit", "anipub"]
+      : isEcchi
+        ? ["ecchi", "anime-adult-genre", "mature", "anipub", "anime"]
+        : ["anipub"],
+    language: "ja",
+    countries: ["JP"],
+    popularity: 0,
+    scores: a.MALScore
+      ? [{ source: "anilist" as const, score: parseFloat(a.MALScore) || 0 }]
+      : [],
+    watchProviders: [],
+    studios: [],
+    approved: true,
+    providerIds: a._id ? { anilist: Number(a._id) || undefined } : {},
+  };
 }
 
 export async function fetchJikanCredits(malId: number, contentId: string): Promise<{
@@ -1923,8 +2558,16 @@ export async function fetchWorldAnimePage(
       for (const c of list) {
         if (!c?.id || seenM.has(c.id)) continue;
         if (!includeMature && c.mature) continue;
-        // Guard: keep only actual films.
-        if (c.animeFormat && c.animeFormat !== "MOVIE") continue;
+        // Guard: theatrical films only — never series / OVA / ONA.
+        if (c.animeFormat !== "MOVIE") continue;
+        // Hentai never appears on public Anime Movies tab
+        if (
+          (c.tags ?? []).some((t) =>
+            /^(anilist-adult|jikan-rx|hentai|adult-anime)$/i.test(t),
+          )
+        ) {
+          continue;
+        }
         seenM.add(c.id);
         mergedM.push(c);
       }
@@ -1988,7 +2631,7 @@ export async function fetchWorldAnimePage(
         if (!includeMature && c.mature) continue;
         // Never show theatrical films in the Series catalog.
         if (c.animeFormat === "MOVIE") continue;
-        // Prefer explicit series formats; also keep items with no format set.
+        // Only episodic formats (TV / OVA / ONA / SPECIAL / SHORT).
         if (
           c.animeFormat &&
           c.animeFormat !== "TV" &&
@@ -1996,6 +2639,14 @@ export async function fetchWorldAnimePage(
           c.animeFormat !== "ONA" &&
           c.animeFormat !== "SPECIAL" &&
           c.animeFormat !== "SHORT"
+        ) {
+          continue;
+        }
+        // Hentai never appears on public Anime Series tab
+        if (
+          (c.tags ?? []).some((t) =>
+            /^(anilist-adult|jikan-rx|hentai|adult-anime)$/i.test(t),
+          )
         ) {
           continue;
         }

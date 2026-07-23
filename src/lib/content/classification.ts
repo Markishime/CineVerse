@@ -204,6 +204,7 @@ export function normalizeAnimeFormat(
     case "TV_SHORT":
       return f === "TV_SHORT" ? "SHORT" : "TV";
     case "MOVIE":
+    case "FILM":
       return "MOVIE";
     case "OVA":
       return "OVA";
@@ -218,6 +219,60 @@ export function normalizeAnimeFormat(
     default:
       return "UNKNOWN";
   }
+}
+
+/** Theatrical anime films only — Anime Movies tab. */
+const ANIME_MOVIE_FORMATS = new Set<string>(["MOVIE"]);
+
+/** Episodic anime — Anime Series tab (TV / OVA / ONA / SPECIAL / SHORT). */
+const ANIME_SERIES_FORMATS = new Set<string>([
+  "TV",
+  "OVA",
+  "ONA",
+  "SPECIAL",
+  "SHORT",
+]);
+
+/**
+ * True when an anime title belongs on the Anime Movies tab.
+ * Requires explicit MOVIE format (never treat missing format as a film).
+ */
+export function isAnimeMovieFormat(
+  c: Pick<Content, "contentType" | "animeFormat" | "providerIds">,
+): boolean {
+  if (c.contentType !== "anime") return false;
+  if (c.animeFormat && ANIME_MOVIE_FORMATS.has(c.animeFormat)) return true;
+  // TMDB anime films always set animeFormat=MOVIE; if missing, check media type.
+  if (!c.animeFormat && c.providerIds?.tmdbMediaType === "movie") return true;
+  return false;
+}
+
+/**
+ * True when an anime title belongs on the Anime Series tab.
+ * Never includes theatrical films. Missing format defaults to series when the
+ * provider media type is tv / unknown (most AniList TV entries have format set).
+ */
+export function isAnimeSeriesFormat(
+  c: Pick<Content, "contentType" | "animeFormat" | "providerIds">,
+): boolean {
+  if (c.contentType !== "anime") return false;
+  if (isAnimeMovieFormat(c)) return false;
+  if (c.animeFormat && ANIME_SERIES_FORMATS.has(c.animeFormat)) return true;
+  // No format / unknown — treat as series only when not a movie media type.
+  if (!c.animeFormat || c.animeFormat === "UNKNOWN") {
+    return c.providerIds?.tmdbMediaType !== "movie";
+  }
+  return false;
+}
+
+/**
+ * Match catalog `animeFormat` query param ("movie" | "series") to a title.
+ */
+export function matchesAnimeFormatCategory(
+  c: Pick<Content, "contentType" | "animeFormat" | "providerIds">,
+  category: "movie" | "series",
+): boolean {
+  return category === "movie" ? isAnimeMovieFormat(c) : isAnimeSeriesFormat(c);
 }
 
 /**
