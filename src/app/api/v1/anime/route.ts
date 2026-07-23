@@ -14,9 +14,11 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("playable") === "1" ||
     request.nextUrl.searchParams.get("playable") === "true" ||
     request.nextUrl.searchParams.get("watchNow") === "1";
-  const region = (
-    request.nextUrl.searchParams.get("region") ?? "US"
-  ).toUpperCase();
+  const regionRaw = request.nextUrl.searchParams.get("region");
+  const region =
+    !regionRaw || regionRaw === "*" || regionRaw.toUpperCase() === "AUTO"
+      ? "*"
+      : regionRaw.toUpperCase();
   const formatParam = (
     request.nextUrl.searchParams.get("format") ?? ""
   ).toLowerCase();
@@ -26,8 +28,8 @@ export async function GET(request: NextRequest) {
       : formatParam === "series" || formatParam === "tv"
         ? "series"
         : undefined;
-  return json(
-    await catalog.byType(
+  try {
+    const result = await catalog.byType(
       "anime",
       page,
       Math.min(pageSize, 100),
@@ -37,6 +39,13 @@ export async function GET(request: NextRequest) {
       region,
       undefined,
       animeFormat,
-    ),
-  );
+    );
+    return json(result);
+  } catch (err) {
+    console.warn(
+      "[api/v1/anime] byType failed",
+      err instanceof Error ? err.message : err,
+    );
+    return json({ items: [], page: 1, totalPages: 1, total: 0 });
+  }
 }

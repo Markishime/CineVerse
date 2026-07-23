@@ -156,7 +156,7 @@ export function HomePage() {
         />
         <ContentRow
           title="Popular anime today"
-          subtitle="Trending Japanese animation"
+          subtitle="TV series · OVAs · trending Japanese animation"
           items={home.airingAnime}
         />
         <ContentRow

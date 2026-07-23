@@ -760,7 +760,9 @@ export class CatalogService {
         country,
         animeFormat,
       );
-      if (world) {
+      // Only use world result when it actually has items — empty AniList/TMDB
+      // responses must fall through to loadLive (seed + cached anime series).
+      if (world && world.items.length > 0) {
         // When a country filter was passed, TMDB already filtered via
         // with_origin_country — do NOT re-filter or valid results get dropped.
         // Public catalogs never mix 18+ — adult titles live only on /mature.
@@ -773,12 +775,14 @@ export class CatalogService {
           .filter((c) => !isBlockedTitle(c))
           .filter(isAtLeastMinYear);
 
-        return {
-          items,
-          page: world.page,
-          totalPages: world.totalPages,
-          total: world.total,
-        };
+        if (items.length > 0) {
+          return {
+            items,
+            page: world.page,
+            totalPages: world.totalPages,
+            total: world.total,
+          };
+        }
       }
     }
 
@@ -1009,7 +1013,11 @@ export class CatalogService {
     );
     const topMovies = uniqueById([...movies].sort(byPop));
     const topSeries = uniqueById([...series].sort(byPop));
-    const topAnime = uniqueById([...anime].sort(byPop));
+    // Home "Popular anime" should surface TV/OVA series first, not only films.
+    const animeSeriesOnly = anime.filter((c) => c.animeFormat !== "MOVIE");
+    const topAnime = uniqueById(
+      [...(animeSeriesOnly.length ? animeSeriesOnly : anime)].sort(byPop),
+    );
     const topKdrama = uniqueById([...kdrama].sort(byPop));
     // Tag top cdrama/jdrama/thaidrama as trending-today so they appear in the
     // "Trending today" row alongside movies/series/anime/kdrama.

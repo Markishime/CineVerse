@@ -21,7 +21,13 @@ export function seedHomePayload(): HomePayload {
   );
   const movies = byPop.filter((c) => c.contentType === "movie").slice(0, 24);
   const series = byPop.filter((c) => c.contentType === "series").slice(0, 24);
-  const anime = byPop.filter((c) => c.contentType === "anime").slice(0, 24);
+  // Prefer TV/OVA series for the home anime row (not theatrical films only).
+  const animeAll = byPop.filter((c) => c.contentType === "anime");
+  const animeSeries = animeAll.filter((c) => c.animeFormat !== "MOVIE");
+  const anime =
+    animeSeries.length > 0
+      ? animeSeries.slice(0, 24)
+      : animeAll.slice(0, 24);
   const kdrama = byPop.filter((c) => c.contentType === "kdrama").slice(0, 24);
   const featured = byPop.slice(0, 12);
   return {

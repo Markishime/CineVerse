@@ -622,9 +622,19 @@ export async function fetchAnilistAnimePage(opts?: {
 }): Promise<WorldCatalogPage> {
   const page = Math.max(1, opts?.page ?? 1);
   const perPage = Math.min(50, Math.max(1, opts?.perPage ?? 50));
-  // AniList: isAdult true = adult only, false = safe only, null/omit = both
-  const isAdultVar =
-    opts?.isAdult === undefined ? null : Boolean(opts.isAdult);
+  // AniList: isAdult true = adult only, false = safe only.
+  // Omit the field entirely when undefined — never send null (can empty results).
+  const variables: Record<string, unknown> = {
+    page,
+    perPage,
+    sort: [opts?.sort ?? "POPULARITY_DESC"],
+  };
+  if (opts?.search) variables.search = opts.search;
+  if (opts?.status) variables.status = opts.status;
+  if (opts?.seasonYear) variables.seasonYear = opts.seasonYear;
+  if (opts?.format) variables.format = opts.format;
+  if (opts?.isAdult !== undefined) variables.isAdult = Boolean(opts.isAdult);
+  else variables.isAdult = false; // default safe catalog
 
   const data = await fetchJson<{
     data?: {
@@ -643,16 +653,7 @@ export async function fetchAnilistAnimePage(opts?: {
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
       query: ANIME_QUERY,
-      variables: {
-        page,
-        perPage,
-        sort: [opts?.sort ?? "POPULARITY_DESC"],
-        search: opts?.search || undefined,
-        status: opts?.status || undefined,
-        seasonYear: opts?.seasonYear || undefined,
-        isAdult: isAdultVar,
-        format: opts?.format || undefined,
-      },
+      variables,
     }),
   });
   const pageInfo = data?.data?.Page?.pageInfo;
@@ -1930,16 +1931,91 @@ export async function fetchWorldAnimePage(
     };
   }
 
+  // ── Anime series only (TV / OVA / ONA / SPECIAL / SHORT) ──
+  // Request TV pages explicitly so the Series tab never comes back empty
+  // when AniList’s unfiltered mix is flaky or movie-skewed.
+  if (isSeriesOnly) {
+    const seriesFormats = ["TV", "OVA", "ONA", "SPECIAL"] as const;
+    const seriesPages = await Promise.all(
+      seriesFormats.map((format) =>
+        Promise.all(
+          Array.from({ length: pagesNeeded }, (_, i) =>
+            fetchAnilistAnimePage({
+              page: start + i,
+              perPage,
+              sort: anilistSort,
+              format,
+              isAdult: false,
+            }),
+          ),
+        ).then(async (safe) => {
+          if (!includeMature) return safe;
+          const adult = await Promise.all(
+            Array.from({ length: pagesNeeded }, (_, i) =>
+              fetchAnilistAnimePage({
+                page: start + i,
+                perPage,
+                sort: anilistSort,
+                format,
+                isAdult: true,
+              }),
+            ),
+          );
+          return [...safe, ...adult];
+        }),
+      ),
+    );
+
+    const seenS = new Set<string>();
+    const mergedS: Content[] = [];
+    const pushS = (list: Content[]) => {
+      for (const c of list) {
+        if (!c?.id || seenS.has(c.id)) continue;
+        if (!includeMature && c.mature) continue;
+        // Never show theatrical films in the Series catalog.
+        if (c.animeFormat === "MOVIE") continue;
+        // Prefer explicit series formats; also keep items with no format set.
+        if (
+          c.animeFormat &&
+          c.animeFormat !== "TV" &&
+          c.animeFormat !== "OVA" &&
+          c.animeFormat !== "ONA" &&
+          c.animeFormat !== "SPECIAL" &&
+          c.animeFormat !== "SHORT"
+        ) {
+          continue;
+        }
+        seenS.add(c.id);
+        mergedS.push(c);
+      }
+    };
+    for (const fmtPages of seriesPages) {
+      pushS(fmtPages.flatMap((p) => p.items));
+    }
+    // Popularity-first ordering for the series tab
+    mergedS.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+
+    const flatPages = seriesPages.flat();
+    const allTotalPagesS = flatPages.map((p) => p.totalPages ?? 1);
+    const allTotalsS = flatPages.map((p) => p.total ?? 0);
+    const anilistLastS = Math.max(1, ...allTotalPagesS);
+    const anilistTotalS = allTotalsS.reduce((a, b) => a + b, 0);
+    const totalPagesS = Math.max(1, Math.ceil(anilistLastS / pagesNeeded));
+
+    return {
+      items: mergedS.slice(0, pageSize),
+      page: Math.min(Math.max(1, page), totalPagesS),
+      totalPages: totalPagesS,
+      total: anilistTotalS || mergedS.length,
+    };
+  }
+
+  // ── Mixed anime catalog (series + films) ──
   // Interleave dedicated MOVIE-format pages so theatrical anime surfaces
-  // alongside series (AniList all-format pages already include films, but
-  // popularity skews heavily to TV — inject MOVIE pages every few UI pages).
-  // Skip the injection entirely when the caller wants series only.
-  const injectMovies =
-    !isSeriesOnly && (page === 1 || page % 3 === 0);
+  // alongside series (AniList all-format pages skew heavily to TV).
+  const injectMovies = page === 1 || page % 3 === 0;
   const moviePage = Math.max(1, Math.ceil(page / 3));
 
-  // AniList $isAdult defaults to false — passing null never returns adult
-  // content. When mature mode is on we must fetch both safe and adult pages.
   const [pages, moviePageResult, tmdbAnimeMovies] = await Promise.all([
     Promise.all(
       Array.from({ length: pagesNeeded }, (_, i) =>
@@ -1989,21 +2065,17 @@ export async function fetchWorldAnimePage(
           })
           .catch(() => ({ items: [] as Content[], total: 0, totalPages: 1 }))
       : Promise.resolve({ items: [] as Content[], total: 0, totalPages: 1 }),
-    // Page 1 also blends TMDB JP Animation films (AniList/MAL pairing later)
-    !isSeriesOnly && page === 1
+    page === 1
       ? fetchTmdbAnimeMovies().catch(() => [] as Content[])
       : Promise.resolve([] as Content[]),
   ]);
 
-  const first = pages[0];
   const seen = new Set<string>();
   const merged: Content[] = [];
   const push = (list: Content[]) => {
     for (const c of list) {
       if (!c?.id || seen.has(c.id)) continue;
       if (!includeMature && c.mature) continue;
-      // Series-only excludes theatrical films (TV/OVA/ONA/SPECIAL/SHORT stay).
-      if (isSeriesOnly && c.animeFormat === "MOVIE") continue;
       seen.add(c.id);
       merged.push(c);
     }
@@ -2019,11 +2091,9 @@ export async function fetchWorldAnimePage(
 
   const items = merged.slice(0, pageSize);
 
-  // When mature mode is on, pages[] contains both safe and adult results.
-  // Use the max totalPages across all pages and sum all totals.
   const allTotalPages = pages.map((p) => p.totalPages ?? 1);
   const allTotals = pages.map((p) => p.total ?? 0);
-  const anilistLast = Math.max(...allTotalPages);
+  const anilistLast = Math.max(1, ...allTotalPages);
   const anilistTotal = allTotals.reduce((a, b) => a + b, 0);
   const totalPages = Math.max(1, Math.ceil(anilistLast / pagesNeeded));
   const total = anilistTotal + (moviePageResult.total ?? 0);
