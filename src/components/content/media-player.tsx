@@ -10,6 +10,7 @@ import { YouTubeMoviePlayer } from "./youtube-movie-player";
 import { HlsPlayer } from "./hls-player";
 import { VimeoPlayer } from "./vimeo-player";
 import { StreamPlayer } from "./stream-player";
+import { DownloadButton } from "./download-button";
 
 export type WatchAvailability = "watch_now" | "trailer_only" | "unavailable";
 
@@ -25,6 +26,9 @@ export interface LegalFullSource {
   cloudflareVideoUid?: string;
   cloudflareCustomerCode?: string;
   cloudflareToken?: string;
+  /** Free legal download (PD / CC / owned) — never embed scrapes */
+  downloadUrl?: string;
+  downloadLabel?: string;
 }
 
 interface MediaPlayerProps {
@@ -314,7 +318,20 @@ function MediaPlayerInner({
             </Button>
           </a>
         )}
+        {canFull && legalFull?.downloadUrl && (
+          <DownloadButton
+            downloadUrl={legalFull.downloadUrl}
+            downloadLabel={legalFull.downloadLabel}
+          />
+        )}
       </div>
+
+      {canFull && legalFull?.downloadUrl && (
+        <p className="text-xs text-[var(--text-muted)]">
+          Free download available (no ads) — public domain / rights-cleared file
+          only.
+        </p>
+      )}
 
       {canFull && legalFull?.attributionText && (
         <p className="text-xs text-[var(--text-muted)]">

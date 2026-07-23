@@ -101,8 +101,11 @@ async function fetchJson<T>(
     const res = await fetch(url, {
       ...init,
       signal: controller.signal,
-      // Short TTL so catalog feels real-time when TMDB token is configured
-      next: { revalidate: 300 },
+      // Bypass Next's fetch cache: when a slow provider (e.g. TVMaze) is aborted
+      // mid-stream, Next throws "Failed to set fetch cache … terminated" which
+      // bubbles up as a 500 on the whole route. We have our own in-memory
+      // catalog cache, so the Next cache layer is unneeded here.
+      cache: "no-store",
     });
     if (!res.ok) {
       // 5xx from the host counts toward the breaker; 4xx is a client miss.

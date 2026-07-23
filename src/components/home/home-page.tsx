@@ -56,11 +56,14 @@ export function HomePage() {
   const mature = settingsMature || deviceMature;
   const region = APP_REGION;
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["home", mature, region],
     queryFn: () => fetchHome(region, mature),
     staleTime: 15_000,
-    refetchInterval: 45_000,
+    // One retry only — never sit on the skeleton through endless 500/timeout loops.
+    retry: 1,
+    retryDelay: 800,
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchIntervalInBackground: false,

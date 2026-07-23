@@ -19,7 +19,7 @@ export async function anilistQuery<T>(
       },
       body: JSON.stringify({ query, variables }),
       signal: controller.signal,
-      next: { revalidate: 1800 },
+      cache: "no-store",
     });
     if (!res.ok) {
       console.warn(`[AniList] ${res.status} — skipping`);

@@ -82,7 +82,8 @@ function archiveSource(input: {
     blockedRegions: [],
     monetizationAllowed: true,
     embeddingAllowed: true,
-    downloadAllowed: false,
+    // Public-domain Archive prints may be downloaded free (no ads) via IA.
+    downloadAllowed: true,
     notes: input.notes,
     createdAt: now(),
     updatedAt: now(),

@@ -129,8 +129,8 @@ export class CatalogService {
   /** Keep serving a previous successful catalog while providers are down */
   private readonly STALE_TTL = 30 * 60 * 1000;
   private readonly DETAIL_TTL = 5 * 60 * 1000;
-  /** Cap how long a cold catalog build may block the home API */
-  private readonly LOAD_BUDGET_MS = 12_000;
+  /** Cap how long a cold catalog build may block the home API (Cloud Functions). */
+  private readonly LOAD_BUDGET_MS = 6_000;
 
   private matureCache: { at: number; items: Content[] } | null = null;
   /** Single-flight: concurrent loadLive calls share one in-flight promise */
@@ -1076,8 +1076,13 @@ export class CatalogService {
     };
     let featuredUnique = uniqueById(rotate(featuredPool, slot));
 
-    // Attach real TMDB / known trailers so featured backgrounds aren't broken
-    featuredUnique = await enrichTrailersForFeatured(featuredUnique);
+    // Trailer enrichment is best-effort — never block home for oEmbed/TMDB.
+    featuredUnique = await Promise.race([
+      enrichTrailersForFeatured(featuredUnique),
+      new Promise<Content[]>((resolve) =>
+        setTimeout(() => resolve(featuredUnique), 2_500),
+      ),
+    ]);
 
     // Prefer slides that actually have a playable YouTube trailer key
     const hasYt = (c: Content) =>
@@ -1092,12 +1097,17 @@ export class CatalogService {
     const year = new Date().getFullYear();
     const generatedAt = new Date().toISOString();
 
-    // Trakt trending row — lazy-loaded, non-blocking
+    // Trakt trending row — hard-capped so a flaky API cannot hang /home
     let traktTrending: Content[] = [];
     try {
-      const [traktShows, traktMovies] = await Promise.all([
-        fetchTraktTrendingShows(12),
-        fetchTraktTrendingMovies(12),
+      const [traktShows, traktMovies] = await Promise.race([
+        Promise.all([
+          fetchTraktTrendingShows(12),
+          fetchTraktTrendingMovies(12),
+        ]),
+        new Promise<[[], []]>((resolve) =>
+          setTimeout(() => resolve([[], []]), 2_000),
+        ),
       ]);
       const traktItems: Content[] = [];
       for (const show of traktShows) {
@@ -1181,10 +1191,15 @@ export class CatalogService {
       // Trakt trending is optional — homepage still works without it
     }
 
-    // GMMTV free Thai dramas — lazy-loaded from YouTube RSS
+    // GMMTV free Thai dramas — hard-capped so RSS cannot hang /home
     let gmmtvDramas: Content[] = [];
     try {
-      const gmmtvVideos = await fetchGmmtvLatest(20);
+      const gmmtvVideos = await Promise.race([
+        fetchGmmtvLatest(20),
+        new Promise<Awaited<ReturnType<typeof fetchGmmtvLatest>>>((resolve) =>
+          setTimeout(() => resolve([]), 2_000),
+        ),
+      ]);
       gmmtvDramas = gmmtvVideos
         .map((v) => mapGmmtvVideo(v))
         .filter(Boolean)
@@ -1808,7 +1823,15 @@ export class CatalogService {
       cloudflareVideoUid?: string;
       cloudflareCustomerCode?: string;
       cloudflareToken?: string;
+      /** Free legal download when rights allow (PD / CC / owned) */
+      downloadUrl?: string;
+      downloadLabel?: string;
     } | null = null;
+
+    const downloadFields = {
+      downloadUrl: resolved.downloadUrl,
+      downloadLabel: resolved.downloadLabel,
+    };
 
     if (resolved.playable) {
       if (resolved.mode === "youtube_iframe" && resolved.youtubeVideoId) {
@@ -1820,6 +1843,7 @@ export class CatalogService {
           attributionText: resolved.attributionText,
           rightsHolder: resolved.rightsHolder,
           youtubeVideoId: resolved.youtubeVideoId,
+          ...downloadFields,
         };
       } else if (resolved.mode === "vimeo_embed" && resolved.vimeoVideoId) {
         legalFull = {
@@ -1829,6 +1853,7 @@ export class CatalogService {
           sourceType: resolved.sourceType,
           rightsHolder: resolved.rightsHolder,
           vimeoVideoId: resolved.vimeoVideoId,
+          ...downloadFields,
         };
       } else if (
         (resolved.mode === "cloudflare_iframe" ||
@@ -1846,6 +1871,7 @@ export class CatalogService {
           cloudflareVideoUid: resolved.cloudflareVideoUid,
           cloudflareCustomerCode: resolved.cloudflareCustomerCode,
           cloudflareToken: resolved.cloudflareToken,
+          ...downloadFields,
         };
       } else if (resolved.signedUrl) {
         legalFull = {
@@ -1860,6 +1886,7 @@ export class CatalogService {
           sourceType: resolved.sourceType,
           attributionText: resolved.attributionText,
           rightsHolder: resolved.rightsHolder,
+          ...downloadFields,
         };
       }
     }
@@ -2166,7 +2193,9 @@ async function youtubeKeyLooksLive(key: string): Promise<boolean> {
     const res = await fetch(url, {
       method: "GET",
       signal: ctrl.signal,
-      cache: "force-cache",
+      // no-store: a mid-stream abort must not throw at Next's fetch-cache layer
+      // and 500 the home route.
+      cache: "no-store",
     });
     clearTimeout(timer);
     return res.ok;

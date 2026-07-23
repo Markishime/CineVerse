@@ -30,7 +30,7 @@ export async function traktFetch<T>(
         "User-Agent": "CineVerse/1.0 (+https://cineverse-live.web.app)",
       },
       signal: controller.signal,
-      next: { revalidate: 300 },
+      cache: "no-store",
     });
     if (!res.ok) {
       // Never dump response bodies (Cloudflare block pages are full HTML docs)

@@ -89,7 +89,7 @@ export async function fetchGmmtvLatest(limit = 20): Promise<GmmmtvVideo[]> {
     const timer = setTimeout(() => controller.abort(), 8_000);
     const res = await fetch(RSS_URL, {
       signal: controller.signal,
-      next: { revalidate: 900 },
+      cache: "no-store",
     });
     clearTimeout(timer);
 

@@ -24,7 +24,7 @@ export async function tmdbFetch<T>(
         Accept: "application/json",
       },
       signal: controller.signal,
-      next: { revalidate: 300 },
+      cache: "no-store",
     });
     if (!res.ok) {
       console.warn(`[TMDB] ${res.status} on ${path} — skipping`);

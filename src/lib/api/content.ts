@@ -64,10 +64,17 @@ export interface HomePayload {
 }
 
 export function fetchHome(region?: string, mature?: boolean) {
-  return apiFetch<HomePayload>(
-    `/home${buildQuery({ region, mature: mature ? "1" : undefined })}`,
-    { auth: true },
-  );
+  // Client hard-timeout so a hung SSR function never leaves the home skeleton up forever.
+  const path = `/home${buildQuery({ region, mature: mature ? "1" : undefined })}`;
+  return Promise.race([
+    apiFetch<HomePayload>(path, { auth: true }),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Home catalog timed out — try again")),
+        12_000,
+      ),
+    ),
+  ]);
 }
 
 export function fetchMovies(params: {
@@ -279,6 +286,8 @@ export function fetchPlaybackEligibility(id: string, region?: string) {
       rightsHolder?: string;
       youtubeVideoId?: string;
       vimeoVideoId?: string;
+      downloadUrl?: string;
+      downloadLabel?: string;
     } | null;
     resolved?: {
       playable: boolean;
@@ -287,6 +296,8 @@ export function fetchPlaybackEligibility(id: string, region?: string) {
       youtubeVideoId?: string;
       vimeoVideoId?: string;
       signedUrl?: string;
+      downloadUrl?: string;
+      downloadLabel?: string;
       reason?: string;
       watchLabel?: string;
     } | null;

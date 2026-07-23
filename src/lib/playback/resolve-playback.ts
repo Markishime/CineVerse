@@ -75,6 +75,42 @@ function toEmbedMode(
 }
 
 /**
+ * Free legal download URL for rights-approved sources with downloadAllowed.
+ * Public-domain Archive items → Internet Archive download page (no ads, free).
+ * Never scrapes embed providers or YouTube progressive streams.
+ */
+export function resolveDownloadUrl(
+  source: PlaybackSourceDocument,
+): { url: string; label: string } | undefined {
+  if (!source.downloadAllowed) return undefined;
+
+  const asset = source.playbackAssetId ?? source.manifestPath ?? "";
+  if (asset.startsWith("archive:")) {
+    const id = asset.slice("archive:".length).replace(/[^a-zA-Z0-9._-]/g, "");
+    if (!id) return undefined;
+    return {
+      url: `https://archive.org/download/${id}`,
+      label: "Download free · Internet Archive (public domain)",
+    };
+  }
+
+  if (
+    (source.sourceType === "public_domain" ||
+      source.sourceType === "creative_commons" ||
+      source.sourceType === "cineverse_hosted") &&
+    asset.startsWith("https://") &&
+    isTrustedHost(asset)
+  ) {
+    return {
+      url: asset,
+      label: "Download free · rights-cleared file",
+    };
+  }
+
+  return undefined;
+}
+
+/**
  * Build a playable URL only for approved asset patterns.
  * - archive:{identifier} → Internet Archive embed
  * - cloudflare:{uid} → signed session URL (when env configured)
@@ -279,6 +315,8 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
       ? new Date(Date.now() + 60 * 60 * 1000).toISOString()
       : undefined;
 
+  const download = resolveDownloadUrl(chosen);
+
   if (mode === "youtube_iframe" && chosen.youtubeVideoId) {
     return {
       playable: true,
@@ -286,6 +324,8 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
       sourceType: chosen.sourceType,
       mode: "youtube_iframe",
       youtubeVideoId: chosen.youtubeVideoId.trim(),
+      downloadUrl: download?.url,
+      downloadLabel: download?.label,
       attributionText: chosen.attributionText,
       attributionSource: chosen.attributionSource,
       licenseType: chosen.licenseType,
@@ -307,6 +347,8 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
       sourceType: chosen.sourceType,
       mode: "vimeo_embed",
       vimeoVideoId: chosen.vimeoVideoId.trim(),
+      downloadUrl: download?.url,
+      downloadLabel: download?.label,
       attributionText: chosen.attributionText,
       rightsHolder: chosen.rightsHolder,
       providerName: chosen.providerName,
@@ -375,6 +417,8 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
       mode: mode === "archive_embed" ? "cineverse_mp4" : mode,
       signedUrl,
       expiresAt,
+      downloadUrl: download?.url,
+      downloadLabel: download?.label,
       attributionText: chosen.attributionText,
       attributionSource: chosen.attributionSource,
       licenseType: chosen.licenseType,

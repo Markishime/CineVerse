@@ -199,6 +199,12 @@ export const ResolvedPlaybackSchema = z.object({
   /** Short-lived signed URL for owned/licensed assets only — never permanent */
   signedUrl: z.string().url().optional(),
   expiresAt: z.string().optional(),
+  /**
+   * Free legal download URL (public domain / CC / owned files with downloadAllowed).
+   * Never a scraped embed stream.
+   */
+  downloadUrl: z.string().url().optional(),
+  downloadLabel: z.string().optional(),
   attributionText: z.string().optional(),
   attributionSource: z.string().optional(),
   licenseType: LicenseTypeSchema.optional(),

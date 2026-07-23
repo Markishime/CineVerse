@@ -345,6 +345,8 @@ export function WatchPage({
   const legalFull = playback?.legalFull
     ? {
         ...playback.legalFull,
+        downloadUrl: playback.legalFull.downloadUrl,
+        downloadLabel: playback.legalFull.downloadLabel,
         type: playback.legalFull.type as
           | "archive"
           | "youtube"
@@ -422,6 +424,18 @@ export function WatchPage({
             {shareMsg && (
               <span className="text-xs text-[var(--success)]">{shareMsg}</span>
             )}
+            {canFull && legalFull?.downloadUrl ? (
+              <a
+                href={legalFull.downloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={legalFull.downloadLabel ?? "Download free"}
+              >
+                <Button variant="gold" size="sm" className="!text-black">
+                  Download free
+                </Button>
+              </a>
+            ) : null}
             <Button variant="outline" size="sm" onClick={() => void share()}>
               <Share2 className="h-4 w-4" />
               Share

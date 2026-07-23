@@ -20,7 +20,7 @@ export async function omdbFetch<T>(
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      next: { revalidate: 3600 },
+      cache: "no-store",
     });
     if (!res.ok) {
       console.warn(`[OMDb] ${res.status} — skipping`);
