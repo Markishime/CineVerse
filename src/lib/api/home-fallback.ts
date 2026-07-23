@@ -1,9 +1,6 @@
 /**
  * Instant home payload from seed — used when live providers hang/fail.
  * Safe for both server (API route) and client (placeholderData).
- *
- * Featured carousel mirrors live home: interleaved movies · series · anime ·
- * dramas. Every item gets a guaranteed poster (local SVG if seed art is fake).
  */
 import { SEED_CONTENT, SEED_GENRES, SEED_MOODS } from "@/data/seed-content";
 import {
@@ -52,6 +49,10 @@ function withPosters(list: Content[]): Content[] {
   return list.map((c) => ensureContentPoster(c));
 }
 
+function byPopSort(a: Content, b: Content) {
+  return (b.popularity ?? 0) - (a.popularity ?? 0);
+}
+
 export function seedHomePayload(): HomePayload {
   const safe = filterPublicCatalog(
     SEED_CONTENT.filter((c) => !isMatureContent(c)).map((c) =>
@@ -59,40 +60,62 @@ export function seedHomePayload(): HomePayload {
     ),
   ).map((c) => ensureContentPoster(c));
 
-  const byPop = [...safe].sort(
-    (a, b) => (b.popularity ?? 0) - (a.popularity ?? 0),
-  );
-  const movies = byPop.filter((c) => c.contentType === "movie").slice(0, 24);
-  const series = byPop.filter(isGeneralSeriesOnly).slice(0, 24);
+  const byPop = [...safe].sort(byPopSort);
+  const movies = byPop.filter((c) => c.contentType === "movie");
+  const series = byPop.filter(isGeneralSeriesOnly);
   const animeAll = byPop.filter((c) => c.contentType === "anime");
   const animeSeries = animeAll.filter((c) => c.animeFormat !== "MOVIE");
-  const anime =
-    animeSeries.length > 0
-      ? animeSeries.slice(0, 24)
-      : animeAll.slice(0, 24);
+  const animeMovies = animeAll.filter((c) => c.animeFormat === "MOVIE");
+  const anime = animeSeries.length > 0 ? animeSeries : animeAll;
 
-  const kdrama = byPop.filter((c) => c.contentType === "kdrama").slice(0, 24);
-  const cdrama = byPop.filter((c) => c.contentType === "cdrama").slice(0, 24);
-  const jdrama = byPop.filter((c) => c.contentType === "jdrama").slice(0, 24);
-  const thaidrama = byPop
-    .filter((c) => c.contentType === "thaidrama")
-    .slice(0, 24);
-  // Filipino dramas are modeled as series with PH origin / Tagalog
-  const filipinoDramas = byPop
-    .filter(
-      (c) =>
-        (c.contentType === "series" || isDramaType(c.contentType)) &&
-        (c.language === "tl" ||
-          c.countries?.some((cn) => cn.toUpperCase() === "PH")),
-    )
-    .slice(0, 24);
+  const kdrama = byPop.filter((c) => c.contentType === "kdrama");
+  const cdrama = byPop.filter((c) => c.contentType === "cdrama");
+  const jdrama = byPop.filter((c) => c.contentType === "jdrama");
+  const thaidrama = byPop.filter((c) => c.contentType === "thaidrama");
+  const filipinoDramas = byPop.filter(
+    (c) =>
+      (c.contentType === "series" || isDramaType(c.contentType)) &&
+      (c.language === "tl" ||
+        c.countries?.some((cn) => cn.toUpperCase() === "PH")),
+  );
 
-  const dramas = byPop
-    .filter((c) => isDramaType(c.contentType))
-    .slice(0, 24);
+  const dramas = byPop.filter((c) => isDramaType(c.contentType));
+  const allDramas = [
+    ...kdrama,
+    ...jdrama,
+    ...cdrama,
+    ...thaidrama,
+    ...filipinoDramas,
+  ].sort(byPopSort);
+
+  const popularMovies = movies.slice(0, 48);
+  const popularSeries = series.slice(0, 48);
+  const popularAnime = anime.slice(0, 48);
+  const popularDramas = allDramas.slice(0, 48);
 
   const featured = withPosters(
-    interleaveFeatured(movies, series, anime, dramas, 12),
+    interleaveFeatured(
+      popularMovies,
+      popularSeries,
+      popularAnime,
+      popularDramas,
+      12,
+    ),
+  );
+
+  const trending = withPosters(
+    (() => {
+      const head = interleaveFeatured(
+        popularMovies,
+        popularSeries,
+        popularAnime,
+        popularDramas,
+        32,
+      );
+      const ids = new Set(head.map((c) => c.id));
+      const rest = byPop.filter((c) => !ids.has(c.id));
+      return [...head, ...rest].slice(0, 60);
+    })(),
   );
 
   return {
@@ -100,21 +123,20 @@ export function seedHomePayload(): HomePayload {
     featuredCarousel: featured,
     featuredUpdatedAt: new Date().toISOString(),
     region: "*",
-    trending: withPosters(
-      (() => {
-        const head = interleaveFeatured(movies, series, anime, dramas, 24);
-        const ids = new Set(head.map((c) => c.id));
-        const rest = byPop.filter((c) => !ids.has(c.id));
-        return [...head, ...rest].slice(0, 36);
-      })(),
-    ),
-    popularMovies: withPosters(movies),
-    popularSeries: withPosters(series),
-    airingAnime: withPosters(anime),
-    trendingKdramas: withPosters(kdrama),
-    trendingCdramas: withPosters(cdrama),
-    trendingJdramas: withPosters(jdrama),
-    trendingThaidramas: withPosters(thaidrama),
+    trending,
+    popularMovies: withPosters(popularMovies),
+    popularSeries: withPosters(popularSeries),
+    airingAnime: withPosters(popularAnime),
+    popularDramas: withPosters(popularDramas),
+    trendingKdramas: withPosters(kdrama.slice(0, 48)),
+    trendingCdramas: withPosters(cdrama.slice(0, 48)),
+    trendingJdramas: withPosters(jdrama.slice(0, 48)),
+    trendingThaidramas: withPosters(thaidrama.slice(0, 48)),
+    allMovies: withPosters(movies.slice(0, 72)),
+    allSeries: withPosters(series.slice(0, 72)),
+    allAnime: withPosters(anime.slice(0, 72)),
+    allDramas: withPosters(allDramas.slice(0, 72)),
+    animeMovies: withPosters(animeMovies.slice(0, 48)),
     koreanMovies: [],
     koreanSeries: [],
     japaneseMovies: [],
@@ -124,10 +146,17 @@ export function seedHomePayload(): HomePayload {
     thaiMovies: [],
     thaiSeries: [],
     filipinoMovies: [],
-    filipinoSeries: withPosters(filipinoDramas),
-    newReleases: withPosters(byPop.slice(0, 16)),
+    filipinoSeries: withPosters(filipinoDramas.slice(0, 48)),
+    newReleases: withPosters(byPop.slice(0, 36)),
     comingSoon: [],
-    topRated: withPosters(byPop.slice(0, 16)),
+    topRated: withPosters(
+      [...byPop]
+        .sort(
+          (a, b) =>
+            (b.scores[0]?.score ?? 0) - (a.scores[0]?.score ?? 0),
+        )
+        .slice(0, 36),
+    ),
     animeNextEpisode: [],
     freeLegal: withPosters(
       byPop
@@ -136,14 +165,14 @@ export function seedHomePayload(): HomePayload {
             c.tags?.includes("public-domain") ||
             c.tags?.includes("free-stream"),
         )
-        .slice(0, 16),
+        .slice(0, 36),
     ),
     matureMovies: [],
     matureSeries: [],
     matureAnime: [],
     matureKdramas: [],
-    communityFavorites: withPosters(byPop.slice(0, 12)),
-    editorial: featured.slice(0, 8),
+    communityFavorites: withPosters(byPop.slice(0, 24)),
+    editorial: featured.slice(0, 12),
     moods: SEED_MOODS,
     genres: SEED_GENRES,
     traktTrending: [],

@@ -143,6 +143,7 @@ export function HomePage() {
           showRank
         />
 
+        {/* ── Popular (day-trending when available) ── */}
         <ContentRow
           title="Popular movies today"
           subtitle="Trending & popular right now"
@@ -159,12 +160,48 @@ export function HomePage() {
           subtitle="TV series · OVAs · trending Japanese animation"
           items={home.airingAnime}
         />
+        <ContentRow
+          title="Popular dramas today"
+          subtitle="K · J · C · Thai · Filipino"
+          items={home.popularDramas ?? []}
+        />
 
-        {/* Drama rows — always render when data exists (K / J / C / Thai / Filipino) */}
+        {/* ── All catalogs (broader popularity lists) ── */}
+        <ContentRow
+          title="All movies"
+          subtitle="Full popular movie catalog"
+          items={home.allMovies ?? home.popularMovies}
+          wide
+        />
+        <ContentRow
+          title="All series"
+          subtitle="Full popular series catalog"
+          items={home.allSeries ?? home.popularSeries}
+        />
+        <ContentRow
+          title="All anime"
+          subtitle="Full popular anime catalog"
+          items={home.allAnime ?? home.airingAnime}
+        />
+        <ContentRow
+          title="All dramas"
+          subtitle="K · J · C · Thai · Filipino dramas"
+          items={home.allDramas ?? home.popularDramas ?? []}
+        />
+        {(home.animeMovies?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Anime movies"
+            subtitle="Theatrical & feature anime films"
+            items={home.animeMovies ?? []}
+            wide
+          />
+        )}
+
+        {/* ── Dramas by region ── */}
         <div className="cinematic-glow relative space-y-12 sm:space-y-14">
           <ContentRow
             title="Popular K-dramas today"
-            subtitle="Top Korean series"
+            subtitle="Top Korean dramas"
             items={home.trendingKdramas}
           />
           <ContentRow
@@ -187,7 +224,57 @@ export function HomePage() {
             subtitle="Top Filipino series & dramas"
             items={home.filipinoSeries}
           />
+          {(home.gmmtvDramas?.length ?? 0) > 0 && (
+            <ContentRow
+              title="Free Thai dramas (GMMTV)"
+              subtitle="Official free episodes on YouTube"
+              items={home.gmmtvDramas ?? []}
+            />
+          )}
         </div>
+
+        {/* ── More picks ── */}
+        <ContentRow
+          title="New releases"
+          subtitle="Recent & recent years"
+          items={home.newReleases}
+          wide
+        />
+        <ContentRow
+          title="Top rated"
+          subtitle="Highest scores across the catalog"
+          items={home.topRated}
+        />
+        {(home.comingSoon?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Coming soon"
+            subtitle="Upcoming titles"
+            items={home.comingSoon ?? []}
+          />
+        )}
+        {(home.freeLegal?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Free legal picks"
+            subtitle="Public domain & free legal streams"
+            items={home.freeLegal}
+            wide
+          />
+        )}
+        {(home.traktTrending?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Trakt trending"
+            subtitle="What the community is watching"
+            items={home.traktTrending ?? []}
+            showRank
+          />
+        )}
+        {(home.communityFavorites?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Community favorites"
+            subtitle="Popular across CineVerse"
+            items={home.communityFavorites}
+          />
+        )}
 
         {(home.koreanMovies?.length ?? 0) > 0 && (
           <ContentRow

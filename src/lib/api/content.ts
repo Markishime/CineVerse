@@ -24,13 +24,22 @@ export interface HomePayload {
   /** Region used to build this payload */
   region?: string;
   trending: Content[];
+  /** Day-trending / popular (tagged today when available) */
   popularMovies: Content[];
   popularSeries: Content[];
   airingAnime: Content[];
+  /** Combined popular dramas (K+J+C+Thai+Filipino) */
+  popularDramas?: Content[];
   trendingKdramas: Content[];
   trendingCdramas: Content[];
   trendingJdramas: Content[];
   trendingThaidramas: Content[];
+  /** Broader popularity-ranked catalogs for "All …" home rows */
+  allMovies?: Content[];
+  allSeries?: Content[];
+  allAnime?: Content[];
+  allDramas?: Content[];
+  animeMovies?: Content[];
   koreanMovies: Content[];
   koreanSeries: Content[];
   japaneseMovies: Content[];

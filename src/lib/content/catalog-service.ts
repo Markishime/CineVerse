@@ -1083,39 +1083,67 @@ export class CatalogService {
     );
 
     // Popular & trending *today* only — prefer explicit day-trending tags.
-    // Fall back to highest-pop of that type only when the day feed is empty
-    // (provider outage), never mix in random PD/seed noise when live tags exist.
+    // Fall back to highest-pop of that type only when the day feed is empty.
     const todayOnly = (list: Content[], n: number) => {
       const today = uniqueById(list.filter(isToday).sort(byPop));
       if (today.length > 0) return today.slice(0, n);
       return list.slice(0, n);
     };
+    // Broader "all popular" catalogs (not day-tag gated)
+    const allPopular = (list: Content[], n: number) =>
+      uniqueById([...list].sort(byPop)).slice(0, n);
 
-    const todayMovies = todayOnly(topMovies, 36);
-    const todaySeries = todayOnly(topSeries, 36);
-    const todayAnime = todayOnly(topAnime, 36);
-    const todayKdrama = todayOnly(topKdrama, 36);
-    const todayCdrama = todayOnly(topCdrama, 36);
-    const todayJdrama = todayOnly(topJdrama, 36);
-    const todayThaidrama = todayOnly(topThaidrama, 36);
-    const todayKoreanMovies = todayOnly(koreanMovies, 36);
-    const todayJapaneseMovies = todayOnly(japaneseMovies, 36);
-    const todayChineseMovies = todayOnly(chineseMovies, 36);
-    const todayThaiMovies = todayOnly(thaiMovies, 36);
-    const todayFilipinoMovies = todayOnly(filipinoMovies, 36);
-    const todayFilipinoSeries = todayOnly(filipinoSeries, 36);
-    const todayKoreanSeries = todayOnly(koreanSeries, 36);
-    const todayJapaneseSeries = todayOnly(japaneseSeries, 36);
-    const todayChineseSeries = todayOnly(chineseSeries, 36);
-    const todayThaiSeries = todayOnly(thaiSeries, 36);
+    const POPULAR_N = 48;
+    const ALL_N = 72;
 
-    // Dramas for hero: K + C + J + Thai, ranked by popularity among today
+    const todayMovies = todayOnly(topMovies, POPULAR_N);
+    const todaySeries = todayOnly(topSeries, POPULAR_N);
+    const todayAnime = todayOnly(topAnime, POPULAR_N);
+    const todayKdrama = todayOnly(topKdrama, POPULAR_N);
+    const todayCdrama = todayOnly(topCdrama, POPULAR_N);
+    const todayJdrama = todayOnly(topJdrama, POPULAR_N);
+    const todayThaidrama = todayOnly(topThaidrama, POPULAR_N);
+    const todayKoreanMovies = todayOnly(koreanMovies, POPULAR_N);
+    const todayJapaneseMovies = todayOnly(japaneseMovies, POPULAR_N);
+    const todayChineseMovies = todayOnly(chineseMovies, POPULAR_N);
+    const todayThaiMovies = todayOnly(thaiMovies, POPULAR_N);
+    const todayFilipinoMovies = todayOnly(filipinoMovies, POPULAR_N);
+    const todayFilipinoSeries = todayOnly(filipinoSeries, POPULAR_N);
+    const todayKoreanSeries = todayOnly(koreanSeries, POPULAR_N);
+    const todayJapaneseSeries = todayOnly(japaneseSeries, POPULAR_N);
+    const todayChineseSeries = todayOnly(chineseSeries, POPULAR_N);
+    const todayThaiSeries = todayOnly(thaiSeries, POPULAR_N);
+
+    const animeMovies = allPopular(
+      anime.filter((c) => c.animeFormat === "MOVIE"),
+      POPULAR_N,
+    );
+
+    // Dramas for hero + combined rows: K + C + J + Thai + Filipino
     const todayDramas = uniqueById([
       ...todayKdrama,
       ...todayCdrama,
       ...todayJdrama,
       ...todayThaidrama,
+      ...todayFilipinoSeries,
     ]).sort(byPop);
+
+    const allMoviesList = allPopular(topMovies, ALL_N);
+    const allSeriesList = allPopular(topSeries, ALL_N);
+    const allAnimeList = allPopular(
+      animeSeriesOnly.length ? animeSeriesOnly : anime,
+      ALL_N,
+    );
+    const allDramasList = allPopular(
+      uniqueById([
+        ...topKdrama,
+        ...topCdrama,
+        ...topJdrama,
+        ...topThaidrama,
+        ...filipinoSeries,
+      ]),
+      ALL_N,
+    );
 
     // Featured hero: strict interleave of today's movies · series · anime · dramas
     // so "Popular & trending today" is a balanced, correct mix — not trailer-sorted.
@@ -1296,7 +1324,7 @@ export class CatalogService {
     } catch {
       // GMMTV is optional
     }
-    // Trending row = today's popular across all four types
+    // Trending row = today's popular across movies · series · anime · dramas
     const rankedToday = uniqueById(
       [
         ...todayMovies,
@@ -1306,6 +1334,7 @@ export class CatalogService {
         ...todayCdrama,
         ...todayJdrama,
         ...todayThaidrama,
+        ...todayFilipinoSeries,
       ].sort(byPop),
     );
 
@@ -1318,14 +1347,20 @@ export class CatalogService {
       featuredCarousel: withPosters(featuredUnique),
       featuredUpdatedAt: generatedAt,
       region: regionCode,
-      trending: withPosters(rankedToday.slice(0, 42)),
+      trending: withPosters(rankedToday.slice(0, 60)),
       popularMovies: withPosters(todayMovies),
       popularSeries: withPosters(todaySeries),
       airingAnime: withPosters(todayAnime),
+      popularDramas: withPosters(todayDramas.slice(0, POPULAR_N)),
       trendingKdramas: withPosters(todayKdrama),
       trendingCdramas: withPosters(todayCdrama),
       trendingJdramas: withPosters(todayJdrama),
       trendingThaidramas: withPosters(todayThaidrama),
+      allMovies: withPosters(allMoviesList),
+      allSeries: withPosters(allSeriesList),
+      allAnime: withPosters(allAnimeList),
+      allDramas: withPosters(allDramasList),
+      animeMovies: withPosters(animeMovies),
       koreanMovies: withPosters(todayKoreanMovies),
       koreanSeries: withPosters(todayKoreanSeries),
       japaneseMovies: withPosters(todayJapaneseMovies),
@@ -1336,40 +1371,47 @@ export class CatalogService {
       thaiSeries: withPosters(todayThaiSeries),
       filipinoMovies: withPosters(todayFilipinoMovies),
       filipinoSeries: withPosters(todayFilipinoSeries),
-      newReleases: uniqueById(
-        [...all]
-          .filter((c) => c.year && c.year >= year - 2)
-          .sort((a, b) => (b.year ?? 0) - (a.year ?? 0)),
-      ).slice(0, 20),
-      comingSoon: uniqueById(
-        all.filter((c) => c.status === "upcoming"),
-      ).slice(0, 16),
-      topRated: uniqueById(
-        [...all].sort((a, b) => scoreOf(b) - scoreOf(a)),
-      ).slice(0, 20),
-      animeNextEpisode: uniqueById(
-        anime.filter((a) => a.nextEpisodeAt),
-      ).slice(0, 16),
-      freeLegal: uniqueById(
-        all.filter(
-          (c) =>
-            LEGAL_FULL_PLAYBACK[c.id] ||
-            c.tags?.includes("free-stream") ||
-            c.tags?.includes("public-domain") ||
-            c.watchProviders.some((p) => p.type === "free"),
+      newReleases: withPosters(
+        uniqueById(
+          [...all]
+            .filter((c) => c.year && c.year >= year - 2)
+            .sort((a, b) => (b.year ?? 0) - (a.year ?? 0)),
+        ).slice(0, 36),
+      ),
+      comingSoon: withPosters(
+        uniqueById(all.filter((c) => c.status === "upcoming")).slice(0, 24),
+      ),
+      topRated: withPosters(
+        uniqueById([...all].sort((a, b) => scoreOf(b) - scoreOf(a))).slice(
+          0,
+          36,
         ),
-      ).slice(0, 24),
+      ),
+      animeNextEpisode: withPosters(
+        uniqueById(anime.filter((a) => a.nextEpisodeAt)).slice(0, 24),
+      ),
+      freeLegal: withPosters(
+        uniqueById(
+          all.filter(
+            (c) =>
+              LEGAL_FULL_PLAYBACK[c.id] ||
+              c.tags?.includes("free-stream") ||
+              c.tags?.includes("public-domain") ||
+              c.watchProviders.some((p) => p.type === "free"),
+          ),
+        ).slice(0, 36),
+      ),
       // Intentionally empty on home — 18+ lives only on the Mature tab.
       matureMovies: [],
       matureSeries: [],
       matureAnime: [],
       matureKdramas: [],
-      communityFavorites: rankedToday.slice(0, 18),
-      editorial: featuredUnique.slice(0, 8),
+      communityFavorites: withPosters(rankedToday.slice(0, 24)),
+      editorial: withPosters(featuredUnique.slice(0, 12)),
       moods: SEED_MOODS,
       genres: SEED_GENRES,
-      traktTrending,
-      gmmtvDramas,
+      traktTrending: withPosters(traktTrending),
+      gmmtvDramas: withPosters(gmmtvDramas),
     };
   }
 
