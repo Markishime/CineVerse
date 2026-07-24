@@ -24,6 +24,7 @@ export type EmbedProviderId =
   | "vidphantom"
   | "superembed"
   // Anime-only backends
+  | "megaplay"
   | "cinezo"
   | "animepahe"
   | "screenscape"
@@ -141,7 +142,7 @@ function embedLangParam(language?: string): string | undefined {
  * General TMDB providers — researched endpoint formats (2025–2026).
  *
  * Priority (most reliable first):
- * AutoEmbed (player.autoembed.cc) → VidFast (vidfast.vc) → VidSrc → VixSrc → 2Embed → …
+ * AutoEmbed (autoembed.co) → VidFast (vidfast.vc) → VidSrc → VixSrc → 2Embed → …
  *
  * Filipino movies: use TMDB numeric id + no Tagalog lang flag (see embedLangParam).
  */
@@ -150,20 +151,16 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     id: "autoembed",
     name: "AutoEmbed",
     supportsTv: true,
-    // Current public player: player.autoembed.cc (autoembed.co/movie/tmdb is stale)
-    // Movie: https://player.autoembed.cc/embed/movie/{tmdbId}
-    // TV:    https://player.autoembed.cc/embed/tv/{tmdbId}/{season}/{episode}
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://player.autoembed.cc/embed/movie/${tmdbId}`, {
-        lang: embedLangParam(opts?.language),
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(
-        `https://player.autoembed.cc/embed/tv/${tmdbId}/${season}/${episode}`,
-        {
-          lang: embedLangParam(opts?.language),
-        },
-      ),
+    // Live host: autoembed.co (verified reachable — returns HTTP 200). The
+    // player.autoembed.cc AND player.autoembed.app hosts both time out / no
+    // longer resolve ("IP address could not be found"). autoembed.co uses a
+    // DASH-separated TV path, not slash segments:
+    // Movie: https://autoembed.co/movie/tmdb/{tmdbId}
+    // TV:    https://autoembed.co/tv/tmdb/{tmdbId}-{season}-{episode}
+    // TMDB or IMDb ids accepted. No lang param.
+    movieUrl: (tmdbId) => `https://autoembed.co/movie/tmdb/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`,
   },
   {
     id: "vidfast",
@@ -305,9 +302,34 @@ const ANIME_BLOCKED_PROVIDER_IDS = new Set<EmbedProviderId>([
  * Prefer AniList/MAL metadata pairing over a single hard-coded host.
  *
  * Order prioritizes fast, currently-reachable hosts first:
- * Cinezo (AniList) → ScreenScape (TMDB) → AnimePahe (async) → DropFile → ezvidapi → SupaPlay
+ * MegaPlay (the server kissanime.com.cv uses) → Cinezo (AniList) → ScreenScape
+ * (TMDB) → AnimePahe (async) → DropFile → ezvidapi → SupaPlay
  */
 export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
+  {
+    id: "megaplay",
+    name: "MegaPlay",
+    supportsTv: true,
+    animeOnly: true,
+    // The backend kissanime.com.cv serves anime from. HiAnime/Zoro-sourced,
+    // keyed directly by MAL or AniList id + absolute episode + sub|dub — no
+    // async session resolve needed (unlike the s-2 HiAnime-episode-id path).
+    // MAL:     https://megaplay.buzz/stream/mal/{malId}/{ep}/{sub|dub}
+    // AniList: https://megaplay.buzz/stream/ani/{anilistId}/{ep}/{sub|dub}
+    movieUrl: () => "",
+    tvUrl: () => "",
+    animeUrl: (ids) => {
+      const ep = Math.max(1, ids.episode ?? 1);
+      const lang = preferDub(undefined, ids) ? "dub" : "sub";
+      if (ids.mal) {
+        return `https://megaplay.buzz/stream/mal/${ids.mal}/${ep}/${lang}`;
+      }
+      if (ids.anilist) {
+        return `https://megaplay.buzz/stream/ani/${ids.anilist}/${ep}/${lang}`;
+      }
+      return null;
+    },
+  },
   {
     id: "cinezo",
     name: "Cinezo",
@@ -442,7 +464,10 @@ export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
  * Asian-drama streaming backends (K-Drama / C-Drama / J-Drama / Thai Drama).
  * These hosts carry subtitled Asian dramas that general TMDB embeds often miss.
  *
- * Order: DramaPlay → KissKH → NontonGo → Frembed → general fallbacks
+ * Reliability note: only NontonGo's TMDB path is doc-verified. KissKH needs its
+ * own episode id (no TMDB path) and DramaPlay/Frembed formats are unverified, so
+ * the routing puts the proven TMDB generals AHEAD of these — see
+ * getProvidersForContentType. These are best-effort supplements, not primaries.
  */
 export const DRAMA_EMBED_PROVIDERS: EmbedProvider[] = [
   {
@@ -450,38 +475,29 @@ export const DRAMA_EMBED_PROVIDERS: EmbedProvider[] = [
     name: "DramaPlay",
     supportsTv: true,
     dramaOnly: true,
-    // https://www.dramaplay.one — TMDB movie/tv embeds with built-in subtitles.
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://www.dramaplay.one/embed/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-        sub: opts?.language ?? "en",
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(
-        `https://www.dramaplay.one/embed/tv/${tmdbId}/${season}/${episode}`,
-        {
-          autoplay: opts?.autoplay,
-          sub: opts?.language ?? "en",
-        },
-      ),
+    // https://dramaplay.one — TMDB movie/tv embeds with built-in subtitles.
+    // Keep the path id-only: an unsupported ?sub=<lang> (e.g. sub=tl) made it
+    // fail. Best-effort supplement, not a primary — demoted below the proven
+    // TMDB generals in the chains.
+    movieUrl: (tmdbId) => `https://dramaplay.one/embed/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://dramaplay.one/embed/tv/${tmdbId}/${season}/${episode}`,
   },
   {
     id: "kisskh",
     name: "KissKH",
     supportsTv: true,
     dramaOnly: true,
-    // https://kisskh.megaplay.su — KissKH episode embed keyed by TMDB id.
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://kisskh.megaplay.su/embed/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(
-        `https://kisskh.megaplay.su/embed/tv/${tmdbId}/${season}/${episode}`,
-        {
-          autoplay: opts?.autoplay,
-        },
-      ),
+    // https://kisskh.megaplay.su — the player kissasian.cam serves dramas from.
+    // IMPORTANT: this embed is keyed by KissKH's OWN internal episode id
+    // (e.g. /kisskh/129692), NOT a TMDB id. The old /embed/movie/{tmdb} and
+    // /embed/tv/{tmdb}/… paths do not exist and 404 ("Route ... not found").
+    // Building the real URL needs a KissKH catalog search (title → drama id →
+    // episode id) which is not implemented yet, so we emit no URL here — the
+    // provider is filtered out of chains until a resolver exists. Do NOT
+    // resurrect the fake TMDB paths.
+    movieUrl: () => "",
+    tvUrl: () => "",
   },
   {
     id: "nontongo",
@@ -642,55 +658,59 @@ export function getProvidersForContentType(
     const generalSafe = general.filter(
       (p) => !ANIME_BLOCKED_PROVIDER_IDS.has(p.id),
     );
-    // AutoEmbed first for accurate TMDB anime TV embeds, then natives for AniList-only
-    chain = preferProviders(generalSafe, [
-      "autoembed",
-      "vidfast",
-      "vidsrc",
-      "vixsrc",
-      "2embed",
-    ]).concat(ANIME_EMBED_PROVIDERS);
-  } else if (contentType === "kdrama") {
-    // NontonGo first (user request) — clean URLs, no ads-query junk
-    chain = [
-      ...preferProviders(DRAMA_EMBED_PROVIDERS, [
-        "nontongo",
-        "dramaplay",
-        "kisskh",
-        "frembed",
-      ]),
-      ...preferProviders(general, [
+    // MegaPlay first (the server kissanime.com.cv uses) — direct MAL/AniList
+    // embeds, English sub & dub. Then remaining anime natives, then TMDB
+    // generals as a last resort for titles MegaPlay can't key.
+    const animeNatives = preferProviders(ANIME_EMBED_PROVIDERS, ["megaplay"]);
+    chain = animeNatives.concat(
+      preferProviders(generalSafe, [
         "autoembed",
         "vidfast",
         "vidsrc",
         "vixsrc",
+        "2embed",
       ]),
-    ];
+    );
   } else if (
+    contentType === "kdrama" ||
     DRAMA_CONTENT_TYPES.has(contentType) ||
     contentType === "cdrama" ||
     contentType === "jdrama" ||
     contentType === "thaidrama"
   ) {
+    // Proven TMDB generals lead (they actually resolve) with the drama-specific
+    // hosts as best-effort supplements after. KissKH is intentionally NOT
+    // ordered here — it emits no TMDB URL (needs its own episode id) and is
+    // filtered out; DramaPlay/NontonGo/Frembed formats are unreliable, so they
+    // must never sit ahead of the working generals.
     chain = [
-      ...preferProviders(DRAMA_EMBED_PROVIDERS, [
-        "nontongo",
-        "dramaplay",
-        "kisskh",
-        "frembed",
+      ...preferProviders(general, [
+        "autoembed",
+        "vidfast",
+        "vidsrc",
+        "vixsrc",
+        "2embed",
       ]),
-      ...preferProviders(general, ["autoembed", "vidfast", "vidsrc", "vixsrc"]),
+      ...preferProviders(DRAMA_EMBED_PROVIDERS, ["nontongo", "dramaplay"]),
     ];
-  } else if (mediaType === "movie" && isFilipinoContent(ids)) {
-    // Filipino cinema: VixSrc/VidSrc tend to load PH titles faster/cleaner
-    chain = preferProviders(general, [
-      "vixsrc",
-      "vidsrc",
-      "vidfast",
-      "2embed",
-      "autoembed",
-      "vidlink",
-    ]);
+  } else if (isFilipinoContent(ids)) {
+    // Filipino cinema: no PH-specialist embed host exists, so lead with the
+    // broadest currently-live TMDB aggregators (best odds a PH title resolves
+    // somewhere) — VidFast/VidSrc/VidCore — then VixSrc/AutoEmbed, then drama
+    // hosts as best-effort. (kissasian.cam's KissKH backend can't be driven by
+    // a TMDB id, so it can't lead here — see the kisskh provider.)
+    chain = [
+      ...preferProviders(general, [
+        "vidfast",
+        "vidsrc",
+        "vidcore",
+        "vixsrc",
+        "autoembed",
+        "2embed",
+        "vidlink",
+      ]),
+      ...preferProviders(DRAMA_EMBED_PROVIDERS, ["nontongo", "dramaplay"]),
+    ];
   } else {
     // Default movies + western series: AutoEmbed first
     chain = preferProviders(general, [
