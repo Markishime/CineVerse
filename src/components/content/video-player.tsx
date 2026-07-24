@@ -19,7 +19,7 @@ import {
   buildAnimeEmbedUrl,
   getProviderName,
 } from "@/lib/embed/providers";
-import { EMBED_ALLOW, withAdSuppressionParams } from "@/lib/embed/ad-shield";
+import { EMBED_ALLOW } from "@/lib/embed/ad-shield";
 import {
   isFilipinoLocale,
   preferDubForLanguage,
@@ -497,19 +497,9 @@ export function VideoPlayer({
     setResolvedUrl(null);
   };
 
-  // No sandbox. Full iframe capabilities so every provider can play.
-  const iframeSrc = (() => {
-    if (!embedUrl) return null;
-    const withFlags = withAdSuppressionParams(embedUrl);
-    try {
-      const u = new URL(withFlags);
-      if (autoPlay) u.searchParams.set("autoplay", "1");
-      u.searchParams.set("rd", "0");
-      return u.toString();
-    } catch {
-      return withFlags;
-    }
-  })();
+  // Use provider URL as-is. Do NOT inject autoplay/ads/rd — VidFast needs
+  // autoPlay=true (camelCase) and junk params break Filipino / regional loads.
+  const iframeSrc = embedUrl;
 
   return (
     <div className={cn("relative isolate", showMenu && "z-50", className)} data-cineverse-player>

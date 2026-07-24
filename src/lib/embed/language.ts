@@ -144,23 +144,22 @@ const STREAM_HOST_UNSUPPORTED = new Set([
 ]);
 
 /**
- * Language code to send to AutoEmbed / VidFast / etc.
- * Origin language is preserved when the host can use it; otherwise `en`.
+ * Language code for hosts that accept `lang=`.
+ * - ko / ja / zh / th / en … passed through when supported
+ * - Tagalog (tl) and other unsupported codes → `en` so AutoEmbed still loads
+ * - PH films often stream as English tracks on free hosts
  */
 export function toStreamHostLanguage(
   originLang: string,
   countries?: string[] | null,
 ): string {
   const lang = normalizeLangCode(originLang) || originLang.toLowerCase();
-  if (STREAM_HOST_UNSUPPORTED.has(lang)) return "en";
-
-  // PH origin with non-English original that hosts still usually stream in EN
   const isPh = (countries ?? []).some((c) => c.toUpperCase() === "PH");
-  if (isPh && lang !== "en" && STREAM_HOST_UNSUPPORTED.has(lang)) {
-    return "en";
-  }
-  // Many Filipino films are catalogued as original_language=en already
-  if (isPh && !lang) return "en";
+
+  if (STREAM_HOST_UNSUPPORTED.has(lang)) return "en";
+  if (isPh && STREAM_HOST_UNSUPPORTED.has(lang)) return "en";
+  // Philippine cinema with missing/exotic language → English track
+  if (isPh && (!lang || lang === "tl" || lang === "fil")) return "en";
 
   return lang || "en";
 }

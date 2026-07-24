@@ -74,6 +74,8 @@ describe("embed language", () => {
     expect(toStreamHostLanguage("fil", ["PH"])).toBe("en");
     expect(toStreamHostLanguage("ko", ["KR"])).toBe("ko");
     expect(toStreamHostLanguage("ja", ["JP"])).toBe("ja");
+    expect(toStreamHostLanguage("zh", ["CN"])).toBe("zh");
+    expect(toStreamHostLanguage("th", ["TH"])).toBe("th");
   });
 
   it("detects Filipino locale", () => {

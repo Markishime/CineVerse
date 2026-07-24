@@ -16,6 +16,7 @@ export type EmbedProviderId =
   | "autoembed"
   | "vidsrc"
   | "vidcore"
+  | "vixsrc"
   | "2embed"
   | "2embedskin"
   | "moviesapi"
@@ -78,18 +79,20 @@ export interface EmbedProvider {
   needsResolve?: boolean;
 }
 
+/**
+ * Build query string. Does NOT inject ads=* junk — several hosts (VidFast)
+ * reject or mis-handle unknown flags and fail to load Filipino/regional titles.
+ */
 function qs(
   base: string,
-  params: Record<string, string | undefined | boolean | number>,
+  params: Record<string, string | undefined | boolean | number> = {},
 ): string {
   const sp = new URLSearchParams();
-  // Default anti-ad flags (hosts ignore unknown keys)
-  sp.set("ads", "0");
-  sp.set("ad", "0");
-  sp.set("noads", "1");
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === false || v === "") continue;
-    sp.set(k, String(v === true ? "1" : v));
+    // Preserve "true"/"false" strings; booleans true → "true" for hosts like VidFast
+    if (v === true) sp.set(k, "true");
+    else sp.set(k, String(v));
   }
   const s = sp.toString();
   if (!s) return base;
@@ -104,62 +107,99 @@ function preferDub(opts?: EmbedUrlOpts, ids?: AnimeStreamIds): boolean {
 }
 
 /**
- * General TMDB providers (movies / series / dramas / anime TMDB fallback).
- * Priority = reliability (most working first):
- * VidFast → AutoEmbed → VidSrc → VidCore → 2Embed → VidLink → …
+ * Only pass `lang` when the host is known to honor it. Tagalog/Filipino and
+ * other unsupported codes must be omitted (not sent as tl) — hosts then serve
+ * the default English/source track that actually works for PH cinema.
+ */
+function embedLangParam(language?: string): string | undefined {
+  if (!language) return undefined;
+  const l = language.toLowerCase().split("-")[0] ?? language;
+  const supported = new Set([
+    "en",
+    "ko",
+    "ja",
+    "zh",
+    "th",
+    "es",
+    "fr",
+    "de",
+    "pt",
+    "hi",
+    "it",
+    "ru",
+    "ar",
+    "id",
+    "ms",
+    "tr",
+    "vi",
+  ]);
+  if (!supported.has(l)) return undefined;
+  return l;
+}
+
+/**
+ * General TMDB providers — researched endpoint formats (2025–2026).
+ *
+ * Priority (most reliable first):
+ * AutoEmbed (player.autoembed.cc) → VidFast (vidfast.vc) → VidSrc → VixSrc → 2Embed → …
+ *
+ * Filipino movies: use TMDB numeric id + no Tagalog lang flag (see embedLangParam).
  */
 export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
-  {
-    id: "vidfast",
-    name: "VidFast",
-    supportsTv: true,
-    // Official embeds: https://vidfast.vc/movie/{id}?autoPlay=true
-    //                 https://vidfast.vc/tv/{id}/{season}/{episode}?autoPlay=true
-    movieUrl: (tmdbId, opts) => {
-      const auto =
-        opts?.autoplay === false ? "false" : "true";
-      return qs(`https://vidfast.vc/movie/${tmdbId}`, {
-        autoPlay: auto,
-      });
-    },
-    tvUrl: (tmdbId, season, episode, opts) => {
-      const auto =
-        opts?.autoplay === false ? "false" : "true";
-      return qs(`https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`, {
-        autoPlay: auto,
-      });
-    },
-  },
   {
     id: "autoembed",
     name: "AutoEmbed",
     supportsTv: true,
-    // lang = content origin (ko/ja/zh/th/en…) so Korean stays Korean, etc.
+    // Current public player: player.autoembed.cc (autoembed.co/movie/tmdb is stale)
+    // Movie: https://player.autoembed.cc/embed/movie/{tmdbId}
+    // TV:    https://player.autoembed.cc/embed/tv/{tmdbId}/{season}/{episode}
     movieUrl: (tmdbId, opts) =>
-      qs(`https://autoembed.co/movie/tmdb/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language || "en",
+      qs(`https://player.autoembed.cc/embed/movie/${tmdbId}`, {
+        lang: embedLangParam(opts?.language),
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language || "en",
+      qs(
+        `https://player.autoembed.cc/embed/tv/${tmdbId}/${season}/${episode}`,
+        {
+          lang: embedLangParam(opts?.language),
+        },
+      ),
+  },
+  {
+    id: "vidfast",
+    name: "VidFast",
+    supportsTv: true,
+    // Docs: https://vidfast.vc/
+    // Movie: https://vidfast.vc/movie/{id}?autoPlay=true
+    // TV:    https://vidfast.vc/tv/{id}/{season}/{episode}?autoPlay=true
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://vidfast.vc/movie/${tmdbId}`, {
+        autoPlay: opts?.autoplay === false ? "false" : "true",
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`, {
+        autoPlay: opts?.autoplay === false ? "false" : "true",
       }),
   },
   {
     id: "vidsrc",
     name: "VidSrc",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://vidsrc.to/embed/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
-      }),
+    // Docs: https://vidsrc.to/ — TMDB or IMDb (tt…)
+    // Movie: /embed/movie/{id}
+    // TV:    /embed/tv/{id}/{season}/{episode}
+    movieUrl: (tmdbId) => `https://vidsrc.to/embed/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`,
+  },
+  {
+    id: "vixsrc",
+    name: "VixSrc",
+    supportsTv: true,
+    // https://vixsrc.to — clean TMDB embeds, good regional coverage
+    movieUrl: (tmdbId) => `https://vixsrc.to/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}`,
   },
   {
     id: "vidcore",
@@ -167,29 +207,23 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     supportsTv: true,
     movieUrl: (tmdbId, opts) =>
       qs(`https://vidcore.org/embed/movie/${tmdbId}/`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language || "en",
+        lang: embedLangParam(opts?.language),
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://vidcore.org/embed/tv/${tmdbId}/${season}/${episode}/`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language || "en",
+        lang: embedLangParam(opts?.language),
       }),
   },
   {
     id: "2embed",
     name: "2Embed",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://www.2embed.online/embed/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language || "en",
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://www.2embed.online/embed/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language || "en",
-      }),
+    // Docs: https://www.2embed.online/
+    // Movie: /embed/movie/{id}
+    // TV:    /embed/tv/{id}/{season}/{episode}
+    movieUrl: (tmdbId) => `https://www.2embed.online/embed/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://www.2embed.online/embed/tv/${tmdbId}/${season}/${episode}`,
   },
   {
     id: "vidlink",
@@ -197,92 +231,64 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     supportsTv: true,
     movieUrl: (tmdbId, opts) =>
       qs(`https://vidlink.pro/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
+        autoplay: opts?.autoplay === false ? "false" : "true",
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
+        autoplay: opts?.autoplay === false ? "false" : "true",
       }),
   },
   {
     id: "2embedskin",
     name: "2Embed Skin",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://www.2embed.skin/embed/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://www.2embed.skin/embed/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
-      }),
+    movieUrl: (tmdbId) => `https://www.2embed.skin/embed/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://www.2embed.skin/embed/tv/${tmdbId}/${season}/${episode}`,
   },
   {
     id: "moviesapi",
     name: "MoviesAPI",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://moviesapi.to/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://moviesapi.to/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
-      }),
+    movieUrl: (tmdbId) => `https://moviesapi.to/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://moviesapi.to/tv/${tmdbId}/${season}/${episode}`,
   },
   {
     id: "smashystream",
     name: "SmashyStream",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://player.smashy.stream/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
+    movieUrl: (tmdbId) => `https://player.smashy.stream/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
       qs(`https://player.smashy.stream/tv/${tmdbId}`, {
         s: season,
         e: episode,
-        autoplay: opts?.autoplay,
       }),
   },
   {
     id: "vidphantom",
     name: "VidPhantom",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://vidphantom.com/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://vidphantom.com/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay,
-      }),
+    movieUrl: (tmdbId) => `https://vidphantom.com/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://vidphantom.com/tv/${tmdbId}/${season}/${episode}`,
   },
   // SuperEmbed last — multiembed.mov often hijacks UI / false-positive "loaded"
-  // and is never preferred for anime/hentai.
   {
     id: "superembed",
     name: "SuperEmbed",
     supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
+    movieUrl: (tmdbId) =>
       qs(`https://multiembed.mov/`, {
         video_id: tmdbId,
         tmdb: 1,
-        autoplay: opts?.autoplay,
       }),
-    tvUrl: (tmdbId, season, episode, opts) =>
+    tvUrl: (tmdbId, season, episode) =>
       qs(`https://multiembed.mov/`, {
         video_id: tmdbId,
         tmdb: 1,
         s: season,
         e: episode,
-        autoplay: opts?.autoplay,
       }),
   },
 ];
