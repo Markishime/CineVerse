@@ -58,7 +58,7 @@ type PlayerStatus = "loading" | "loaded" | "error" | "all_failed";
 
 /**
  * Smart video player with multi-provider fallback.
- * Default chain (all types): AutoEmbed → VidFast → VidSrc → …
+ * Default chain (all types): VidFast → AutoEmbed → VidSrc → …
  */
 export function VideoPlayer({
   tmdbId,
@@ -380,7 +380,7 @@ export function VideoPlayer({
         setStatus("loading");
         return next;
       });
-    }, 18_000);
+    }, 10_000);
 
     return () => {
       if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
@@ -403,6 +403,31 @@ export function VideoPlayer({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showMenu]);
+
+  // Detect "Content not found" messages from embed provider iframes.
+  // Some providers postMessage when the title isn't in their catalog.
+  useEffect(() => {
+    if (status !== "loaded" || !activeProvider) return;
+    function handleMessage(e: MessageEvent) {
+      const raw =
+        typeof e.data === "string"
+          ? e.data
+          : typeof e.data?.type === "string"
+            ? e.data.type
+            : "";
+      const msg = raw.toLowerCase();
+      if (
+        msg.includes("content not found") ||
+        msg.includes("not available") ||
+        msg.includes("no results") ||
+        (msg.includes("404") && msg.includes("content"))
+      ) {
+        handleIframeError();
+      }
+    }
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [status, activeProvider?.id]);
 
   const handleIframeLoad = useCallback(() => {
     if (loadTimerRef.current) {
