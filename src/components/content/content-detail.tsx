@@ -26,6 +26,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ContentRow } from "./content-row";
 import { MediaPlayer } from "./media-player";
+import { VideoPlayer } from "./video-player";
+import { ReviewsSection } from "./reviews-section";
 import { AuthGate } from "@/components/auth/auth-gate";
 import { PinGateModal } from "@/components/content/pin-gate";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
@@ -56,7 +58,6 @@ export function ContentDetail({ slug }: { slug: string }) {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const guest = useGuestLibraryStore();
-  const [spoilerOpen, setSpoilerOpen] = useState(false);
   const [activeTrailerKey, setActiveTrailerKey] = useState<string | null>(
     null,
   );
@@ -644,6 +645,42 @@ export function ContentDetail({ slug }: { slug: string }) {
           <h2 className="mb-3 font-display text-xl font-semibold text-white">
             Watch
           </h2>
+          {/* Embed player for anime / hentai (AniList · MAL · TMDB) */}
+          {(content.contentType === "anime" ||
+            content.providerIds?.anilist ||
+            content.providerIds?.mal ||
+            content.providerIds?.tmdb) && (
+            <div className="mb-6">
+              <VideoPlayer
+                tmdbId={content.providerIds?.tmdb}
+                mediaType={
+                  content.animeFormat === "MOVIE" ||
+                  content.providerIds?.tmdbMediaType === "movie" ||
+                  content.contentType === "movie"
+                    ? "movie"
+                    : "tv"
+                }
+                season={1}
+                episode={1}
+                title={title}
+                originalLanguage={content.language ?? undefined}
+                contentType={content.contentType}
+                anilistId={content.providerIds?.anilist}
+                malId={content.providerIds?.mal}
+                animeFormat={content.animeFormat}
+                year={content.year}
+                autoPlay
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href={getWatchHref(content)}>
+                  <Button variant="gold" size="sm" className="!text-black">
+                    <Play className="h-3.5 w-3.5" />
+                    Full player
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
           <MediaPlayer
             title={title}
             trailer={activeTrailer}
@@ -857,23 +894,7 @@ export function ContentDetail({ slug }: { slug: string }) {
           </section>
         )}
 
-        <section className="mt-12">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-display text-xl font-semibold text-white">
-              Reviews
-            </h2>
-            <button
-              type="button"
-              className="text-xs text-[var(--text-secondary)]"
-              onClick={() => setSpoilerOpen((v) => !v)}
-            >
-              Spoilers: {spoilerOpen ? "shown" : "hidden"}
-            </button>
-          </div>
-          <p className="text-sm text-[var(--text-secondary)]">
-            Sign in to write a review. Spoiler protection is on by default.
-          </p>
-        </section>
+        <ReviewsSection contentId={content.id} />
 
         {recs && recs.items.length > 0 && (
           <div className="mt-12">

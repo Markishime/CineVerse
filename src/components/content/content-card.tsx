@@ -61,7 +61,12 @@ export function ContentCard({
 }) {
   const title = displayTitle(content, animeTitlePreference);
   const score = primaryScore(content);
-  const canWatch = Boolean(content.playable || content.providerIds?.tmdb);
+  const canWatch = Boolean(
+    content.playable ||
+      content.providerIds?.tmdb ||
+      content.providerIds?.anilist ||
+      content.providerIds?.mal,
+  );
   const trailer = hasOfficialTrailer(content);
   const watchHref = getWatchHref(content);
   const trailerHref = getTrailerHref(content);

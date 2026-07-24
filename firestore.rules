@@ -104,7 +104,11 @@ service cloud.firestore {
     }
 
     match /reviews/{id} {
-      allow read: if resource.data.approved == true || isOwner(resource.data.uid) || isAdmin();
+      // Public approved reviews (list + get); authors can always read own
+      allow read: if resource == null
+        || resource.data.approved == true
+        || isOwner(resource.data.uid)
+        || isAdmin();
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.rating is number
@@ -112,8 +116,13 @@ service cloud.firestore {
         && request.resource.data.rating <= 10
         && request.resource.data.body is string
         && request.resource.data.body.size() > 0
-        && request.resource.data.body.size() <= 5000;
-      allow update, delete: if isOwner(resource.data.uid) || isAdmin();
+        && request.resource.data.body.size() <= 5000
+        && request.resource.data.contentId is string
+        && request.resource.data.approved == true;
+      allow update: if isOwner(resource.data.uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.contentId == resource.data.contentId;
+      allow delete: if isOwner(resource.data.uid) || isAdmin();
     }
 
     match /reviewVotes/{docId} {

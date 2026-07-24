@@ -1942,8 +1942,55 @@ export class CatalogService {
       }
     }
 
-    // 4) Honest empty — never invent fake "Episode N" rows
-    return [];
+    // 4) Synthetic episode shells so anime/hentai always playable.
+    // Adult catalogs often lack TMDB/Jikan episode metadata; AniList episodeCount
+    // (or format defaults) still lets the embed player load by episode number.
+    {
+      const seasonId = `${c.id}_s${seasonNumber}`;
+      const format = (c.animeFormat ?? "").toUpperCase();
+      const isSingle =
+        c.contentType === "movie" ||
+        format === "MOVIE" ||
+        format === "OVA" ||
+        format === "ONA" ||
+        format === "SPECIAL" ||
+        format === "MUSIC";
+      let count = 0;
+      if (isSingle) {
+        count = Math.max(1, c.episodeCount && c.episodeCount > 0 ? c.episodeCount : 1);
+      } else if (c.episodeCount && c.episodeCount > 0) {
+        const seasons =
+          c.seasonCount && c.seasonCount > 0 ? Math.min(c.seasonCount, 50) : 1;
+        count = Math.max(
+          1,
+          Math.ceil(c.episodeCount / Math.max(seasons, 1)),
+        );
+      } else if (c.contentType === "anime" || c.mature) {
+        // Hentai / anime with unknown length — default a full cour so every
+        // episode slot is selectable; embeds resolve by number.
+        count = 12;
+      } else {
+        count = 12;
+      }
+      // Cap very large unknowns (avoid 5000-row responses)
+      count = Math.min(count, 200);
+      return Array.from({ length: count }, (_, i) => {
+        const n = i + 1;
+        return {
+          id: `${seasonId}_e${n}`,
+          contentId: c.id,
+          seasonId,
+          seasonNumber,
+          episodeNumber: n,
+          name: isSingle && count === 1 ? c.title : `Episode ${n}`,
+          overview: "",
+          stillPath: null,
+          airDate: null,
+          runtime: c.runtime ?? null,
+          playable: true,
+        } satisfies Episode;
+      });
+    }
   }
 
   /**

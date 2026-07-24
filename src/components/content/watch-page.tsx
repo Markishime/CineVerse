@@ -401,17 +401,19 @@ export function WatchPage({
   const autoTrailer = play === "trailer" && !canFull;
 
   const goEpisode = (sn: number, en: number) => {
-    if (isSeries && content?.providerIds?.tmdb) {
-      setEmbedSeason(sn);
-      setEmbedEpisode(en);
-      document
-        .getElementById("embed-player")
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
+    // Always drive the in-page embed (hentai / anime often lack TMDB).
+    setEmbedSeason(sn);
+    setEmbedEpisode(en);
+    document
+      .getElementById("embed-player")
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Keep URL shareable without full remount when possible
+    if (content) {
+      const href = getWatchHref(content, { season: sn, episode: en });
+      if (typeof window !== "undefined" && href.startsWith("/watch/")) {
+        window.history.replaceState(null, "", href);
+      }
     }
-    router.push(
-      getWatchHref(content, { season: sn, episode: en }),
-    );
   };
 
   const share = async () => {
@@ -513,45 +515,52 @@ export function WatchPage({
             </Link>
           </div>
         )}
-        {(content.contentType === "anime" ||
-          (isSeries && content.providerIds?.tmdb)) &&
-          (content.providerIds?.anilist ||
-            content.providerIds?.mal ||
-            content.providerIds?.tmdb) && (
-            <div id="embed-player" className="mt-4">
-              <VideoPlayer
-                tmdbId={content.providerIds?.tmdb}
-                mediaType={
-                  content.animeFormat === "MOVIE" ||
-                  content.providerIds?.tmdbMediaType === "movie"
-                    ? "movie"
-                    : "tv"
-                }
-                season={
-                  content.animeFormat === "MOVIE"
-                    ? 1
-                    : embedSeason ?? 1
-                }
-                episode={
-                  content.animeFormat === "MOVIE"
-                    ? 1
-                    : embedEpisode ?? 1
-                }
-                title={
-                  content.animeFormat === "MOVIE" || !isSeries
-                    ? title
-                    : `${title} · S${String(embedSeason ?? 1).padStart(2, "0")}E${String(embedEpisode ?? 1).padStart(2, "0")}`
-                }
-                originalLanguage={content.language ?? undefined}
-                contentType={content.contentType}
-                anilistId={content.providerIds?.anilist}
-                malId={content.providerIds?.mal}
-                animeFormat={content.animeFormat}
-                year={content.year}
-                autoPlay
-              />
-            </div>
-          )}
+        {/* Always show embed player when any stream id exists (hentai = AniList/MAL) */}
+        {(content.providerIds?.anilist ||
+          content.providerIds?.mal ||
+          content.providerIds?.tmdb ||
+          content.contentType === "anime") && (
+          <div id="embed-player" className="mt-4">
+            <VideoPlayer
+              tmdbId={content.providerIds?.tmdb}
+              mediaType={
+                content.animeFormat === "MOVIE" ||
+                content.providerIds?.tmdbMediaType === "movie" ||
+                content.contentType === "movie"
+                  ? "movie"
+                  : "tv"
+              }
+              season={
+                content.animeFormat === "MOVIE"
+                  ? 1
+                  : embedSeason ?? seasonParam ?? 1
+              }
+              episode={
+                content.animeFormat === "MOVIE"
+                  ? 1
+                  : embedEpisode ?? episodeParam ?? 1
+              }
+              title={
+                content.animeFormat === "MOVIE" || content.contentType === "movie"
+                  ? title
+                  : `${title} · S${String(embedSeason ?? seasonParam ?? 1).padStart(2, "0")}E${String(embedEpisode ?? episodeParam ?? 1).padStart(2, "0")}`
+              }
+              originalLanguage={content.language ?? undefined}
+              contentType={
+                content.contentType === "anime" || content.mature
+                  ? content.contentType === "anime"
+                    ? "anime"
+                    : content.contentType
+                  : content.contentType
+              }
+              anilistId={content.providerIds?.anilist}
+              malId={content.providerIds?.mal}
+              animeFormat={content.animeFormat}
+              year={content.year}
+              autoPlay
+            />
+          </div>
+        )}
 
         {countdown != null && nextEpisode && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-4 py-3 text-sm">
@@ -609,18 +618,31 @@ export function WatchPage({
               {content.overview || "No overview available."}
             </p>
 
-            {isSeries && seasons.length > 0 && (
+            {isSeries && content.animeFormat !== "MOVIE" && (
               <section className="space-y-3 pt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="font-display text-lg font-semibold text-white">
                     Episodes
                   </h2>
                   <div className="flex flex-wrap gap-1">
-                    {seasons.map((s) => (
+                    {(seasons.length > 0
+                      ? seasons
+                      : [
+                          {
+                            id: `${content.id}_s1`,
+                            seasonNumber: 1,
+                            name: "Season 1",
+                          },
+                        ]
+                    ).map((s) => (
                       <button
                         key={s.id}
                         type="button"
-                        onClick={() => goEpisode(s.seasonNumber, 1)}
+                        onClick={() => {
+                          setEmbedSeason(s.seasonNumber);
+                          setEmbedEpisode(1);
+                          goEpisode(s.seasonNumber, 1);
+                        }}
                         className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                           s.seasonNumber === activeSeasonNum
                             ? "bg-[var(--primary)] text-white"
@@ -636,13 +658,15 @@ export function WatchPage({
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={!activeEpisode || activeEpisode.episodeNumber <= 1}
-                    onClick={() =>
-                      goEpisode(
-                        activeSeasonNum,
-                        Math.max(1, (activeEpisode?.episodeNumber ?? 1) - 1),
-                      )
-                    }
+                    disabled={(embedEpisode ?? activeEpisodeNum) <= 1}
+                    onClick={() => {
+                      const ep = Math.max(
+                        1,
+                        (embedEpisode ?? activeEpisodeNum) - 1,
+                      );
+                      setEmbedEpisode(ep);
+                      goEpisode(activeSeasonNum, ep);
+                    }}
                   >
                     <ChevronLeft className="h-4 w-4" />
                     Prev
@@ -650,14 +674,21 @@ export function WatchPage({
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={!nextEpisode}
                     onClick={() => {
-                      if (!nextEpisode) return;
-                      const sn =
-                        "seasonNumber" in nextEpisode && nextEpisode.seasonNumber
-                          ? nextEpisode.seasonNumber
-                          : activeSeasonNum;
-                      goEpisode(sn, nextEpisode.episodeNumber);
+                      if (nextEpisode) {
+                        const sn =
+                          "seasonNumber" in nextEpisode &&
+                          nextEpisode.seasonNumber
+                            ? nextEpisode.seasonNumber
+                            : activeSeasonNum;
+                        goEpisode(sn, nextEpisode.episodeNumber);
+                        setEmbedSeason(sn);
+                        setEmbedEpisode(nextEpisode.episodeNumber);
+                        return;
+                      }
+                      const ep = (embedEpisode ?? activeEpisodeNum) + 1;
+                      setEmbedEpisode(ep);
+                      goEpisode(activeSeasonNum, ep);
                     }}
                   >
                     Next
@@ -665,15 +696,36 @@ export function WatchPage({
                   </Button>
                 </div>
                 <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-white/10 p-2">
-                  {episodes.map((ep) => (
+                  {(episodes.length > 0
+                    ? episodes
+                    : Array.from(
+                        {
+                          length: Math.min(
+                            content.episodeCount && content.episodeCount > 0
+                              ? content.episodeCount
+                              : 12,
+                            48,
+                          ),
+                        },
+                        (_, i) => ({
+                          id: `syn_${i + 1}`,
+                          episodeNumber: i + 1,
+                          name: `Episode ${i + 1}`,
+                          overview: "",
+                        }),
+                      )
+                  ).map((ep) => (
                     <button
                       key={ep.id}
                       type="button"
-                      onClick={() =>
-                        goEpisode(activeSeasonNum, ep.episodeNumber)
-                      }
+                      onClick={() => {
+                        setEmbedSeason(activeSeasonNum);
+                        setEmbedEpisode(ep.episodeNumber);
+                        goEpisode(activeSeasonNum, ep.episodeNumber);
+                      }}
                       className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
-                        ep.episodeNumber === activeEpisodeNum
+                        ep.episodeNumber ===
+                        (embedEpisode ?? activeEpisodeNum)
                           ? "bg-[var(--primary)]/20 text-white"
                           : "text-[var(--text-secondary)] hover:bg-white/5"
                       }`}
@@ -685,19 +737,14 @@ export function WatchPage({
                         <span className="block font-medium text-white">
                           {ep.name || `Episode ${ep.episodeNumber}`}
                         </span>
-                        {ep.overview && (
+                        {"overview" in ep && ep.overview ? (
                           <span className="mt-0.5 line-clamp-1 text-xs text-[var(--text-muted)]">
                             {ep.overview}
                           </span>
-                        )}
+                        ) : null}
                       </span>
                     </button>
                   ))}
-                  {episodes.length === 0 && (
-                    <p className="p-3 text-xs text-[var(--text-muted)]">
-                      No episode list available for this season yet.
-                    </p>
-                  )}
                 </div>
               </section>
             )}
