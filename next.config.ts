@@ -32,6 +32,21 @@ const nextConfig: NextConfig = {
         { key: "Service-Worker-Allowed", value: "/" },
       ],
     },
+    {
+      // Site-wide: reduce ad tech + discourage opener abuse from embeds
+      source: "/(.*)",
+      headers: [
+        {
+          key: "Permissions-Policy",
+          value:
+            "interest-cohort=(), browsing-topics=(), attribution-reporting=(), private-state-token-redemption=(), join-ad-interest-group=(), run-ad-auction=()",
+        },
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        // Prevent our pages from being used as ad clickjack shells
+        { key: "X-Frame-Options", value: "SAMEORIGIN" },
+      ],
+    },
   ],
 };
 

@@ -7,19 +7,26 @@ import {
   ChevronDown,
   Loader2,
   MonitorPlay,
+  Play,
   RefreshCw,
   Server,
+  ShieldOff,
   X,
 } from "lucide-react";
 import {
   type EmbedProviderId,
   type AnimeStreamIds,
-  EMBED_PROVIDERS,
   getProvidersForContentType,
   buildEmbedUrl,
   buildAnimeEmbedUrl,
   getProviderName,
 } from "@/lib/embed/providers";
+import {
+  EMBED_ALLOW,
+  EMBED_SANDBOX,
+  withAdSuppressionParams,
+} from "@/lib/embed/ad-shield";
+import { useEmbedAdShield } from "@/hooks/use-embed-ad-shield";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -48,10 +55,10 @@ interface VideoPlayerProps {
 type PlayerStatus = "loading" | "loaded" | "error" | "all_failed";
 
 /**
- * Smart video player with multi-provider fallback.
+ * Smart video player with multi-provider fallback + ad shield.
+ * Popups / popunders / top-navigation from free embed hosts are blocked.
  * Anime: Cinezo → ScreenScape → AnimePahe → DropFile → ezvidapi → SupaPlay
- *         (+ TMDB general embeds when a TMDB id exists)
- * Others: AutoEmbed → VidCore → 2Embed
+ * Others: VidLink → VidFast → AutoEmbed → …
  */
 export function VideoPlayer({
   tmdbId,
@@ -72,6 +79,10 @@ export function VideoPlayer({
 }: VideoPlayerProps) {
   const settings = useAuthStore((s) => s.settings);
   const isAnime = contentType === "anime";
+  // Block window.open / popunders while this player is mounted
+  useEmbedAdShield(true);
+  // Gate pointer events until user intentionally starts (stops accidental ad taps)
+  const [interactionUnlocked, setInteractionUnlocked] = useState(false);
 
   // Auto-detect drama type from original language when not already set.
   // This ensures regional movies/series use drama-specific embed providers
@@ -368,6 +379,8 @@ export function VideoPlayer({
     setStatus("loading");
     setResolvedUrl(null);
     setShowMenu(false);
+    // Re-lock so a new server cannot steal the first accidental tap for ads
+    setInteractionUnlocked(false);
   };
 
   const retry = () => {
@@ -380,14 +393,28 @@ export function VideoPlayer({
     setStatus("loading");
     setTriedProviders([]);
     setResolvedUrl(null);
+    setInteractionUnlocked(false);
   };
 
-  const iframeSrc = embedUrl
-    ? `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}${autoPlay ? "autoplay=1&" : ""}rd=0`
-    : null;
+  // Stable embed URL with anti-ad flags. Do not re-key on unlock (avoids reload ads).
+  // autoplay stays off until the user taps play — fewer forced pre-rolls.
+  const iframeSrc = (() => {
+    if (!embedUrl) return null;
+    const withFlags = withAdSuppressionParams(embedUrl);
+    try {
+      const u = new URL(withFlags);
+      u.searchParams.set("autoplay", "0");
+      u.searchParams.set("rd", "0");
+      return u.toString();
+    } catch {
+      return withFlags;
+    }
+  })();
+  // keep prop referenced so callers can still pass autoPlay without lint noise
+  void autoPlay;
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative", className)} data-cineverse-player>
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
         {status === "loading" && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90 px-4">
@@ -404,7 +431,7 @@ export function VideoPlayer({
               {isAnime ? " · anime sources" : ""}
             </p>
             <p className="max-w-xs text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
-              Some servers take a few seconds. If this one fails, use{" "}
+              Popups and redirects are blocked. If this server fails, use{" "}
               <span className="text-white/80">Servers</span> to switch.
             </p>
           </div>
@@ -445,21 +472,50 @@ export function VideoPlayer({
             key={`${activeProvider?.id}-${tmdbId}-${anilistId}-${season}-${episode}-${iframeSrc}`}
             title={title}
             src={iframeSrc}
-            className="absolute inset-0 h-full w-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+            className="absolute inset-0 h-full w-full border-0"
+            allow={EMBED_ALLOW}
             allowFullScreen
-            // Keep iframe in the layout while loading (opacity only). display:none
-            // can prevent onLoad on some mobile browsers and block touch playback.
-            referrerPolicy="strict-origin-when-cross-origin"
+            // Critical: no allow-popups → free hosts cannot open ad tabs
+            sandbox={EMBED_SANDBOX}
+            referrerPolicy="no-referrer"
+            loading="eager"
             onLoad={handleIframeLoad}
             onError={handleIframeError}
             style={{
               opacity: status === "loading" ? 0 : 1,
               WebkitOverflowScrolling: "touch",
-              pointerEvents: status === "all_failed" ? "none" : "auto",
+              // Locked until intentional tap — stops scroll/tap-through ads
+              pointerEvents:
+                status === "all_failed" || !interactionUnlocked
+                  ? "none"
+                  : "auto",
             }}
           />
         )}
+
+        {/* Intentional start gate — primary mobile ad-click defense */}
+        {iframeSrc &&
+          status !== "all_failed" &&
+          status !== "loading" &&
+          !interactionUnlocked && (
+            <button
+              type="button"
+              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-black/80 via-black/70 to-black/85 px-4 text-center"
+              onClick={() => setInteractionUnlocked(true)}
+              aria-label="Start watching without ads opening new tabs"
+            >
+              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/30">
+                <Play className="h-8 w-8 fill-current pl-0.5" />
+              </span>
+              <span className="font-display text-lg font-semibold text-white">
+                Tap to play
+              </span>
+              <span className="flex max-w-xs items-center justify-center gap-1.5 text-xs text-[var(--text-secondary)]">
+                <ShieldOff className="h-3.5 w-3.5 text-[var(--success)]" />
+                Popups &amp; ad redirects blocked
+              </span>
+            </button>
+          )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -538,22 +594,23 @@ export function VideoPlayer({
         </div>
       </div>
 
-      {/* Always visible so users know to try another server if load stalls */}
       <div
         role="note"
-        className="mt-3 flex gap-2.5 rounded-xl border border-[var(--gold)]/25 bg-[var(--gold)]/8 px-3.5 py-3 text-left"
+        className="mt-3 flex gap-2.5 rounded-xl border border-[var(--success)]/25 bg-[var(--success)]/8 px-3.5 py-3 text-left"
       >
-        <AlertTriangle
-          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--gold)]"
+        <ShieldOff
+          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]"
           aria-hidden
         />
         <div className="min-w-0 space-y-0.5">
-          <p className="text-xs font-bold uppercase tracking-wide text-[var(--gold)]">
-            Important Notice
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--success)]">
+            Ad-free shell
           </p>
           <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-            If the current server does not work, switch to another server. Some
-            servers may take a few seconds to load.
+            CineVerse blocks popups, popunders, and page redirects from embed
+            servers. If a server stalls, switch with{" "}
+            <span className="text-white/80">Servers</span> — never open external
+            ad links.
           </p>
         </div>
       </div>

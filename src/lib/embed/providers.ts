@@ -83,6 +83,10 @@ function qs(
   params: Record<string, string | undefined | boolean | number>,
 ): string {
   const sp = new URLSearchParams();
+  // Default anti-ad flags (hosts ignore unknown keys)
+  sp.set("ads", "0");
+  sp.set("ad", "0");
+  sp.set("noads", "1");
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === false || v === "") continue;
     sp.set(k, String(v === true ? "1" : v));
@@ -539,6 +543,19 @@ export function getProvidersForContentType(
   return getProvidersForMediaType(mediaType);
 }
 
+function suppressAdsOnUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("ads")) u.searchParams.set("ads", "0");
+    if (!u.searchParams.has("ad")) u.searchParams.set("ad", "0");
+    if (!u.searchParams.has("noads")) u.searchParams.set("noads", "1");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 export function buildEmbedUrl(
   providerId: EmbedProviderId,
   tmdbId: number,
@@ -554,12 +571,10 @@ export function buildEmbedUrl(
   }
 
   if (mediaType === "movie") {
-    const url = provider.movieUrl(tmdbId, opts);
-    return url || null;
+    return suppressAdsOnUrl(provider.movieUrl(tmdbId, opts) || null);
   }
   if (!season || !episode) return null;
-  const url = provider.tvUrl(tmdbId, season, episode, opts);
-  return url || null;
+  return suppressAdsOnUrl(provider.tvUrl(tmdbId, season, episode, opts) || null);
 }
 
 /** Build anime-native embed URL (preferred for contentType=anime) */
@@ -579,7 +594,7 @@ export function buildAnimeEmbedUrl(
 
   if (provider.animeUrl) {
     const anime = provider.animeUrl(merged);
-    if (anime) return anime;
+    if (anime) return suppressAdsOnUrl(anime);
   }
 
   // Fallback to TMDB paths when anime-native URL unavailable
@@ -588,13 +603,11 @@ export function buildAnimeEmbedUrl(
       merged.tmdbMediaType === "movie" ||
       merged.animeFormat === "MOVIE"
     ) {
-      const url = provider.movieUrl(merged.tmdb, opts);
-      return url || null;
+      return suppressAdsOnUrl(provider.movieUrl(merged.tmdb, opts) || null);
     }
     const s = Math.max(1, merged.season ?? 1);
     const e = Math.max(1, merged.episode ?? 1);
-    const url = provider.tvUrl(merged.tmdb, s, e, opts);
-    return url || null;
+    return suppressAdsOnUrl(provider.tvUrl(merged.tmdb, s, e, opts) || null);
   }
 
   return null;
