@@ -7,10 +7,8 @@ import {
   ChevronDown,
   Loader2,
   MonitorPlay,
-  Play,
   RefreshCw,
   Server,
-  ShieldOff,
   X,
 } from "lucide-react";
 import {
@@ -21,11 +19,7 @@ import {
   buildAnimeEmbedUrl,
   getProviderName,
 } from "@/lib/embed/providers";
-import {
-  EMBED_ALLOW,
-  EMBED_SANDBOX,
-  withAdSuppressionParams,
-} from "@/lib/embed/ad-shield";
+import { EMBED_ALLOW, withAdSuppressionParams } from "@/lib/embed/ad-shield";
 import { useEmbedAdShield } from "@/hooks/use-embed-ad-shield";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -79,10 +73,8 @@ export function VideoPlayer({
 }: VideoPlayerProps) {
   const settings = useAuthStore((s) => s.settings);
   const isAnime = contentType === "anime";
-  // Block window.open / popunders while this player is mounted
+  // Parent-level popup blocker only — never sandbox the iframe (breaks all providers)
   useEmbedAdShield(true);
-  // Gate pointer events until user intentionally starts (stops accidental ad taps)
-  const [interactionUnlocked, setInteractionUnlocked] = useState(false);
 
   // Auto-detect drama type from original language when not already set.
   // This ensures regional movies/series use drama-specific embed providers
@@ -379,8 +371,6 @@ export function VideoPlayer({
     setStatus("loading");
     setResolvedUrl(null);
     setShowMenu(false);
-    // Re-lock so a new server cannot steal the first accidental tap for ads
-    setInteractionUnlocked(false);
   };
 
   const retry = () => {
@@ -393,25 +383,21 @@ export function VideoPlayer({
     setStatus("loading");
     setTriedProviders([]);
     setResolvedUrl(null);
-    setInteractionUnlocked(false);
   };
 
-  // Stable embed URL with anti-ad flags. Do not re-key on unlock (avoids reload ads).
-  // autoplay stays off until the user taps play — fewer forced pre-rolls.
+  // No sandbox. Full iframe capabilities so every provider can play.
   const iframeSrc = (() => {
     if (!embedUrl) return null;
     const withFlags = withAdSuppressionParams(embedUrl);
     try {
       const u = new URL(withFlags);
-      u.searchParams.set("autoplay", "0");
+      if (autoPlay) u.searchParams.set("autoplay", "1");
       u.searchParams.set("rd", "0");
       return u.toString();
     } catch {
       return withFlags;
     }
   })();
-  // keep prop referenced so callers can still pass autoPlay without lint noise
-  void autoPlay;
 
   return (
     <div className={cn("relative", className)} data-cineverse-player>
@@ -431,7 +417,7 @@ export function VideoPlayer({
               {isAnime ? " · anime sources" : ""}
             </p>
             <p className="max-w-xs text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
-              Popups and redirects are blocked. If this server fails, use{" "}
+              If this server fails, use{" "}
               <span className="text-white/80">Servers</span> to switch.
             </p>
           </div>
@@ -475,47 +461,18 @@ export function VideoPlayer({
             className="absolute inset-0 h-full w-full border-0"
             allow={EMBED_ALLOW}
             allowFullScreen
-            // Critical: no allow-popups → free hosts cannot open ad tabs
-            sandbox={EMBED_SANDBOX}
-            referrerPolicy="no-referrer"
+            // No sandbox — required for VidLink / VidSrc / AutoEmbed / anime hosts
+            referrerPolicy="strict-origin-when-cross-origin"
             loading="eager"
             onLoad={handleIframeLoad}
             onError={handleIframeError}
             style={{
               opacity: status === "loading" ? 0 : 1,
               WebkitOverflowScrolling: "touch",
-              // Locked until intentional tap — stops scroll/tap-through ads
-              pointerEvents:
-                status === "all_failed" || !interactionUnlocked
-                  ? "none"
-                  : "auto",
+              pointerEvents: status === "all_failed" ? "none" : "auto",
             }}
           />
         )}
-
-        {/* Intentional start gate — primary mobile ad-click defense */}
-        {iframeSrc &&
-          status !== "all_failed" &&
-          status !== "loading" &&
-          !interactionUnlocked && (
-            <button
-              type="button"
-              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-black/80 via-black/70 to-black/85 px-4 text-center"
-              onClick={() => setInteractionUnlocked(true)}
-              aria-label="Start watching without ads opening new tabs"
-            >
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/30">
-                <Play className="h-8 w-8 fill-current pl-0.5" />
-              </span>
-              <span className="font-display text-lg font-semibold text-white">
-                Tap to play
-              </span>
-              <span className="flex max-w-xs items-center justify-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                <ShieldOff className="h-3.5 w-3.5 text-[var(--success)]" />
-                Popups &amp; ad redirects blocked
-              </span>
-            </button>
-          )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -596,21 +553,20 @@ export function VideoPlayer({
 
       <div
         role="note"
-        className="mt-3 flex gap-2.5 rounded-xl border border-[var(--success)]/25 bg-[var(--success)]/8 px-3.5 py-3 text-left"
+        className="mt-3 flex gap-2.5 rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-left"
       >
-        <ShieldOff
-          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]"
+        <AlertTriangle
+          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--text-muted)]"
           aria-hidden
         />
         <div className="min-w-0 space-y-0.5">
-          <p className="text-xs font-bold uppercase tracking-wide text-[var(--success)]">
-            Ad-free shell
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+            Playback tip
           </p>
           <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-            CineVerse blocks popups, popunders, and page redirects from embed
-            servers. If a server stalls, switch with{" "}
-            <span className="text-white/80">Servers</span> — never open external
-            ad links.
+            If the current server does not work, switch with{" "}
+            <span className="text-white/80">Servers</span>. Parent popups from
+            this page are blocked — stay on this tab to watch.
           </p>
         </div>
       </div>
