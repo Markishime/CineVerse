@@ -106,9 +106,30 @@ function preferDub(opts?: EmbedUrlOpts, ids?: AnimeStreamIds): boolean {
 /**
  * General TMDB providers (movies / series / dramas / anime TMDB fallback).
  * Priority = reliability (most working first):
- * AutoEmbed → VidFast → VidSrc → VidCore → 2Embed → VidLink → …
+ * VidFast → AutoEmbed → VidSrc → VidCore → 2Embed → VidLink → …
  */
 export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
+  {
+    id: "vidfast",
+    name: "VidFast",
+    supportsTv: true,
+    // Official embeds: https://vidfast.vc/movie/{id}?autoPlay=true
+    //                 https://vidfast.vc/tv/{id}/{season}/{episode}?autoPlay=true
+    movieUrl: (tmdbId, opts) => {
+      const auto =
+        opts?.autoplay === false ? "false" : "true";
+      return qs(`https://vidfast.vc/movie/${tmdbId}`, {
+        autoPlay: auto,
+      });
+    },
+    tvUrl: (tmdbId, season, episode, opts) => {
+      const auto =
+        opts?.autoplay === false ? "false" : "true";
+      return qs(`https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`, {
+        autoPlay: auto,
+      });
+    },
+  },
   {
     id: "autoembed",
     name: "AutoEmbed",
@@ -123,21 +144,6 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
       qs(`https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`, {
         autoplay: opts?.autoplay,
         lang: opts?.language || "en",
-      }),
-  },
-  {
-    id: "vidfast",
-    name: "VidFast",
-    supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://vidfast.pro/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://vidfast.pro/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay,
-        lang: opts?.language,
       }),
   },
   {
@@ -579,7 +585,7 @@ export function providerCanPlay(
 
 /**
  * Content-type aware provider chain.
- * Movies / series: AutoEmbed → VidFast → …
+ * Movies / series: VidFast → AutoEmbed → …
  * Anime / hentai: Cinezo / DropFile / … first (AniList), then AutoEmbed / VidFast if TMDB
  * Drama: AutoEmbed → VidFast → … then drama hosts
  */
