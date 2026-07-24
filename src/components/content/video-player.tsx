@@ -49,10 +49,8 @@ interface VideoPlayerProps {
 type PlayerStatus = "loading" | "loaded" | "error" | "all_failed";
 
 /**
- * Smart video player with multi-provider fallback + ad shield.
- * Popups / popunders / top-navigation from free embed hosts are blocked.
- * Anime: Cinezo → ScreenScape → AnimePahe → DropFile → ezvidapi → SupaPlay
- * Others: VidLink → VidFast → AutoEmbed → …
+ * Smart video player with multi-provider fallback.
+ * Default chain (all types): AutoEmbed → VidFast → VidSrc → …
  */
 export function VideoPlayer({
   tmdbId,
