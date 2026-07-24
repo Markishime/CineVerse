@@ -130,12 +130,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     name: "VidFast",
     supportsTv: true,
     movieUrl: (tmdbId, opts) =>
-      qs(`https://vidfast.vc/movie/${tmdbId}`, {
+      qs(`https://vidfast.pro/movie/${tmdbId}`, {
         autoplay: opts?.autoplay,
         lang: opts?.language,
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`, {
+      qs(`https://vidfast.pro/tv/${tmdbId}/${season}/${episode}`, {
         autoplay: opts?.autoplay,
         lang: opts?.language,
       }),

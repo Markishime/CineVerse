@@ -487,7 +487,7 @@ export function VideoPlayer({
   })();
 
   return (
-    <div className={cn("relative isolate", className)} data-cineverse-player>
+    <div className={cn("relative isolate", showMenu && "z-50", className)} data-cineverse-player>
       {/* Player frame — overflow clips any embed chrome that tries to spill out */}
       <div className="relative z-0 aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
         {status === "loading" && (
