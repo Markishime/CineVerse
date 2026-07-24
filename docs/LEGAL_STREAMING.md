@@ -2,9 +2,8 @@
 
 ## Brand URL
 
-- Primary: **https://cineverse-live.web.app**
-- Legacy project site: https://original-mesh-469112-t3.web.app
-- Note: `cineverse.web.app` is reserved by another Firebase project and cannot be claimed on this project. Connect a custom domain (e.g. `cineverse.app`) in Firebase Hosting if you own one.
+- Primary: your **Vercel** production URL (set `NEXT_PUBLIC_APP_URL` or rely on `VERCEL_URL`)
+- Firebase Hosting (`*.web.app`) is **not** used for the app
 
 ## Architecture
 
@@ -90,8 +89,8 @@ Public-domain films with evidence under `docs/rights/evidence/` — free in-app 
 ## Env
 
 ```
-NEXT_PUBLIC_APP_URL=https://cineverse-live.web.app
-TMDB_ACCESS_TOKEN=...   # metadata only — never streams
+NEXT_PUBLIC_APP_URL=https://your-app.vercel.app   # or leave empty on Vercel
+TMDB_ACCESS_TOKEN=...   # metadata only — never streams; set on Vercel
 PLAYBACK_CDN_BASE_URL=  # optional CDN for hosted assets
 PLAYBACK_TRUSTED_HOSTS= # extra hosts for signed media
 CLOUDFLARE_STREAM_CUSTOMER_SUBDOMAIN= # optional Stream customer code

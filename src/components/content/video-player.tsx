@@ -448,10 +448,16 @@ export function VideoPlayer({
             className="absolute inset-0 h-full w-full"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
             allowFullScreen
+            // Keep iframe in the layout while loading (opacity only). display:none
+            // can prevent onLoad on some mobile browsers and block touch playback.
             referrerPolicy="strict-origin-when-cross-origin"
             onLoad={handleIframeLoad}
             onError={handleIframeError}
-            style={{ display: status === "loading" ? "none" : "block" }}
+            style={{
+              opacity: status === "loading" ? 0 : 1,
+              WebkitOverflowScrolling: "touch",
+              pointerEvents: status === "all_failed" ? "none" : "auto",
+            }}
           />
         )}
       </div>

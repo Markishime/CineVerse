@@ -2233,20 +2233,21 @@ async function tmdbGet<T>(
   path: string,
   params: Record<string, string> = {},
 ): Promise<T | null> {
-  const token = process.env.TMDB_ACCESS_TOKEN;
-  if (!token) return null;
+  const token = process.env.TMDB_ACCESS_TOKEN?.trim();
+  const apiKey = process.env.TMDB_API_KEY?.trim();
+  if (!token && !apiKey) return null;
   const url = new URL(`${TMDB}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  return fetchJson<T>(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-  });
+  if (!token && apiKey) url.searchParams.set("api_key", apiKey);
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetchJson<T>(url.toString(), { headers });
 }
 
 export function hasTmdbAccess(): boolean {
-  return Boolean(process.env.TMDB_ACCESS_TOKEN);
+  return Boolean(
+    process.env.TMDB_ACCESS_TOKEN?.trim() || process.env.TMDB_API_KEY?.trim(),
+  );
 }
 
 type TmdbListResponse = {

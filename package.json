@@ -12,12 +12,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "emulators": "firebase emulators:start",
-    "deploy": "firebase deploy --only hosting,firestore:rules,storage --project original-mesh-469112-t3",
-    "deploy:hosting": "firebase deploy --only hosting --project original-mesh-469112-t3",
-    "deploy:live": "firebase deploy --only hosting:cineverse-live,hosting:default,firestore:rules --project original-mesh-469112-t3",
-    "deploy:rules": "firebase deploy --only firestore:rules,storage --project original-mesh-469112-t3",
-    "deploy:next": "firebase experiments:enable webframeworks && firebase deploy --only hosting --project original-mesh-469112-t3",
-    "deploy:win": "node -e \"process.env.NODE_OPTIONS=(process.env.NODE_OPTIONS||'')+' --require '+require('path').resolve('scripts/symlink-polyfill.js'); require('child_process').spawnSync('firebase',['deploy','--only','hosting','--project','original-mesh-469112-t3','--non-interactive'],{stdio:'inherit',env:process.env,shell:true})\""
+    "deploy:rules": "firebase deploy --only firestore:rules,storage --project original-mesh-469112-t3"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

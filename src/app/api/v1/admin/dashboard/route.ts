@@ -21,7 +21,13 @@ export async function GET(request: NextRequest) {
     openReports: 0,
     failedSyncJobs: [],
     providerStatus: [
-      { name: "TMDB", status: process.env.TMDB_ACCESS_TOKEN ? "configured" : "optional_secret" },
+      {
+        name: "TMDB",
+        status:
+          process.env.TMDB_ACCESS_TOKEN || process.env.TMDB_API_KEY
+            ? "configured"
+            : "optional_secret",
+      },
       { name: "AniList", status: "live_keyless" },
       { name: "TVMaze", status: "live_keyless" },
       { name: "Jikan", status: "live_keyless" },

@@ -25,7 +25,10 @@ Open [http://localhost:3000](http://localhost:3000). Without Firebase/TMDB secre
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run test` | Vitest unit + rules static tests |
 | `npm run test:e2e` | Playwright e2e |
-| `npm run emulators` | Firebase Emulator Suite |
+| `npm run emulators` | Firebase Emulator Suite (Auth/Firestore local) |
+| `npm run deploy:rules` | Deploy Firestore/Storage rules only (not Hosting) |
+
+**Deploy the app on Vercel** — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Firebase Hosting is not used.
 
 ## Stack
 

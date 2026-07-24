@@ -1,7 +1,7 @@
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { fetchTmdbMovie, tmdbBackdropUrl } from "@/lib/embed/tmdb-fetcher";
+import { fallbackMovie } from "@/lib/embed/tmdb-fallbacks";
 import { WatchMovieClient } from "./client";
 
 interface Props {
@@ -15,17 +15,19 @@ interface Props {
  * video player with auto-fallback between providers (AutoEmbed → VidCore → 2Embed).
  *
  * The [id] is the TMDb movie ID (e.g., /watch/movie/550 for Fight Club).
+ * Playback does not require TMDB metadata — if the API key is missing on
+ * Vercel we still render the player with a minimal fallback title.
  */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const tmdbId = Number(id);
-  if (!Number.isFinite(tmdbId)) {
+  if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
     return { title: "Watch · CineVerse" };
   }
 
   const movie = await fetchTmdbMovie(tmdbId);
   if (!movie) {
-    return { title: "Movie not found · CineVerse" };
+    return { title: `Watch · CineVerse` };
   }
 
   return {
@@ -45,15 +47,21 @@ export default async function WatchMoviePage({ params }: Props) {
   const { id } = await params;
   const tmdbId = Number(id);
 
-  if (!Number.isFinite(tmdbId)) {
-    notFound();
+  // Only reject non-numeric / invalid ids — never 404 just because TMDB is down
+  if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
+    return (
+      <div className="mx-auto flex min-h-[70dvh] max-w-lg flex-col items-center justify-center px-4 text-center">
+        <h1 className="font-display text-2xl font-bold text-white">
+          Invalid title link
+        </h1>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          This watch URL is missing a valid catalog id.
+        </p>
+      </div>
+    );
   }
 
-  const movie = await fetchTmdbMovie(tmdbId);
-
-  if (!movie) {
-    notFound();
-  }
+  const movie = (await fetchTmdbMovie(tmdbId)) ?? fallbackMovie(tmdbId);
 
   return (
     <Suspense

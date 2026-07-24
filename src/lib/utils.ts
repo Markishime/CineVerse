@@ -38,8 +38,12 @@ export function formatScore(score: number | null | undefined): string {
 }
 
 export function absoluteUrl(path: string): string {
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
-    "http://localhost:3000";
-  return path.startsWith("http") ? path : `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  const fromVercel = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL.replace(/\/$/, "")}`
+    : undefined;
+  const base = fromEnv || fromVercel || "http://localhost:3000";
+  return path.startsWith("http")
+    ? path
+    : `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }

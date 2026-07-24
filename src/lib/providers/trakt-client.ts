@@ -27,7 +27,7 @@ export async function traktFetch<T>(
         "trakt-api-key": clientId,
         // Cloudflare bot heuristics 403 undici's default fingerprint on
         // request bursts — a real UA keeps public API reads unblocked.
-        "User-Agent": "CineVerse/1.0 (+https://cineverse-live.web.app)",
+        "User-Agent": "CineVerse/1.0 (+https://cineverse.vercel.app)",
       },
       signal: controller.signal,
       cache: "no-store",
