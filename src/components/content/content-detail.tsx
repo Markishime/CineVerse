@@ -664,6 +664,7 @@ export function ContentDetail({ slug }: { slug: string }) {
                 episode={1}
                 title={title}
                 originalLanguage={content.language ?? undefined}
+                countries={content.countries}
                 contentType={content.contentType}
                 anilistId={content.providerIds?.anilist}
                 malId={content.providerIds?.mal}

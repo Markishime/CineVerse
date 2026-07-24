@@ -22,6 +22,7 @@ export interface TmdbMovieDetail {
   original_language: string;
   tagline: string | null;
   production_companies: Array<{ id: number; name: string }>;
+  production_countries?: Array<{ iso_3166_1: string; name: string }>;
   belongs_to_collection: { id: number; name: string } | null;
   number_of_seasons?: number;
   number_of_episodes?: number;
@@ -33,6 +34,7 @@ export interface TmdbTvDetail extends TmdbMovieDetail {
   last_air_date: string | null;
   number_of_seasons: number;
   number_of_episodes: number;
+  origin_country?: string[];
   seasons: Array<{
     id: number;
     season_number: number;

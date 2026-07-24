@@ -546,6 +546,7 @@ export function WatchPage({
                   : `${title} · S${String(embedSeason ?? seasonParam ?? 1).padStart(2, "0")}E${String(embedEpisode ?? episodeParam ?? 1).padStart(2, "0")}`
               }
               originalLanguage={content.language ?? undefined}
+              countries={content.countries}
               contentType={
                 content.contentType === "anime" || content.mature
                   ? content.contentType === "anime"

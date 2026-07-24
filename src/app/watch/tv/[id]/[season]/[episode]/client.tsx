@@ -200,6 +200,11 @@ export function WatchTvClient({
           episode={episodeNum}
           title={isAnime ? tvShow.name : fullTitle}
           originalLanguage={tvShow.original_language}
+          countries={
+            tvShow.origin_country ??
+            tvShow.production_countries?.map((c) => c.iso_3166_1) ??
+            undefined
+          }
           contentType={
             isAnime ? "anime" : dramaContentType ?? "series"
           }

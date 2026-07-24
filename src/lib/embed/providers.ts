@@ -113,15 +113,16 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     id: "autoembed",
     name: "AutoEmbed",
     supportsTv: true,
+    // lang = content origin (ko/ja/zh/th/en…) so Korean stays Korean, etc.
     movieUrl: (tmdbId, opts) =>
       qs(`https://autoembed.co/movie/tmdb/${tmdbId}`, {
         autoplay: opts?.autoplay,
-        lang: opts?.language,
+        lang: opts?.language || "en",
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`, {
         autoplay: opts?.autoplay,
-        lang: opts?.language,
+        lang: opts?.language || "en",
       }),
   },
   {
@@ -131,10 +132,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId, opts) =>
       qs(`https://vidfast.vc/movie/${tmdbId}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
   },
   {
@@ -144,10 +147,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId, opts) =>
       qs(`https://vidsrc.to/embed/movie/${tmdbId}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
   },
   {
@@ -157,12 +162,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId, opts) =>
       qs(`https://vidcore.org/embed/movie/${tmdbId}/`, {
         autoplay: opts?.autoplay,
-        lang: opts?.language,
+        lang: opts?.language || "en",
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://vidcore.org/embed/tv/${tmdbId}/${season}/${episode}/`, {
         autoplay: opts?.autoplay,
-        lang: opts?.language,
+        lang: opts?.language || "en",
       }),
   },
   {
@@ -172,12 +177,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId, opts) =>
       qs(`https://www.2embed.online/embed/movie/${tmdbId}`, {
         autoplay: opts?.autoplay,
-        lang: opts?.language,
+        lang: opts?.language || "en",
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://www.2embed.online/embed/tv/${tmdbId}/${season}/${episode}`, {
         autoplay: opts?.autoplay,
-        lang: opts?.language,
+        lang: opts?.language || "en",
       }),
   },
   {
@@ -187,10 +192,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId, opts) =>
       qs(`https://vidlink.pro/movie/${tmdbId}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
   },
   {
@@ -200,10 +207,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId, opts) =>
       qs(`https://www.2embed.skin/embed/movie/${tmdbId}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://www.2embed.skin/embed/tv/${tmdbId}/${season}/${episode}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
   },
   {
@@ -213,10 +222,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId, opts) =>
       qs(`https://moviesapi.to/movie/${tmdbId}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
       qs(`https://moviesapi.to/tv/${tmdbId}/${season}/${episode}`, {
         autoplay: opts?.autoplay,
+        lang: opts?.language,
       }),
   },
   {

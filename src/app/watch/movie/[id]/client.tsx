@@ -134,6 +134,9 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
           mediaType="movie"
           title={movie.title}
           originalLanguage={movie.original_language}
+          countries={
+            movie.production_countries?.map((c) => c.iso_3166_1) ?? undefined
+          }
           contentType={contentType}
           animeFormat={isAnimeMovie ? "MOVIE" : undefined}
           year={year}

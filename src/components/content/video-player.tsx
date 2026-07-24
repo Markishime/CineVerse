@@ -20,6 +20,10 @@ import {
   getProviderName,
 } from "@/lib/embed/providers";
 import { EMBED_ALLOW, withAdSuppressionParams } from "@/lib/embed/ad-shield";
+import {
+  preferDubForLanguage,
+  resolveEmbedLanguage,
+} from "@/lib/embed/language";
 import { useEmbedAdShield } from "@/hooks/use-embed-ad-shield";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +37,8 @@ interface VideoPlayerProps {
   episode?: number;
   title: string;
   originalLanguage?: string;
+  /** ISO country codes from catalog / TMDB (e.g. KR, JP, CN) */
+  countries?: string[];
   contentType?: string;
   /** AniList media id — preferred for anime backends */
   anilistId?: number;
@@ -59,6 +65,7 @@ export function VideoPlayer({
   episode,
   title,
   originalLanguage,
+  countries,
   contentType = "series",
   anilistId,
   malId,
@@ -98,12 +105,20 @@ export function VideoPlayer({
     ) {
       return contentType;
     }
-    // Detect from language
+    // Detect from language / country
     const lang = (originalLanguage ?? "").toLowerCase();
-    if (lang === "ko") return "kdrama";
-    if (lang === "zh" || lang === "cn") return "cdrama";
-    if (lang === "ja") return "jdrama";
-    if (lang === "th") return "thaidrama";
+    if (lang === "ko" || countries?.some((c) => c.toUpperCase() === "KR"))
+      return "kdrama";
+    if (
+      lang === "zh" ||
+      lang === "cn" ||
+      countries?.some((c) => ["CN", "TW", "HK"].includes(c.toUpperCase()))
+    )
+      return "cdrama";
+    if (lang === "ja" || countries?.some((c) => c.toUpperCase() === "JP"))
+      return "jdrama";
+    if (lang === "th" || countries?.some((c) => c.toUpperCase() === "TH"))
+      return "thaidrama";
     return contentType;
   })();
 
@@ -159,33 +174,38 @@ export function VideoPlayer({
 
   const activeProvider = availableProviders[activeIndex];
 
+  /**
+   * Embed language = content origin (KR→ko, JP→ja, CN→zh, …).
+   * AutoEmbed / VidCore / 2Embed receive this as `lang=`.
+   * User anime-audio pref only applies when they explicitly want a dub
+   * different from the original (e.g. EN dub for anime).
+   */
   const effectiveLanguage = (() => {
-    // The user's audio-language setting is an explicit preference and must win
-    // over the content's original language (otherwise picking "English dub"
-    // for anime does nothing because originalLanguage is always "ja").
-    const ct = resolvedContentType.toLowerCase();
-    if (settings) {
-      if (ct.includes("anime")) {
-        return settings.animeAudioLanguage || originalLanguage || "ja";
+    const origin = resolveEmbedLanguage({
+      originalLanguage,
+      contentType: resolvedContentType,
+      countries,
+    });
+
+    // Anime only: allow explicit user audio preference (sub ja vs dub en)
+    if (isAnime && settings?.animeAudioLanguage) {
+      const pref = settings.animeAudioLanguage.toLowerCase();
+      // Keep origin (ja) unless user picked a different audio (en dub, etc.)
+      if (pref && pref !== origin) {
+        return resolveEmbedLanguage({
+          originalLanguage,
+          contentType: resolvedContentType,
+          countries,
+          userPreference: settings.animeAudioLanguage,
+          allowUserOverride: true,
+        });
       }
-      if (
-        ct.includes("kdrama") ||
-        ct.includes("cdrama") ||
-        ct.includes("jdrama") ||
-        ct.includes("thaidrama") ||
-        ct.includes("korean")
-      ) {
-        return settings.kdramaAudioLanguage || originalLanguage || "ko";
-      }
-      return settings.generalAudioLanguage || originalLanguage || "en";
     }
-    // No settings loaded yet — fall back to the content's own language.
-    if (originalLanguage) return originalLanguage;
-    return isAnime ? "ja" : "en";
+
+    return origin;
   })();
 
-  const preferDub =
-    effectiveLanguage === "en" || effectiveLanguage.startsWith("en-");
+  const preferDub = preferDubForLanguage(effectiveLanguage);
 
   const animeIds: AnimeStreamIds = {
     title,
@@ -554,6 +574,9 @@ export function VideoPlayer({
               {animeFormat === "MOVIE" ? "Anime film" : "Anime"}
             </Badge>
           )}
+          <Badge tone="muted">
+            Audio {effectiveLanguage.toUpperCase()}
+          </Badge>
         </div>
 
         <div className="relative" ref={menuRef}>
