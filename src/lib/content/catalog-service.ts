@@ -40,6 +40,7 @@ import {
   fetchJikanEpisodes,
   resolveJikanMalId,
   resolveTmdbIdForTitle,
+  verifyTmdbMatchesTitle,
   fetchWorldMoviesPage,
   fetchWorldSeriesPage,
   fetchWorldDramaPage,
@@ -692,12 +693,66 @@ export class CatalogService {
    * instead of falling back to the official trailer player.
    */
   private async ensureTmdbForEmbed(content: Content): Promise<Content> {
+    const alts = [
+      content.englishTitle,
+      content.romajiTitle,
+      content.nativeTitle,
+      content.originalTitle,
+      ...(content.alternateTitles ?? []),
+    ].filter(Boolean) as string[];
+
+    const isAnime = content.contentType === "anime";
+    const preferMovie =
+      content.contentType === "movie" || content.animeFormat === "MOVIE";
+
+    // ── Existing TMDB id: validate, never trust a mismatched link ──
     if (content.providerIds?.tmdb && Number.isFinite(content.providerIds.tmdb)) {
-      // Anime series must always be TV embeds — never "movie" (wrong-title bug)
-      if (content.contentType === "anime") {
-        const mediaType =
-          content.animeFormat === "MOVIE" ? ("movie" as const) : ("tv" as const);
-        if (content.providerIds.tmdbMediaType !== mediaType) {
+      let mediaType: "movie" | "tv" =
+        content.providerIds.tmdbMediaType === "movie" ||
+        content.providerIds.tmdbMediaType === "tv"
+          ? content.providerIds.tmdbMediaType
+          : preferMovie
+            ? "movie"
+            : "tv";
+
+      // Anime series always TV; only AniList MOVIE format uses movie
+      if (isAnime) {
+        mediaType = content.animeFormat === "MOVIE" ? "movie" : "tv";
+      }
+
+      try {
+        const ok = await verifyTmdbMatchesTitle({
+          tmdbId: content.providerIds.tmdb,
+          mediaType,
+          title: content.title,
+          alternateTitles: alts,
+          requireAnimation: isAnime,
+        });
+        if (ok) {
+          if (content.providerIds.tmdbMediaType === mediaType) return content;
+          return {
+            ...content,
+            providerIds: {
+              ...content.providerIds,
+              tmdbMediaType: mediaType,
+            },
+          };
+        }
+        // Mismatch (e.g. wrong show linked) — clear and re-resolve below
+        console.warn(
+          `[TMDB] Dropping mismatched id ${content.providerIds.tmdb} for "${content.title}"`,
+        );
+        content = {
+          ...content,
+          providerIds: {
+            ...content.providerIds,
+            tmdb: undefined,
+            tmdbMediaType: undefined,
+          },
+        };
+      } catch {
+        // network fail — keep existing id but force media type
+        if (isAnime) {
           return {
             ...content,
             providerIds: {
@@ -708,21 +763,6 @@ export class CatalogService {
         }
         return content;
       }
-      // Ensure media type is set for correct movie vs TV routing
-      if (!content.providerIds.tmdbMediaType) {
-        const mediaType =
-          content.contentType === "movie"
-            ? ("movie" as const)
-            : ("tv" as const);
-        return {
-          ...content,
-          providerIds: {
-            ...content.providerIds,
-            tmdbMediaType: mediaType,
-          },
-        };
-      }
-      return content;
     }
 
     // Only resolve for titles that stream via episode/movie embeds
@@ -730,6 +770,9 @@ export class CatalogService {
       content.contentType !== "anime" &&
       content.contentType !== "series" &&
       content.contentType !== "kdrama" &&
+      content.contentType !== "cdrama" &&
+      content.contentType !== "jdrama" &&
+      content.contentType !== "thaidrama" &&
       content.contentType !== "movie"
     ) {
       return content;
@@ -737,28 +780,26 @@ export class CatalogService {
 
     try {
       const resolved = await resolveTmdbIdForTitle({
-        title: content.title,
+        title: content.englishTitle || content.title,
         year: content.year,
-        preferMovie:
-          content.contentType === "movie" || content.animeFormat === "MOVIE",
-        // Anime must resolve to an animation TMDB entry, never its live-action
-        // adaptation — otherwise the wrong (live-action) video would play.
-        requireAnimation: content.contentType === "anime",
-        alternateTitles: [
-          content.englishTitle,
-          content.romajiTitle,
-          content.nativeTitle,
-          content.originalTitle,
-          ...(content.alternateTitles ?? []),
-        ].filter(Boolean) as string[],
+        preferMovie,
+        requireAnimation: isAnime,
+        alternateTitles: alts,
       });
-      if (!resolved) return content;
+      if (!resolved) {
+        // Anime without trusted TMDB: keep AniList/MAL only (natives play)
+        return content;
+      }
       return {
         ...content,
         providerIds: {
           ...content.providerIds,
           tmdb: resolved.tmdb,
-          tmdbMediaType: resolved.tmdbMediaType,
+          tmdbMediaType: isAnime
+            ? content.animeFormat === "MOVIE"
+              ? "movie"
+              : "tv"
+            : resolved.tmdbMediaType,
         },
       };
     } catch {

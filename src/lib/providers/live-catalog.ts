@@ -282,9 +282,110 @@ export function extractTmdbFromExternalLinks(
   return null;
 }
 
+const TITLE_STOP = new Set([
+  "the",
+  "and",
+  "no",
+  "of",
+  "a",
+  "an",
+  "to",
+  "in",
+  "on",
+  "wa",
+  "wo",
+  "ga",
+  "ni",
+  "de",
+  "season",
+  "part",
+  "movie",
+  "film",
+  "ova",
+  "ona",
+  "special",
+  "tv",
+  "series",
+]);
+
+/** Normalize titles for comparison (strip punctuation / season tags). */
+export function normalizeTitleKey(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[:：].*$/, " ") // drop subtitle after colon for softer series match
+    .replace(/\b(season|part|cour|arc)\s*\d+\b/gi, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function significantTokens(s: string): string[] {
+  return normalizeTitleKey(s)
+    .split(" ")
+    .filter((t) => t.length >= 3 && !TITLE_STOP.has(t));
+}
+
+/**
+ * Jaccard-ish token overlap between two titles (0–1).
+ * Rejects loose substring matches that mapped Demon Slayer → unrelated shows.
+ */
+export function titleTokenSimilarity(a: string, b: string): number {
+  const ta = new Set(significantTokens(a));
+  const tb = new Set(significantTokens(b));
+  if (ta.size === 0 || tb.size === 0) {
+    const na = normalizeTitleKey(a);
+    const nb = normalizeTitleKey(b);
+    if (!na || !nb) return 0;
+    if (na === nb) return 1;
+    return 0;
+  }
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter += 1;
+  return inter / Math.max(ta.size, tb.size);
+}
+
+export function titlesLikelySame(
+  contentTitle: string,
+  candidateName: string,
+  alts: string[] = [],
+): boolean {
+  const candidates = [contentTitle, ...alts].filter(Boolean);
+  for (const c of candidates) {
+    const sim = titleTokenSimilarity(c, candidateName);
+    if (sim >= 0.55) return true;
+    const nc = normalizeTitleKey(c);
+    const nn = normalizeTitleKey(candidateName);
+    if (nc && nn && (nc === nn || nc.includes(nn) || nn.includes(nc))) {
+      // Only allow includes when both sides have enough tokens (avoid short junk)
+      if (significantTokens(c).length >= 2 && significantTokens(candidateName).length >= 2) {
+        return true;
+      }
+      if (nc === nn) return true;
+    }
+  }
+  return false;
+}
+
+type TmdbSearchRow = {
+  id?: number;
+  title?: string;
+  name?: string;
+  original_title?: string;
+  original_name?: string;
+  release_date?: string;
+  first_air_date?: string;
+  genre_ids?: number[];
+  origin_country?: string[];
+  original_language?: string;
+  popularity?: number;
+};
+
 /**
  * Resolve a missing TMDb id for anime/series so Watch Now can open the
  * episode embed player (same path as Attack on Titan).
+ *
+ * STRICT for anime: Japanese + Animation + high title similarity only.
+ * Loose substring matching previously caused wrong streams (e.g. unrelated TV).
  */
 export async function resolveTmdbIdForTitle(opts: {
   title: string;
@@ -293,9 +394,7 @@ export async function resolveTmdbIdForTitle(opts: {
   alternateTitles?: string[];
   /**
    * When true, only accept TMDB matches that are actually animation (genre 16).
-   * Prevents an anime from resolving to its LIVE-ACTION adaptation (e.g. the
-   * live-action film of a shounen series), which would play the wrong video and
-   * defeat the anime streaming backends. Set for contentType === "anime".
+   * Prevents an anime from resolving to its LIVE-ACTION adaptation.
    */
   requireAnimation?: boolean;
 }): Promise<{ tmdb: number; tmdbMediaType: "movie" | "tv" } | null> {
@@ -306,78 +405,61 @@ export async function resolveTmdbIdForTitle(opts: {
     ),
   ].filter(Boolean) as string[];
 
-  for (const q of queries.slice(0, 3)) {
+  // Anime series → TV only; anime movies → movie only. Never mix.
+  const searchMovie = opts.preferMovie || !opts.requireAnimation;
+  const searchTv = !opts.preferMovie || !opts.requireAnimation;
+
+  for (const q of queries.slice(0, 4)) {
     const [movies, tv] = await Promise.all([
-      tmdbGet<{
-        results?: Array<{
-          id?: number;
-          title?: string;
-          name?: string;
-          original_title?: string;
-          original_name?: string;
-          release_date?: string;
-          first_air_date?: string;
-          genre_ids?: number[];
-          origin_country?: string[];
-          original_language?: string;
-          popularity?: number;
-        }>;
-      }>("/search/movie", { query: q }),
-      tmdbGet<{
-        results?: Array<{
-          id?: number;
-          title?: string;
-          name?: string;
-          original_title?: string;
-          original_name?: string;
-          release_date?: string;
-          first_air_date?: string;
-          genre_ids?: number[];
-          origin_country?: string[];
-          original_language?: string;
-          popularity?: number;
-        }>;
-      }>("/search/tv", { query: q }),
+      searchMovie
+        ? tmdbGet<{ results?: TmdbSearchRow[] }>("/search/movie", { query: q })
+        : Promise.resolve({ results: [] as TmdbSearchRow[] }),
+      searchTv
+        ? tmdbGet<{ results?: TmdbSearchRow[] }>("/search/tv", { query: q })
+        : Promise.resolve({ results: [] as TmdbSearchRow[] }),
     ]);
 
-    const norm = (s: string) =>
-      s
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, " ")
-        .trim();
-    const qn = norm(q);
-
     const scoreHit = (
-      r: {
-        id?: number;
-        title?: string;
-        name?: string;
-        original_title?: string;
-        original_name?: string;
-        release_date?: string;
-        first_air_date?: string;
-        genre_ids?: number[];
-        original_language?: string;
-        popularity?: number;
-      },
+      r: TmdbSearchRow,
       mediaType: "movie" | "tv",
     ): number => {
       if (!r.id) return -1;
       const names = [r.title, r.name, r.original_title, r.original_name]
         .filter(Boolean)
-        .map((n) => norm(String(n)));
-      if (!names.some((n) => n === qn || n.includes(qn) || qn.includes(n))) {
+        .map(String);
+      // STRICT: must look like the same title (token overlap), not mere substring
+      if (
+        !names.some((n) =>
+          titlesLikelySame(q, n, [opts.title, ...(opts.alternateTitles ?? [])]),
+        )
+      ) {
         return -1;
       }
-      let score = r.popularity ?? 0;
-      if (names.some((n) => n === qn)) score += 1000;
+      if (opts.requireAnimation) {
+        if (!r.genre_ids?.includes(16)) return -1;
+        // Anime almost always ja (or rarely zh/ko for donghua/manhwa adapt)
+        const lang = (r.original_language ?? "").toLowerCase();
+        if (lang && !["ja", "zh", "ko"].includes(lang)) return -1;
+      }
+
+      let score = Math.min(r.popularity ?? 0, 200);
+      const bestName =
+        names.find((n) => normalizeTitleKey(n) === normalizeTitleKey(q)) ??
+        names[0]!;
+      const sim = Math.max(
+        ...names.map((n) =>
+          titleTokenSimilarity(q, n),
+        ),
+      );
+      score += sim * 2000;
+      if (normalizeTitleKey(bestName) === normalizeTitleKey(q)) score += 800;
       const date = r.release_date || r.first_air_date || "";
       const year = date ? Number(date.slice(0, 4)) : null;
-      if (opts.year && year && Math.abs(year - opts.year) <= 1) score += 500;
-      if (r.original_language === "ja") score += 200;
-      if (r.genre_ids?.includes(16)) score += 150; // Animation
-      if (opts.preferMovie && mediaType === "movie") score += 80;
-      if (!opts.preferMovie && mediaType === "tv") score += 80;
+      if (opts.year && year && Math.abs(year - opts.year) <= 1) score += 400;
+      if (r.original_language === "ja") score += 250;
+      if (r.genre_ids?.includes(16)) score += 200;
+      if (opts.preferMovie && mediaType === "movie") score += 100;
+      if (!opts.preferMovie && mediaType === "tv") score += 100;
       return score;
     };
 
@@ -387,20 +469,13 @@ export async function resolveTmdbIdForTitle(opts: {
       score: number;
     }> = [];
 
-    // For anime, only real animation entries qualify — never a live-action
-    // adaptation that happens to share the title.
-    const passesAnimation = (r: { genre_ids?: number[] }): boolean =>
-      !opts.requireAnimation || Boolean(r.genre_ids?.includes(16));
-
     for (const r of movies?.results ?? []) {
-      if (!passesAnimation(r)) continue;
       const s = scoreHit(r, "movie");
       if (s >= 0 && r.id) {
         candidates.push({ tmdb: r.id, tmdbMediaType: "movie", score: s });
       }
     }
     for (const r of tv?.results ?? []) {
-      if (!passesAnimation(r)) continue;
       const s = scoreHit(r, "tv");
       if (s >= 0 && r.id) {
         candidates.push({ tmdb: r.id, tmdbMediaType: "tv", score: s });
@@ -408,7 +483,8 @@ export async function resolveTmdbIdForTitle(opts: {
     }
 
     candidates.sort((a, b) => b.score - a.score);
-    if (candidates[0] && candidates[0].score >= 150) {
+    // High bar: require strong title similarity (sim*2000 alone needs ~0.55+)
+    if (candidates[0] && candidates[0].score >= 1200) {
       return {
         tmdb: candidates[0].tmdb,
         tmdbMediaType: candidates[0].tmdbMediaType,
@@ -416,6 +492,56 @@ export async function resolveTmdbIdForTitle(opts: {
     }
   }
   return null;
+}
+
+/**
+ * Verify an existing TMDB id still matches the catalog title.
+ * Clears wrong links (Demon Slayer → TallBoyz style mismatches).
+ */
+export async function verifyTmdbMatchesTitle(opts: {
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  alternateTitles?: string[];
+  requireAnimation?: boolean;
+}): Promise<boolean> {
+  const path =
+    opts.mediaType === "movie"
+      ? `/movie/${opts.tmdbId}`
+      : `/tv/${opts.tmdbId}`;
+  const detail = await tmdbGet<{
+    id?: number;
+    title?: string;
+    name?: string;
+    original_title?: string;
+    original_name?: string;
+    original_language?: string;
+    genres?: Array<{ id?: number }>;
+  }>(path);
+  if (!detail?.id) return false;
+
+  const names = [
+    detail.title,
+    detail.name,
+    detail.original_title,
+    detail.original_name,
+  ].filter(Boolean) as string[];
+
+  if (
+    !names.some((n) =>
+      titlesLikelySame(opts.title, n, opts.alternateTitles ?? []),
+    )
+  ) {
+    return false;
+  }
+
+  if (opts.requireAnimation) {
+    const genreIds = (detail.genres ?? []).map((g) => Number(g.id));
+    if (!genreIds.includes(16)) return false;
+    const lang = (detail.original_language ?? "").toLowerCase();
+    if (lang && !["ja", "zh", "ko"].includes(lang)) return false;
+  }
+  return true;
 }
 
 function mapAnilist(m: AnilistMedia): Content | null {
