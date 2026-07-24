@@ -90,11 +90,14 @@ export function WatchPage({
     queryFn: () => fetchContentBySlug(slug),
   });
 
-  // Redirect to /watch/movie|tv/{tmdbId} only when TMDb identity is trusted.
-  // Anime without explicit tmdbMediaType stays on slug page (correct embeds).
+  // Redirect live-action only to bare TMDB watch paths.
+  // Anime MUST stay on the slug path so AniList/MAL identity is kept —
+  // otherwise Demon Slayer etc. can open the wrong TMDB movie.
   useEffect(() => {
     if (!content) return;
     if (play === "trailer") return;
+    if (content.contentType === "anime") return;
+
     const tmdbId = content.providerIds?.tmdb;
     if (!tmdbId || !Number.isFinite(tmdbId)) return;
 
@@ -111,11 +114,7 @@ export function WatchPage({
 
     if (!trusted) return;
 
-    if (
-      mediaType === "movie" ||
-      content.contentType === "movie" ||
-      content.animeFormat === "MOVIE"
-    ) {
+    if (mediaType === "movie" || content.contentType === "movie") {
       router.replace(`/watch/movie/${tmdbId}`);
       return;
     }

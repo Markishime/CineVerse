@@ -124,27 +124,35 @@ export function VideoPlayer({
     return contentType;
   })();
 
+  // Anime series always use TV embeds — never movie (Demon Slayer wrong-film bug)
+  const embedMediaType: "movie" | "tv" =
+    isAnime && animeFormat !== "MOVIE" ? "tv" : mediaType;
+
   const availableProviders = useMemo(
     () =>
       getProvidersForContentType(
         resolvedContentType,
-        mediaType,
+        embedMediaType,
         {
           tmdb: tmdbId,
           anilist: anilistId,
           mal: malId,
           animeFormat,
+          countries,
+          originalLanguage,
         },
         Math.max(1, season ?? 1),
         Math.max(1, episode ?? 1),
       ),
     [
       resolvedContentType,
-      mediaType,
+      embedMediaType,
       tmdbId,
       anilistId,
       malId,
       animeFormat,
+      countries,
+      originalLanguage,
       season,
       episode,
     ],
@@ -219,9 +227,10 @@ export function VideoPlayer({
     anilist: anilistId,
     mal: malId,
     tmdb: tmdbId,
-    tmdbMediaType: mediaType,
+    // Series anime always "tv" so AutoEmbed doesn't open a random live-action film
+    tmdbMediaType: embedMediaType,
     episode:
-      animeFormat === "MOVIE" || mediaType === "movie"
+      animeFormat === "MOVIE" || embedMediaType === "movie"
         ? 1
         : Math.max(1, episode ?? 1),
     season: Math.max(1, season ?? 1),
@@ -242,18 +251,19 @@ export function VideoPlayer({
       });
     }
     if (!tmdbId) return null;
-    if (mediaType === "tv" && season && episode) {
+    if (embedMediaType === "tv") {
       return buildEmbedUrl(
         activeProvider.id,
         tmdbId,
         "tv",
-        season,
-        episode,
-        { language: effectiveLanguage },
+        Math.max(1, season ?? 1),
+        Math.max(1, episode ?? 1),
+        { language: effectiveLanguage, autoplay: autoPlay },
       );
     }
     return buildEmbedUrl(activeProvider.id, tmdbId, "movie", undefined, undefined, {
       language: effectiveLanguage,
+      autoplay: autoPlay,
     });
   })();
 

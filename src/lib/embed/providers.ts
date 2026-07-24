@@ -549,6 +549,36 @@ export interface ProviderIdHints {
   anilist?: number | null;
   mal?: number | null;
   animeFormat?: string | null;
+  /** ISO countries e.g. PH — used for Filipino-first host order */
+  countries?: string[] | null;
+  originalLanguage?: string | null;
+}
+
+function isFilipinoContent(ids: ProviderIdHints): boolean {
+  const lang = (ids.originalLanguage ?? "").toLowerCase();
+  if (lang === "tl" || lang === "fil" || lang === "tgl") return true;
+  return (ids.countries ?? []).some((c) => c.toUpperCase() === "PH");
+}
+
+/** Reorder a general list so preferred ids come first (stable). */
+function preferProviders(
+  list: EmbedProvider[],
+  preferredIds: EmbedProviderId[],
+): EmbedProvider[] {
+  const preferred: EmbedProvider[] = [];
+  const rest: EmbedProvider[] = [];
+  const seen = new Set<EmbedProviderId>();
+  for (const id of preferredIds) {
+    const p = list.find((x) => x.id === id);
+    if (p && !seen.has(p.id)) {
+      preferred.push(p);
+      seen.add(p.id);
+    }
+  }
+  for (const p of list) {
+    if (!seen.has(p.id)) rest.push(p);
+  }
+  return [...preferred, ...rest];
 }
 
 /**
@@ -590,10 +620,13 @@ export function providerCanPlay(
 }
 
 /**
- * Content-type aware provider chain.
- * Movies / series: VidFast → AutoEmbed → …
- * Anime / hentai: Cinezo / DropFile / … first (AniList), then AutoEmbed / VidFast if TMDB
- * Drama: AutoEmbed → VidFast → … then drama hosts
+ * Content-type aware provider chain (user product rules):
+ *
+ * - Movies (non-PH): AutoEmbed → VidFast → VidSrc → VixSrc → …
+ * - Filipino movies: VixSrc → VidSrc → VidFast → 2Embed → AutoEmbed (fast PH loads)
+ * - K-Drama: NontonGo first → DramaPlay → KissKH → Frembed → AutoEmbed → …
+ * - Anime: AutoEmbed first (correct TV tmdb) → VidFast → VidSrc → anime-native
+ * - Other dramas: NontonGo-first drama pack + generals
  */
 export function getProvidersForContentType(
   contentType: string,
@@ -609,16 +642,64 @@ export function getProvidersForContentType(
     const generalSafe = general.filter(
       (p) => !ANIME_BLOCKED_PROVIDER_IDS.has(p.id),
     );
-    // Hentai often only has AniList — native hosts first so we never land on SuperEmbed
+    // AutoEmbed first for accurate TMDB anime TV embeds, then natives for AniList-only
+    chain = preferProviders(generalSafe, [
+      "autoembed",
+      "vidfast",
+      "vidsrc",
+      "vixsrc",
+      "2embed",
+    ]).concat(ANIME_EMBED_PROVIDERS);
+  } else if (contentType === "kdrama") {
+    // NontonGo first (user request) — clean URLs, no ads-query junk
     chain = [
-      ...ANIME_EMBED_PROVIDERS,
-      // TMDB generals only when useful (AutoEmbed / VidFast …)
-      ...generalSafe,
+      ...preferProviders(DRAMA_EMBED_PROVIDERS, [
+        "nontongo",
+        "dramaplay",
+        "kisskh",
+        "frembed",
+      ]),
+      ...preferProviders(general, [
+        "autoembed",
+        "vidfast",
+        "vidsrc",
+        "vixsrc",
+      ]),
     ];
-  } else if (DRAMA_CONTENT_TYPES.has(contentType)) {
-    chain = [...general, ...DRAMA_EMBED_PROVIDERS];
+  } else if (
+    DRAMA_CONTENT_TYPES.has(contentType) ||
+    contentType === "cdrama" ||
+    contentType === "jdrama" ||
+    contentType === "thaidrama"
+  ) {
+    chain = [
+      ...preferProviders(DRAMA_EMBED_PROVIDERS, [
+        "nontongo",
+        "dramaplay",
+        "kisskh",
+        "frembed",
+      ]),
+      ...preferProviders(general, ["autoembed", "vidfast", "vidsrc", "vixsrc"]),
+    ];
+  } else if (mediaType === "movie" && isFilipinoContent(ids)) {
+    // Filipino cinema: VixSrc/VidSrc tend to load PH titles faster/cleaner
+    chain = preferProviders(general, [
+      "vixsrc",
+      "vidsrc",
+      "vidfast",
+      "2embed",
+      "autoembed",
+      "vidlink",
+    ]);
   } else {
-    chain = general;
+    // Default movies + western series: AutoEmbed first
+    chain = preferProviders(general, [
+      "autoembed",
+      "vidfast",
+      "vidsrc",
+      "vixsrc",
+      "2embed",
+    ]);
   }
 
   // Drop providers that cannot produce a URL for this title
@@ -628,19 +709,6 @@ export function getProvidersForContentType(
 
   // Always return something if filter emptied (defensive)
   return playable.length > 0 ? playable : chain.slice(0, 6);
-}
-
-function suppressAdsOnUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    if (!u.searchParams.has("ads")) u.searchParams.set("ads", "0");
-    if (!u.searchParams.has("ad")) u.searchParams.set("ad", "0");
-    if (!u.searchParams.has("noads")) u.searchParams.set("noads", "1");
-    return u.toString();
-  } catch {
-    return url;
-  }
 }
 
 export function buildEmbedUrl(
@@ -653,15 +721,12 @@ export function buildEmbedUrl(
 ): string | null {
   const provider = EMBED_PROVIDERS.find((p) => p.id === providerId);
   if (!provider) return null;
-  if (provider.animeOnly && !provider.movieUrl(tmdbId) && mediaType === "movie") {
-    // anime-only providers without movieUrl still handled via buildAnimeEmbedUrl
-  }
 
   if (mediaType === "movie") {
-    return suppressAdsOnUrl(provider.movieUrl(tmdbId, opts) || null);
+    return provider.movieUrl(tmdbId, opts) || null;
   }
   if (!season || !episode) return null;
-  return suppressAdsOnUrl(provider.tvUrl(tmdbId, season, episode, opts) || null);
+  return provider.tvUrl(tmdbId, season, episode, opts) || null;
 }
 
 /** Build anime-native embed URL (preferred for contentType=anime) */
@@ -679,22 +744,25 @@ export function buildAnimeEmbedUrl(
     dub: ids.dub ?? opts?.dub ?? preferDub(opts, ids),
   };
 
+  // Anime series MUST use TV path — only true AniList MOVIE format uses movie
+  const forceMovie = merged.animeFormat === "MOVIE";
+
   if (provider.animeUrl) {
-    const anime = provider.animeUrl(merged);
-    if (anime) return suppressAdsOnUrl(anime);
+    const anime = provider.animeUrl({
+      ...merged,
+      tmdbMediaType: forceMovie ? "movie" : "tv",
+    });
+    if (anime) return anime;
   }
 
   // Fallback to TMDB paths when anime-native URL unavailable
   if (merged.tmdb) {
-    if (
-      merged.tmdbMediaType === "movie" ||
-      merged.animeFormat === "MOVIE"
-    ) {
-      return suppressAdsOnUrl(provider.movieUrl(merged.tmdb, opts) || null);
+    if (forceMovie) {
+      return provider.movieUrl(merged.tmdb, opts) || null;
     }
     const s = Math.max(1, merged.season ?? 1);
     const e = Math.max(1, merged.episode ?? 1);
-    return suppressAdsOnUrl(provider.tvUrl(merged.tmdb, s, e, opts) || null);
+    return provider.tvUrl(merged.tmdb, s, e, opts) || null;
   }
 
   return null;

@@ -16,17 +16,14 @@ export function contentPathKey(c: Pick<Content, "slug" | "id">): string {
 function isMovieWatch(
   c: Pick<Content, "contentType" | "providerIds" | "animeFormat">,
 ): boolean {
+  // Anime series (Demon Slayer, etc.) must NEVER use the movie path even if a
+  // bad tmdbMediaType="movie" leaked from external links — that plays the wrong film.
+  if (c.contentType === "anime") {
+    return c.animeFormat === "MOVIE";
+  }
   if (c.providerIds?.tmdbMediaType === "movie") return true;
   if (c.providerIds?.tmdbMediaType === "tv") return false;
   if (c.contentType === "movie") return true;
-  // AniList movie / ONA feature films mapped as anime
-  if (
-    c.contentType === "anime" &&
-    (c.animeFormat === "MOVIE" || c.animeFormat === "SPECIAL")
-  ) {
-    // Without tmdbMediaType, default SPECIAL/OVA-style to TV episode path
-    return c.animeFormat === "MOVIE";
-  }
   return false;
 }
 
@@ -35,10 +32,9 @@ function isMovieWatch(
  * Always requests full playback. Trailers use getTrailerHref only.
  *
  * Correctness rules:
- * - Only route to /watch/movie|tv/{tmdbId} when we have an explicit tmdb id
- *   AND a matching media type (or clear movie/tv contentType).
- * - Anime with only AniList/MAL (no tmdb) must stay on slug path so the
- *   VideoPlayer uses anime-native embeds — never a guessed wrong TMDb film.
+ * - Anime ALWAYS uses the slug path so AniList/MAL identity is preserved and
+ *   the player can refuse a mismatched TMDB film (wrong-title bug).
+ * - Live-action only routes to /watch/movie|tv/{tmdbId} with trusted TMDB.
  */
 export function getWatchHref(
   c: Pick<
@@ -53,12 +49,22 @@ export function getWatchHref(
   >,
   opts?: { season?: number; episode?: number },
 ): string {
+  // Anime: always slug — keeps AniList id + forces TV embeds for series
+  if (c.contentType === "anime") {
+    const key = contentPathKey(c);
+    const params = new URLSearchParams();
+    params.set("play", "full");
+    if (c.animeFormat !== "MOVIE") {
+      params.set("season", String(opts?.season ?? 1));
+      params.set("episode", String(opts?.episode ?? 1));
+    }
+    return `/watch/${key}?${params.toString()}`;
+  }
+
   const tmdbId = c.providerIds?.tmdb;
   const mediaType = c.providerIds?.tmdbMediaType;
   const hasTrustedTmdb =
     Boolean(tmdbId && Number.isFinite(tmdbId)) &&
-    // Require explicit media type OR clear non-anime content type so we never
-    // send an anime card to a random live-action TMDb id.
     (mediaType === "movie" ||
       mediaType === "tv" ||
       c.contentType === "movie" ||
@@ -66,10 +72,7 @@ export function getWatchHref(
       c.contentType === "kdrama" ||
       c.contentType === "cdrama" ||
       c.contentType === "jdrama" ||
-      c.contentType === "thaidrama" ||
-      // Anime only when media type is known (set by hydrate / provider)
-      (c.contentType === "anime" &&
-        (mediaType === "movie" || mediaType === "tv")));
+      c.contentType === "thaidrama");
 
   if (hasTrustedTmdb && tmdbId) {
     if (isMovieWatch(c)) {
@@ -86,7 +89,6 @@ export function getWatchHref(
     return `/watch/tv/${tmdbId}/${season}/${episode}`;
   }
 
-  // Slug path: correct title identity; player uses anilist/mal/tmdb after hydrate.
   const key = contentPathKey(c);
   const params = new URLSearchParams();
   params.set("play", "full");

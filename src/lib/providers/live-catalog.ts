@@ -451,9 +451,12 @@ function mapAnilist(m: AnilistMedia): Content | null {
   const fromLinks = extractTmdbFromExternalLinks(m.externalLinks);
   let tmdbId = fromLinks?.id;
   let tmdbMediaType = fromLinks?.mediaType;
-  // Movie-format anime without explicit media type → movie embed path
-  if (tmdbId && !tmdbMediaType) {
-    tmdbMediaType = format === "MOVIE" ? "movie" : "tv";
+  // Anime series must always be TV embeds — never movie (Demon Slayer wrong-film bug).
+  // Only true AniList MOVIE format uses movie path.
+  if (format === "MOVIE") {
+    tmdbMediaType = "movie";
+  } else if (tmdbId) {
+    tmdbMediaType = "tv";
   }
 
   // Adults-only detection beyond AniList `isAdult` (which flags only hentai):

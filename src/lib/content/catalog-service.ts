@@ -693,10 +693,25 @@ export class CatalogService {
    */
   private async ensureTmdbForEmbed(content: Content): Promise<Content> {
     if (content.providerIds?.tmdb && Number.isFinite(content.providerIds.tmdb)) {
+      // Anime series must always be TV embeds — never "movie" (wrong-title bug)
+      if (content.contentType === "anime") {
+        const mediaType =
+          content.animeFormat === "MOVIE" ? ("movie" as const) : ("tv" as const);
+        if (content.providerIds.tmdbMediaType !== mediaType) {
+          return {
+            ...content,
+            providerIds: {
+              ...content.providerIds,
+              tmdbMediaType: mediaType,
+            },
+          };
+        }
+        return content;
+      }
       // Ensure media type is set for correct movie vs TV routing
       if (!content.providerIds.tmdbMediaType) {
         const mediaType =
-          content.contentType === "movie" || content.animeFormat === "MOVIE"
+          content.contentType === "movie"
             ? ("movie" as const)
             : ("tv" as const);
         return {
