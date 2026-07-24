@@ -522,6 +522,15 @@ body::before {
   scrollbar-width: none;
 }
 
+/* Nested scroll panels (episode lists, server menus) — do not chain to page */
+.scroll-contain {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
 .pb-safe {
   padding-bottom: calc(1rem + var(--safe-bottom));
 }

@@ -695,7 +695,14 @@ export function WatchPage({
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-white/10 p-2">
+                <div
+                  className="scroll-contain max-h-72 space-y-1 rounded-xl border border-white/10 p-2"
+                  data-lenis-prevent
+                  data-lenis-prevent-wheel
+                  data-lenis-prevent-touch
+                  onWheel={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                >
                   {(episodes.length > 0
                     ? episodes
                     : Array.from(

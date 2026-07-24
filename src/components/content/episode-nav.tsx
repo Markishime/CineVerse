@@ -124,7 +124,12 @@ export function EpisodeNav({
             </span>
             <SkipForward className="h-4 w-4 rotate-90 transition-transform group-open:rotate-270" />
           </summary>
-          <div className="max-h-64 space-y-0.5 overflow-y-auto border-t border-white/10 p-2">
+          <div
+            className="scroll-contain max-h-64 space-y-0.5 border-t border-white/10 p-2"
+            data-lenis-prevent
+            data-lenis-prevent-wheel
+            data-lenis-prevent-touch
+          >
             {Array.from({ length: totalEpisodesInSeason }, (_, i) => i + 1).map(
               (ep) => (
                 <Link

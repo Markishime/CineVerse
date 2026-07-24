@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -107,7 +107,31 @@ export function VideoPlayer({
     return contentType;
   })();
 
-  const availableProviders = getProvidersForContentType(resolvedContentType, mediaType);
+  const availableProviders = useMemo(
+    () =>
+      getProvidersForContentType(
+        resolvedContentType,
+        mediaType,
+        {
+          tmdb: tmdbId,
+          anilist: anilistId,
+          mal: malId,
+          animeFormat,
+        },
+        Math.max(1, season ?? 1),
+        Math.max(1, episode ?? 1),
+      ),
+    [
+      resolvedContentType,
+      mediaType,
+      tmdbId,
+      anilistId,
+      malId,
+      animeFormat,
+      season,
+      episode,
+    ],
+  );
   const [activeIndex, setActiveIndex] = useState(0);
   const [status, setStatus] = useState<PlayerStatus>("loading");
   const [showMenu, setShowMenu] = useState(false);
@@ -115,6 +139,23 @@ export function VideoPlayer({
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const loadTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const skipLockRef = useRef(false);
+
+  // Reset to first playable provider when the title / id set changes
+  useEffect(() => {
+    setActiveIndex(0);
+    setStatus("loading");
+    setTriedProviders([]);
+    setResolvedUrl(null);
+    setShowMenu(false);
+  }, [tmdbId, anilistId, malId, resolvedContentType, season, episode]);
+
+  // Keep index in range if provider list shrinks
+  useEffect(() => {
+    if (activeIndex >= availableProviders.length && availableProviders.length > 0) {
+      setActiveIndex(0);
+    }
+  }, [availableProviders.length, activeIndex]);
 
   const activeProvider = availableProviders[activeIndex];
 
@@ -262,11 +303,13 @@ export function VideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProvider?.id, isAnime, title, anilistId, animeIds.episode, year]);
 
-  // When static URL is missing (and not resolving), advance
+  // When static URL is missing (and not resolving), advance once
   useEffect(() => {
     if (!activeProvider) return;
     if (activeProvider.needsResolve) return;
     if (staticEmbedUrl) return;
+    if (skipLockRef.current) return;
+    skipLockRef.current = true;
     setTriedProviders((prev) =>
       prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
     );
@@ -274,10 +317,17 @@ export function VideoPlayer({
       const next = prev + 1;
       if (next >= availableProviders.length) {
         onAllFailed?.();
+        setStatus("all_failed");
         return prev;
       }
       return next;
     });
+    setStatus("loading");
+    // release lock after index has applied
+    const t = window.setTimeout(() => {
+      skipLockRef.current = false;
+    }, 50);
+    return () => window.clearTimeout(t);
   }, [
     activeProvider,
     staticEmbedUrl,
@@ -285,11 +335,11 @@ export function VideoPlayer({
     onAllFailed,
   ]);
 
+  // Longer timeout — don't race into SuperEmbed; user can still switch Servers
   useEffect(() => {
-    if (status !== "loading" || !embedUrl) return;
+    if (status !== "loading" || !embedUrl || !activeProvider) return;
 
     loadTimerRef.current = setTimeout(() => {
-      setStatus("error");
       setTriedProviders((prev) =>
         prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
       );
@@ -297,14 +347,13 @@ export function VideoPlayer({
         const next = prev + 1;
         if (next >= availableProviders.length) {
           onAllFailed?.();
+          setStatus("all_failed");
           return prev;
         }
+        setStatus("loading");
         return next;
       });
-      setStatus(() =>
-        activeIndex + 1 >= availableProviders.length ? "all_failed" : "loading",
-      );
-    }, 10_000);
+    }, 18_000);
 
     return () => {
       if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
@@ -313,7 +362,6 @@ export function VideoPlayer({
     status,
     embedUrl,
     activeProvider?.id,
-    activeIndex,
     availableProviders.length,
     onAllFailed,
   ]);
@@ -365,6 +413,11 @@ export function VideoPlayer({
 
   const switchTo = (index: number) => {
     if (index === activeIndex) return;
+    if (loadTimerRef.current) {
+      clearTimeout(loadTimerRef.current);
+      loadTimerRef.current = null;
+    }
+    skipLockRef.current = false;
     setActiveIndex(index);
     setStatus("loading");
     setResolvedUrl(null);
@@ -372,11 +425,20 @@ export function VideoPlayer({
   };
 
   const retry = () => {
+    if (loadTimerRef.current) {
+      clearTimeout(loadTimerRef.current);
+      loadTimerRef.current = null;
+    }
     setResolvedUrl(null);
     setStatus("loading");
   };
 
   const retryAll = () => {
+    if (loadTimerRef.current) {
+      clearTimeout(loadTimerRef.current);
+      loadTimerRef.current = null;
+    }
+    skipLockRef.current = false;
     setActiveIndex(0);
     setStatus("loading");
     setTriedProviders([]);
@@ -398,10 +460,11 @@ export function VideoPlayer({
   })();
 
   return (
-    <div className={cn("relative", className)} data-cineverse-player>
-      <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
+    <div className={cn("relative isolate", className)} data-cineverse-player>
+      {/* Player frame — overflow clips any embed chrome that tries to spill out */}
+      <div className="relative z-0 aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
         {status === "loading" && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90 px-4">
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90 px-4">
             <Loader2 className="h-10 w-10 animate-spin text-[var(--primary)]" />
             <p className="text-sm text-white">
               Loading from{" "}
@@ -413,10 +476,6 @@ export function VideoPlayer({
             <p className="text-xs text-[var(--text-muted)]">
               Provider {activeIndex + 1} of {availableProviders.length}
               {isAnime ? " · anime sources" : ""}
-            </p>
-            <p className="max-w-xs text-center text-[11px] leading-relaxed text-[var(--text-muted)]">
-              If this server fails, use{" "}
-              <span className="text-white/80">Servers</span> to switch.
             </p>
           </div>
         )}
@@ -432,7 +491,7 @@ export function VideoPlayer({
               </p>
               <p className="mt-1 max-w-sm text-sm text-[var(--text-secondary)]">
                 None of the streaming providers could load this title right now.
-                This is usually temporary — try again in a few moments.
+                Try again or pick a server below.
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
@@ -444,10 +503,6 @@ export function VideoPlayer({
                 Retry current
               </Button>
             </div>
-            <p className="mt-2 text-xs text-[var(--text-muted)]">
-              Attempted:{" "}
-              {triedProviders.map((id) => getProviderName(id)).join(", ")}
-            </p>
           </div>
         )}
 
@@ -459,7 +514,6 @@ export function VideoPlayer({
             className="absolute inset-0 h-full w-full border-0"
             allow={EMBED_ALLOW}
             allowFullScreen
-            // No sandbox — required for VidLink / VidSrc / AutoEmbed / anime hosts
             referrerPolicy="strict-origin-when-cross-origin"
             loading="eager"
             onLoad={handleIframeLoad}
@@ -467,18 +521,20 @@ export function VideoPlayer({
             style={{
               opacity: status === "loading" ? 0 : 1,
               WebkitOverflowScrolling: "touch",
+              // Keep iframe from eating the Servers controls outside this box
               pointerEvents: status === "all_failed" ? "none" : "auto",
             }}
           />
         )}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+      {/* Controls always above the iframe stacking context */}
+      <div className="relative z-30 mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          {status === "loaded" && (
+          {status === "loaded" && activeProvider && (
             <Badge tone="primary">
               <MonitorPlay className="mr-1 h-3 w-3" />
-              {activeProvider?.name}
+              {activeProvider.name}
             </Badge>
           )}
           {status === "loading" && activeProvider && (
@@ -504,6 +560,7 @@ export function VideoPlayer({
           <Button
             variant="secondary"
             size="sm"
+            className="relative z-40"
             onClick={() => setShowMenu((v) => !v)}
             aria-expanded={showMenu}
           >
@@ -512,7 +569,11 @@ export function VideoPlayer({
             <ChevronDown className="h-3.5 w-3.5" />
           </Button>
           {showMenu && (
-            <div className="absolute right-0 z-20 mt-1 min-w-[12rem] overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] py-1 shadow-xl">
+            <div
+              className="scroll-contain absolute right-0 z-50 mt-1 max-h-72 min-w-[14rem] rounded-xl border border-white/10 bg-[var(--surface)] py-1 shadow-2xl"
+              data-lenis-prevent
+              data-lenis-prevent-wheel
+            >
               {availableProviders.map((p, i) => {
                 const tried = triedProviders.includes(p.id);
                 const active = i === activeIndex;
@@ -521,7 +582,7 @@ export function VideoPlayer({
                     key={p.id}
                     type="button"
                     className={cn(
-                      "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                      "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors",
                       active
                         ? "bg-[var(--primary)]/20 text-white"
                         : "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",

@@ -220,25 +220,6 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
       }),
   },
   {
-    id: "superembed",
-    name: "SuperEmbed",
-    supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://multiembed.mov/`, {
-        video_id: tmdbId,
-        tmdb: 1,
-        autoplay: opts?.autoplay,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://multiembed.mov/`, {
-        video_id: tmdbId,
-        tmdb: 1,
-        s: season,
-        e: episode,
-        autoplay: opts?.autoplay,
-      }),
-  },
-  {
     id: "smashystream",
     name: "SmashyStream",
     supportsTv: true,
@@ -266,7 +247,35 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
         autoplay: opts?.autoplay,
       }),
   },
+  // SuperEmbed last — multiembed.mov often hijacks UI / false-positive "loaded"
+  // and is never preferred for anime/hentai.
+  {
+    id: "superembed",
+    name: "SuperEmbed",
+    supportsTv: true,
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://multiembed.mov/`, {
+        video_id: tmdbId,
+        tmdb: 1,
+        autoplay: opts?.autoplay,
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://multiembed.mov/`, {
+        video_id: tmdbId,
+        tmdb: 1,
+        s: season,
+        e: episode,
+        autoplay: opts?.autoplay,
+      }),
+  },
 ];
+
+/** Providers excluded from anime / hentai chains (hijack UI or useless without real streams). */
+const ANIME_BLOCKED_PROVIDER_IDS = new Set<EmbedProviderId>([
+  "superembed",
+  "smashystream",
+  "vidphantom",
+]);
 
 /**
  * Anime-only streaming backends.
@@ -512,39 +521,90 @@ const DRAMA_CONTENT_TYPES = new Set([
   "thaidrama",
 ]);
 
+export interface ProviderIdHints {
+  tmdb?: number | null;
+  anilist?: number | null;
+  mal?: number | null;
+  animeFormat?: string | null;
+}
+
+/**
+ * Whether a provider can build a playable URL for the given ids right now.
+ * Avoids auto-skipping into SuperEmbed and dead slots.
+ */
+export function providerCanPlay(
+  provider: EmbedProvider,
+  mediaType: "movie" | "tv",
+  contentType: string,
+  ids: ProviderIdHints,
+  season = 1,
+  episode = 1,
+): boolean {
+  if (contentType === "anime") {
+    if (ANIME_BLOCKED_PROVIDER_IDS.has(provider.id)) return false;
+    const url = buildAnimeEmbedUrl(provider.id, {
+      title: "",
+      anilist: ids.anilist ?? undefined,
+      mal: ids.mal ?? undefined,
+      tmdb: ids.tmdb ?? undefined,
+      tmdbMediaType: mediaType,
+      season,
+      episode,
+      animeFormat: ids.animeFormat ?? undefined,
+    });
+    // needsResolve providers are playable if we have title identity
+    if (provider.needsResolve) {
+      return Boolean(ids.anilist || ids.mal || ids.tmdb);
+    }
+    return Boolean(url);
+  }
+
+  if (!ids.tmdb || !Number.isFinite(ids.tmdb)) return false;
+  if (mediaType === "movie") {
+    return Boolean(provider.movieUrl(ids.tmdb));
+  }
+  return Boolean(provider.tvUrl(ids.tmdb, season, episode));
+}
+
 /**
  * Content-type aware provider chain.
- * Global priority: AutoEmbed → VidFast → other reliable generals, then niche hosts.
- *
- * Movies / series: AutoEmbed → VidFast → VidSrc → VidCore → 2Embed → …
- * Anime: same generals first (when TMDB exists), then Cinezo / ScreenScape / …
- * Drama: same generals first, then DramaPlay / KissKH / …
+ * Movies / series: AutoEmbed → VidFast → …
+ * Anime / hentai: Cinezo / DropFile / … first (AniList), then AutoEmbed / VidFast if TMDB
+ * Drama: AutoEmbed → VidFast → … then drama hosts
  */
 export function getProvidersForContentType(
   contentType: string,
   mediaType: "movie" | "tv" = "tv",
+  ids: ProviderIdHints = {},
+  season = 1,
+  episode = 1,
 ): EmbedProvider[] {
   const general = getProvidersForMediaType(mediaType);
+  let chain: EmbedProvider[];
 
   if (contentType === "anime") {
-    return [
-      // AutoEmbed / VidFast first so TMDB-backed anime plays on the most reliable hosts
-      ...general,
-      // AniList / MAL-native hosts when generals need ids they don't have
+    const generalSafe = general.filter(
+      (p) => !ANIME_BLOCKED_PROVIDER_IDS.has(p.id),
+    );
+    // Hentai often only has AniList — native hosts first so we never land on SuperEmbed
+    chain = [
       ...ANIME_EMBED_PROVIDERS,
+      // TMDB generals only when useful (AutoEmbed / VidFast …)
+      ...generalSafe,
     ];
+  } else if (DRAMA_CONTENT_TYPES.has(contentType)) {
+    chain = [...general, ...DRAMA_EMBED_PROVIDERS];
+  } else {
+    chain = general;
   }
 
-  if (DRAMA_CONTENT_TYPES.has(contentType)) {
-    return [
-      // AutoEmbed / VidFast first for dramas with TMDB ids
-      ...general,
-      // Drama-specific hosts for subtitle / region coverage
-      ...DRAMA_EMBED_PROVIDERS,
-    ];
-  }
+  // Drop providers that cannot produce a URL for this title
+  const playable = chain.filter((p) =>
+    providerCanPlay(p, mediaType, contentType, ids, season, episode),
+  );
 
-  return general;
+  // Always return something if filter emptied (defensive)
+  return playable.length > 0 ? playable : chain.slice(0, 6);
 }
 
 function suppressAdsOnUrl(url: string | null | undefined): string | null {
