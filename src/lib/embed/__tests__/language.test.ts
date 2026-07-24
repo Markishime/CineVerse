@@ -3,6 +3,8 @@ import {
   normalizeLangCode,
   resolveEmbedLanguage,
   languageFromContentType,
+  toStreamHostLanguage,
+  isFilipinoLocale,
 } from "../language";
 
 describe("embed language", () => {
@@ -65,5 +67,20 @@ describe("embed language", () => {
         allowUserOverride: false,
       }),
     ).toBe("ko");
+  });
+
+  it("maps Tagalog to English for free embed hosts", () => {
+    expect(toStreamHostLanguage("tl", ["PH"])).toBe("en");
+    expect(toStreamHostLanguage("fil", ["PH"])).toBe("en");
+    expect(toStreamHostLanguage("ko", ["KR"])).toBe("ko");
+    expect(toStreamHostLanguage("ja", ["JP"])).toBe("ja");
+  });
+
+  it("detects Filipino locale", () => {
+    expect(isFilipinoLocale({ originalLanguage: "tl" })).toBe(true);
+    expect(isFilipinoLocale({ countries: ["PH"] })).toBe(true);
+    expect(isFilipinoLocale({ originalLanguage: "ko", countries: ["KR"] })).toBe(
+      false,
+    );
   });
 });

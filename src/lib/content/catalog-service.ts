@@ -1050,7 +1050,11 @@ export class CatalogService {
       : [];
     const isFilipinoMovie = (c: Content) =>
       c.contentType === "movie" &&
-      (c.language === "tl" || c.countries?.some((cn) => cn === "PH"));
+      (c.language === "tl" ||
+        c.language === "fil" ||
+        c.language === "tgl" ||
+        (c.tags ?? []).some((t) => /filipino|philippine|^ph$/i.test(t)) ||
+        c.countries?.some((cn) => cn.toUpperCase() === "PH"));
     const filipinoMovies = includeMature
       ? uniqueById([...allMovies].filter(isFilipinoMovie).sort(byPop))
       : [];
@@ -1060,6 +1064,8 @@ export class CatalogService {
       c.contentType !== "movie" &&
       c.contentType !== "anime" &&
       (c.language === "tl" ||
+        c.language === "fil" ||
+        c.language === "tgl" ||
         c.countries?.some((cn) => cn.toUpperCase() === "PH"));
     const filipinoSeries = uniqueById(
       [...all].filter(isFilipinoSeries).sort(byPop),

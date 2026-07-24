@@ -21,8 +21,10 @@ import {
 } from "@/lib/embed/providers";
 import { EMBED_ALLOW, withAdSuppressionParams } from "@/lib/embed/ad-shield";
 import {
+  isFilipinoLocale,
   preferDubForLanguage,
   resolveEmbedLanguage,
+  toStreamHostLanguage,
 } from "@/lib/embed/language";
 import { useEmbedAdShield } from "@/hooks/use-embed-ad-shield";
 import { Button } from "@/components/ui/button";
@@ -175,12 +177,11 @@ export function VideoPlayer({
   const activeProvider = availableProviders[activeIndex];
 
   /**
-   * Embed language = content origin (KR→ko, JP→ja, CN→zh, …).
-   * AutoEmbed / VidCore / 2Embed receive this as `lang=`.
-   * User anime-audio pref only applies when they explicitly want a dub
-   * different from the original (e.g. EN dub for anime).
+   * Origin language for UI (KR→ko, JP→ja, PH→tl, …).
+   * Stream hosts get a host-safe code via toStreamHostLanguage (tl→en) so
+   * Filipino titles still play on AutoEmbed / VidFast.
    */
-  const effectiveLanguage = (() => {
+  const originLanguage = (() => {
     const origin = resolveEmbedLanguage({
       originalLanguage,
       contentType: resolvedContentType,
@@ -190,7 +191,6 @@ export function VideoPlayer({
     // Anime only: allow explicit user audio preference (sub ja vs dub en)
     if (isAnime && settings?.animeAudioLanguage) {
       const pref = settings.animeAudioLanguage.toLowerCase();
-      // Keep origin (ja) unless user picked a different audio (en dub, etc.)
       if (pref && pref !== origin) {
         return resolveEmbedLanguage({
           originalLanguage,
@@ -204,6 +204,13 @@ export function VideoPlayer({
 
     return origin;
   })();
+
+  // What we send to AutoEmbed / VidFast / VidSrc as lang=
+  const effectiveLanguage = toStreamHostLanguage(originLanguage, countries);
+  const isFilipino = isFilipinoLocale({
+    originalLanguage: originalLanguage ?? originLanguage,
+    countries,
+  });
 
   const preferDub = preferDubForLanguage(effectiveLanguage);
 
@@ -576,6 +583,9 @@ export function VideoPlayer({
           )}
           <Badge tone="muted">
             Audio {effectiveLanguage.toUpperCase()}
+            {isFilipino && originLanguage !== effectiveLanguage
+              ? ` · PH`
+              : ""}
           </Badge>
         </div>
 

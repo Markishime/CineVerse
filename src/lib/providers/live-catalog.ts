@@ -2373,12 +2373,13 @@ export async function fetchWorldMoviesPage(
   if (sort === "rating") {
     base["vote_count.gte"] = "50";
   }
+  const forceCountry = country?.toUpperCase();
   return fetchTmdbDiscoverWindow({
     path: "/discover/movie",
     baseParams: base,
     page,
     pageSize,
-    map: mapTmdbMovie,
+    map: (r) => mapTmdbMovie(r, forceCountry),
   });
 }
 
@@ -2821,19 +2822,44 @@ export function tmdbLooksAdult(
   return false;
 }
 
-function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
+function mapTmdbMovie(
+  raw: Record<string, unknown>,
+  /** When set (e.g. discover with_origin_country=PH), guarantee country tag */
+  forceCountry?: string,
+): Content | null {
   const id = Number(raw.id);
   const title = String(raw.title ?? raw.name ?? "");
   if (!title || !id) return null;
   const posterPath = raw.poster_path ? String(raw.poster_path) : null;
   const backdropPath = raw.backdrop_path ? String(raw.backdrop_path) : null;
   const release = raw.release_date ? String(raw.release_date) : null;
-  const lang = raw.original_language
+  let lang = raw.original_language
     ? String(raw.original_language)
     : null;
-  const origin = Array.isArray(raw.origin_country)
+  // Normalize Tagalog aliases used by TMDB
+  if (lang === "fil" || lang === "tgl") lang = "tl";
+
+  // Movies: prefer production_countries; TV-style origin_country as fallback
+  const fromProduction = Array.isArray(raw.production_countries)
+    ? (raw.production_countries as Array<{ iso_3166_1?: string }>)
+        .map((c) => c.iso_3166_1)
+        .filter((c): c is string => Boolean(c))
+    : [];
+  const fromOrigin = Array.isArray(raw.origin_country)
     ? (raw.origin_country as string[])
     : [];
+  const countries = Array.from(
+    new Set(
+      [
+        ...fromProduction,
+        ...fromOrigin,
+        ...(forceCountry ? [forceCountry.toUpperCase()] : []),
+        // Tagalog language ⇒ Philippine cinema even when country field missing
+        ...(lang === "tl" ? ["PH"] : []),
+      ].map((c) => c.toUpperCase()),
+    ),
+  );
+
   const genreIds = Array.isArray(raw.genre_ids)
     ? (raw.genre_ids as number[])
     : Array.isArray(raw.genres)
@@ -2853,7 +2879,11 @@ function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
 
   const overview = String(raw.overview ?? "");
   const isAdult = tmdbLooksAdult(title, overview, Boolean(raw.adult));
-  const baseTags = lang === "ja" && genreIds.includes(16) ? ["animation", "jp"] : [];
+  const baseTags: string[] = [];
+  if (lang === "ja" && genreIds.includes(16)) baseTags.push("animation", "jp");
+  if (countries.includes("PH") || lang === "tl") {
+    baseTags.push("filipino", "philippine", "ph");
+  }
 
   return safeParse({
     id: `tmdb_movie_${id}`,
@@ -2874,7 +2904,7 @@ function mapTmdbMovie(raw: Record<string, unknown>): Content | null {
     year: release ? Number(release.slice(0, 4)) : null,
     status: "released",
     language: lang,
-    countries: origin,
+    countries,
     genres,
     runtime: raw.runtime != null ? Number(raw.runtime) : null,
     seasonCount: null,
@@ -3372,7 +3402,7 @@ export async function fetchTmdbMovies(): Promise<Content[]> {
     ...drama,
     ...adventure,
   ]
-    .map(mapTmdbMovie)
+    .map((r) => mapTmdbMovie(r))
     .filter(Boolean) as Content[];
 }
 
@@ -3387,7 +3417,22 @@ export async function fetchTmdbMoviesByCountry(
 ): Promise<Content[]> {
   const cc = country.toUpperCase();
   const adult = includeMature ? "true" : "false";
-  const [popular, top, recent] = await Promise.all([
+  // PH: also pull Tagalog-original titles that sometimes miss origin_country
+  const phLangPages =
+    cc === "PH"
+      ? tmdbFetchManyPages(
+          "/discover/movie",
+          {
+            with_original_language: "tl",
+            sort_by: "popularity.desc",
+            include_adult: adult,
+            language: "en-US",
+          },
+          4,
+        )
+      : Promise.resolve([] as Record<string, unknown>[]);
+
+  const [popular, top, recent, phLang] = await Promise.all([
     tmdbFetchManyPages(
       "/discover/movie",
       {
@@ -3421,9 +3466,10 @@ export async function fetchTmdbMoviesByCountry(
       },
       4,
     ),
+    phLangPages,
   ]);
-  return [...popular, ...top, ...recent]
-    .map(mapTmdbMovie)
+  return [...popular, ...top, ...recent, ...phLang]
+    .map((r) => mapTmdbMovie(r, cc))
     .map((c) =>
       c
         ? {

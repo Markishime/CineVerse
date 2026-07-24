@@ -125,3 +125,52 @@ export function preferDubForLanguage(lang: string): boolean {
   const l = lang.toLowerCase();
   return l === "en" || l.startsWith("en-");
 }
+
+/**
+ * Languages free embed hosts (AutoEmbed, VidFast, VidSrc, …) almost never
+ * carry as a stream track. Requesting them as `lang=` often returns empty /
+ * broken players — fall back to English so the movie still plays.
+ *
+ * Tagalog / Filipino (tl, fil) is the main case for PH cinema.
+ */
+const STREAM_HOST_UNSUPPORTED = new Set([
+  "tl",
+  "fil",
+  "tgl",
+  "ceb", // Cebuano
+  "ilo",
+  "war",
+  "hil",
+]);
+
+/**
+ * Language code to send to AutoEmbed / VidFast / etc.
+ * Origin language is preserved when the host can use it; otherwise `en`.
+ */
+export function toStreamHostLanguage(
+  originLang: string,
+  countries?: string[] | null,
+): string {
+  const lang = normalizeLangCode(originLang) || originLang.toLowerCase();
+  if (STREAM_HOST_UNSUPPORTED.has(lang)) return "en";
+
+  // PH origin with non-English original that hosts still usually stream in EN
+  const isPh = (countries ?? []).some((c) => c.toUpperCase() === "PH");
+  if (isPh && lang !== "en" && STREAM_HOST_UNSUPPORTED.has(lang)) {
+    return "en";
+  }
+  // Many Filipino films are catalogued as original_language=en already
+  if (isPh && !lang) return "en";
+
+  return lang || "en";
+}
+
+/** True when content is Filipino / Philippine cinema. */
+export function isFilipinoLocale(opts: {
+  originalLanguage?: string | null;
+  countries?: string[] | null;
+}): boolean {
+  const lang = normalizeLangCode(opts.originalLanguage);
+  if (lang === "tl" || lang === "fil" || lang === "tgl") return true;
+  return (opts.countries ?? []).some((c) => c.toUpperCase() === "PH");
+}
