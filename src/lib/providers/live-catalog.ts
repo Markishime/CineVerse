@@ -28,6 +28,48 @@ const TMDB = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
 /**
+ * TMDB genre id → display name (movie + tv combined). Discover/search endpoints
+ * return genre_ids only, so without this map genres leaked as "Genre 10759".
+ * Real names also power classification (animation detection, drama genre hints).
+ */
+const TMDB_GENRE_NAMES: Record<number, string> = {
+  // Movie genres
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Science Fiction",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+  // TV genres
+  10759: "Action & Adventure",
+  10762: "Kids",
+  10763: "News",
+  10764: "Reality",
+  10765: "Sci-Fi & Fantasy",
+  10766: "Soap",
+  10767: "Talk",
+  10768: "War & Politics",
+};
+
+/** Map a TMDB genre id to a real name (falls back to a readable "Genre N"). */
+function tmdbGenreName(gid: number): string {
+  return TMDB_GENRE_NAMES[gid] ?? `Genre ${gid}`;
+}
+
+/**
  * Host-level circuit breaker so a flaky/unreachable provider (e.g. TVMaze
  * connect timeouts) does not fan out into dozens of 10s stalls and flood
  * the console. After `CIRCUIT_FAILS` consecutive failures we skip that host
@@ -498,13 +540,24 @@ export async function resolveTmdbIdForTitle(opts: {
  * Verify an existing TMDB id still matches the catalog title.
  * Clears wrong links (Demon Slayer → TallBoyz style mismatches).
  */
-export async function verifyTmdbMatchesTitle(opts: {
+/**
+ * Verify a TMDB id really is the given title.
+ * - "match": the TMDB entry's name matches (id is trustworthy for playback).
+ * - "no_match": name does not match (wrong show linked — drop the id).
+ * - "match_not_anime": name matches but requireAnimation failed (e.g. an
+ *   English cartoon like The Spectacular Spider-Man that AniList lists as
+ *   "anime"). The id is still CORRECT and playable — the caller should keep it
+ *   and reclassify to a live-action type instead of discarding it.
+ */
+export type TmdbVerifyResult = "match" | "no_match" | "match_not_anime";
+
+export async function verifyTmdbMatchesTitleDetailed(opts: {
   tmdbId: number;
   mediaType: "movie" | "tv";
   title: string;
   alternateTitles?: string[];
   requireAnimation?: boolean;
-}): Promise<boolean> {
+}): Promise<TmdbVerifyResult> {
   const path =
     opts.mediaType === "movie"
       ? `/movie/${opts.tmdbId}`
@@ -518,7 +571,7 @@ export async function verifyTmdbMatchesTitle(opts: {
     original_language?: string;
     genres?: Array<{ id?: number }>;
   }>(path);
-  if (!detail?.id) return false;
+  if (!detail?.id) return "no_match";
 
   const names = [
     detail.title,
@@ -532,16 +585,29 @@ export async function verifyTmdbMatchesTitle(opts: {
       titlesLikelySame(opts.title, n, opts.alternateTitles ?? []),
     )
   ) {
-    return false;
+    return "no_match";
   }
 
   if (opts.requireAnimation) {
     const genreIds = (detail.genres ?? []).map((g) => Number(g.id));
-    if (!genreIds.includes(16)) return false;
     const lang = (detail.original_language ?? "").toLowerCase();
-    if (lang && !["ja", "zh", "ko"].includes(lang)) return false;
+    // Name matches but it's not Japanese/CJK animation → correct title, wrong
+    // bucket. Signal so the caller keeps the id and reclassifies to series.
+    if (!genreIds.includes(16)) return "match_not_anime";
+    if (lang && !["ja", "zh", "ko"].includes(lang)) return "match_not_anime";
   }
-  return true;
+  return "match";
+}
+
+/** Back-compat boolean wrapper — true only for a full "match". */
+export async function verifyTmdbMatchesTitle(opts: {
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  alternateTitles?: string[];
+  requireAnimation?: boolean;
+}): Promise<boolean> {
+  return (await verifyTmdbMatchesTitleDetailed(opts)) === "match";
 }
 
 function mapAnilist(m: AnilistMedia): Content | null {
@@ -3002,7 +3068,7 @@ function mapTmdbMovie(
     genreIds.length > 0
       ? genreIds.map((gid) => ({
           id: String(gid),
-          name: gid === 16 ? "Animation" : `Genre ${gid}`,
+          name: tmdbGenreName(gid),
         }))
       : [];
 
@@ -3168,7 +3234,7 @@ function mapTmdbTv(
     genreIds.length > 0
       ? genreIds.map((gid) => ({
           id: String(gid),
-          name: gid === 16 ? "Animation" : `Genre ${gid}`,
+          name: tmdbGenreName(gid),
         }))
       : [];
 

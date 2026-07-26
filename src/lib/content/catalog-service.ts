@@ -40,7 +40,7 @@ import {
   fetchJikanEpisodes,
   resolveJikanMalId,
   resolveTmdbIdForTitle,
-  verifyTmdbMatchesTitle,
+  verifyTmdbMatchesTitleDetailed,
   fetchWorldMoviesPage,
   fetchWorldSeriesPage,
   fetchWorldDramaPage,
@@ -721,14 +721,14 @@ export class CatalogService {
       }
 
       try {
-        const ok = await verifyTmdbMatchesTitle({
+        const verdict = await verifyTmdbMatchesTitleDetailed({
           tmdbId: content.providerIds.tmdb,
           mediaType,
           title: content.title,
           alternateTitles: alts,
           requireAnimation: isAnime,
         });
-        if (ok) {
+        if (verdict === "match") {
           if (content.providerIds.tmdbMediaType === mediaType) return content;
           return {
             ...content,
@@ -738,7 +738,27 @@ export class CatalogService {
             },
           };
         }
-        // Mismatch (e.g. wrong show linked) — clear and re-resolve below
+        if (verdict === "match_not_anime") {
+          // Correct title, but it isn't Japanese/CJK animation — e.g. an
+          // English cartoon (The Spectacular Spider-Man) that AniList lists as
+          // "anime". KEEP the verified TMDB id and reclassify to live-action so
+          // the general embed players (AutoEmbed/VidFast/…) can play it.
+          const reMedia: "movie" | "tv" =
+            mediaType === "movie" ? "movie" : "tv";
+          console.warn(
+            `[TMDB] Reclassifying "${content.title}" anime→${reMedia === "movie" ? "movie" : "series"} (id ${content.providerIds.tmdb} verified, not CJK animation)`,
+          );
+          return {
+            ...content,
+            contentType: reMedia === "movie" ? "movie" : "series",
+            animeFormat: undefined,
+            providerIds: {
+              ...content.providerIds,
+              tmdbMediaType: reMedia,
+            },
+          };
+        }
+        // no_match: wrong show linked — clear and re-resolve below
         console.warn(
           `[TMDB] Dropping mismatched id ${content.providerIds.tmdb} for "${content.title}"`,
         );
