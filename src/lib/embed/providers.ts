@@ -298,12 +298,25 @@ const ANIME_BLOCKED_PROVIDER_IDS = new Set<EmbedProviderId>([
 ]);
 
 /**
+ * Anime backends verified DEAD (do not add to chains — they only burn a 10s
+ * load-timeout slot before the player falls through to a working host):
+ * - dropfile: dropfile.cc no longer resolves (connection refused)
+ * - ezvidapi: ezvidapi.com returns HTTP 502 on anime/tv/movie embeds
+ * Kept defined for reference, but excluded from the live anime chain.
+ */
+const DEAD_ANIME_PROVIDER_IDS = new Set<EmbedProviderId>([
+  "dropfile",
+  "ezvidapi",
+]);
+
+/**
  * Anime-only streaming backends.
  * Prefer AniList/MAL metadata pairing over a single hard-coded host.
  *
- * Order prioritizes fast, currently-reachable hosts first:
- * MegaPlay (the server kissanime.com.cv uses) → Cinezo (AniList) → ScreenScape
- * (TMDB) → AnimePahe (async) → DropFile → ezvidapi → SupaPlay
+ * Definition order is not the play order — getProvidersForContentType builds
+ * the live chain: instant hosts first (MegaPlay → Cinezo → ScreenScape → TMDB
+ * generals), resolve-based hosts (AnimePahe/SupaPlay) last, and dead hosts
+ * (DropFile/ezvidapi, see DEAD_ANIME_PROVIDER_IDS) dropped entirely.
  */
 export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
   {
@@ -658,19 +671,30 @@ export function getProvidersForContentType(
     const generalSafe = general.filter(
       (p) => !ANIME_BLOCKED_PROVIDER_IDS.has(p.id),
     );
-    // MegaPlay first (the server kissanime.com.cv uses) — direct MAL/AniList
-    // embeds, English sub & dub. Then remaining anime natives, then TMDB
-    // generals as a last resort for titles MegaPlay can't key.
-    const animeNatives = preferProviders(ANIME_EMBED_PROVIDERS, ["megaplay"]);
-    chain = animeNatives.concat(
-      preferProviders(generalSafe, [
+    // Every AniList/MAL title gets a working server: MegaPlay (MAL *or* AniList,
+    // no resolve) → Cinezo (AniList) → ScreenScape (TMDB) → TMDB generals →
+    // resolve-based hosts LAST (AnimePahe/SupaPlay often fail to resolve, so
+    // they must not sit ahead of instant hosts). Dead hosts (dropfile/ezvidapi)
+    // are dropped so they don't burn a 10s timeout slot each.
+    const liveNatives = ANIME_EMBED_PROVIDERS.filter(
+      (p) => !DEAD_ANIME_PROVIDER_IDS.has(p.id),
+    );
+    const instantNatives = preferProviders(
+      liveNatives.filter((p) => !p.needsResolve),
+      ["megaplay", "cinezo", "screenscape"],
+    );
+    const resolveNatives = liveNatives.filter((p) => p.needsResolve);
+    chain = [
+      ...instantNatives,
+      ...preferProviders(generalSafe, [
         "autoembed",
         "vidfast",
         "vidsrc",
         "vixsrc",
         "2embed",
       ]),
-    );
+      ...resolveNatives,
+    ];
   } else if (
     contentType === "kdrama" ||
     DRAMA_CONTENT_TYPES.has(contentType) ||
