@@ -20,12 +20,14 @@ interface WatchMovieClientProps {
 /** Detect Asian-drama type for regional movies (Korean, Chinese, Japanese, Thai). */
 function detectDramaType(
   originalLanguage: string | undefined,
+  originCountries?: string[] | undefined,
 ): "kdrama" | "cdrama" | "jdrama" | "thaidrama" | null {
   const lang = (originalLanguage ?? "").toLowerCase();
-  if (lang === "ko") return "kdrama";
-  if (lang === "zh" || lang === "cn") return "cdrama";
-  if (lang === "ja") return "jdrama";
-  if (lang === "th") return "thaidrama";
+  const countries = (originCountries ?? []).map((c) => c.toUpperCase());
+  if (lang === "ko" || countries.includes("KR")) return "kdrama";
+  if (lang === "zh" || lang === "cn" || countries.some((c) => ["CN", "TW", "HK"].includes(c))) return "cdrama";
+  if (lang === "ja" || countries.includes("JP")) return "jdrama";
+  if (lang === "th" || countries.includes("TH")) return "thaidrama";
   return null;
 }
 
@@ -43,9 +45,10 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
     (movie.genres ?? []).some((g) => g.id === 16) &&
     movie.original_language === "ja";
   // Detect regional drama movies so they use drama-specific embed providers
+  const origCountries = movie.production_countries?.map((c) => c.iso_3166_1) ?? undefined;
   const dramaType = isAnimeMovie
     ? null
-    : detectDramaType(movie.original_language);
+    : detectDramaType(movie.original_language, origCountries);
   const contentType = isAnimeMovie ? "anime" : dramaType ?? "movie";
   const year = movie.release_date
     ? Number(movie.release_date.slice(0, 4))

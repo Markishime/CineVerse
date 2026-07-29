@@ -702,12 +702,14 @@ export function getProvidersForContentType(
     contentType === "jdrama" ||
     contentType === "thaidrama"
   ) {
-    // Proven TMDB generals lead (they actually resolve) with the drama-specific
-    // hosts as best-effort supplements after. KissKH is intentionally NOT
-    // ordered here — it emits no TMDB URL (needs its own episode id) and is
-    // filtered out; DramaPlay/NontonGo/Frembed formats are unreliable, so they
-    // must never sit ahead of the working generals.
+    // Drama-specialized providers lead — NontonGo is proven for Asian content
+    // (Korean, Chinese, Japanese, Thai). General TMDB aggregators serve as
+    // fallback since they primarily carry Western/English content and often
+    // don't have Asian titles. KissKH is intentionally not ordered — it emits
+    // no TMDB URL (needs its own episode id) and is filtered out by
+    // providerCanPlay.
     chain = [
+      ...preferProviders(DRAMA_EMBED_PROVIDERS, ["nontongo", "dramaplay"]),
       ...preferProviders(general, [
         "autoembed",
         "vidfast",
@@ -715,7 +717,6 @@ export function getProvidersForContentType(
         "vixsrc",
         "2embed",
       ]),
-      ...preferProviders(DRAMA_EMBED_PROVIDERS, ["nontongo", "dramaplay"]),
     ];
   } else if (isFilipinoContent(ids)) {
     // Filipino cinema: no PH-specialist embed host exists, so lead with the
