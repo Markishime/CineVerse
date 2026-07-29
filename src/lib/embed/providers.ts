@@ -310,6 +310,20 @@ const DEAD_ANIME_PROVIDER_IDS = new Set<EmbedProviderId>([
 ]);
 
 /**
+ * Drama backends verified DEAD / unreliable — excluded from drama & Filipino
+ * chains so they don't occupy a fallback slot (each dead host adds a 10s load
+ * timeout before the player advances):
+ * - dramaplay: dramaplay.one returns Cloudflare SSL error 525
+ * - frembed:   frembed.asia only 302-redirects (French-geo, no stable embed)
+ * NontonGo (nontongo.win) stays — it returns 200 and carries Asian dramas.
+ * KissKH is handled separately (emits no TMDB URL, filtered by providerCanPlay).
+ */
+const DEAD_DRAMA_PROVIDER_IDS = new Set<EmbedProviderId>([
+  "dramaplay",
+  "frembed",
+]);
+
+/**
  * Anime-only streaming backends.
  * Prefer AniList/MAL metadata pairing over a single hard-coded host.
  *
@@ -665,6 +679,11 @@ export function getProvidersForContentType(
   episode = 1,
 ): EmbedProvider[] {
   const general = getProvidersForMediaType(mediaType);
+  // Drama hosts minus verified-dead ones (DramaPlay SSL 525, Frembed redirect)
+  // so they never occupy a fallback slot that stalls playback for 10s.
+  const liveDrama = DRAMA_EMBED_PROVIDERS.filter(
+    (p) => !DEAD_DRAMA_PROVIDER_IDS.has(p.id),
+  );
   let chain: EmbedProvider[];
 
   if (contentType === "anime") {
@@ -702,22 +721,38 @@ export function getProvidersForContentType(
     contentType === "jdrama" ||
     contentType === "thaidrama"
   ) {
-    // Drama-specialized providers lead — NontonGo is proven for Asian content
-    // (Korean, Chinese, Japanese, Thai). General TMDB aggregators serve as
-    // fallback since they primarily carry Western/English content and often
-    // don't have Asian titles. KissKH is intentionally not ordered — it emits
-    // no TMDB URL (needs its own episode id) and is filtered out by
-    // providerCanPlay.
-    chain = [
-      ...preferProviders(DRAMA_EMBED_PROVIDERS, ["nontongo", "dramaplay"]),
-      ...preferProviders(general, [
-        "autoembed",
-        "vidfast",
-        "vidsrc",
-        "vixsrc",
-        "2embed",
-      ]),
-    ];
+    // MOVIE vs SERIES split matters here. The drama-specialized hosts
+    // (NontonGo/DramaPlay) are episode/series-oriented and thin on theatrical
+    // films — Korean/Asian MOVIES (e.g. Parasite) must lead with the broad
+    // TMDB aggregators that actually carry films, with drama hosts only as
+    // supplements. For SERIES/dramas, NontonGo leads (proven for Asian shows).
+    // KissKH is never ordered — it emits no TMDB URL (needs its own episode
+    // id) and is filtered out by providerCanPlay. Dead hosts (DramaPlay=SSL
+    // 525, Frembed=French-geo redirect) are not placed ahead of live ones.
+    if (mediaType === "movie") {
+      chain = [
+        ...preferProviders(general, [
+          "autoembed",
+          "vidfast",
+          "vidsrc",
+          "vixsrc",
+          "2embed",
+          "vidlink",
+        ]),
+        ...preferProviders(liveDrama, ["nontongo"]),
+      ];
+    } else {
+      chain = [
+        ...preferProviders(liveDrama, ["nontongo"]),
+        ...preferProviders(general, [
+          "autoembed",
+          "vidfast",
+          "vidsrc",
+          "vixsrc",
+          "2embed",
+        ]),
+      ];
+    }
   } else if (isFilipinoContent(ids)) {
     // Filipino cinema: no PH-specialist embed host exists, so lead with the
     // broadest currently-live TMDB aggregators (best odds a PH title resolves
@@ -734,7 +769,7 @@ export function getProvidersForContentType(
         "2embed",
         "vidlink",
       ]),
-      ...preferProviders(DRAMA_EMBED_PROVIDERS, ["nontongo", "dramaplay"]),
+      ...preferProviders(liveDrama, ["nontongo"]),
     ];
   } else {
     // Default movies + western series: AutoEmbed first
