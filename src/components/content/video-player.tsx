@@ -163,6 +163,16 @@ export function VideoPlayer({
   const [triedProviders, setTriedProviders] = useState<EmbedProviderId[]>([]);
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const loadTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  // Post-load verification: the iframe's onLoad fires when the provider's HTML
+  // shell loads, NOT when a real video stream resolves inside it. Many hosts
+  // load a shell for a title they don't actually have (common for regional
+  // catalogs like Korean films), leaving a black player. We wait for a positive
+  // playback signal after onLoad; if none arrives we auto-advance.
+  const verifyTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const [confirmedPlaying, setConfirmedPlaying] = useState(false);
+  const confirmedRef = useRef(false);
+  // When the user manually picks a server we must NOT auto-advance away from it.
+  const userPickedRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const skipLockRef = useRef(false);
 
@@ -173,7 +183,18 @@ export function VideoPlayer({
     setTriedProviders([]);
     setResolvedUrl(null);
     setShowMenu(false);
+    setConfirmedPlaying(false);
+    confirmedRef.current = false;
+    userPickedRef.current = false;
   }, [tmdbId, anilistId, malId, resolvedContentType, season, episode]);
+
+  // Clear any pending load/verify timers on unmount.
+  useEffect(() => {
+    return () => {
+      if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
+      if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
+    };
+  }, []);
 
   // Keep index in range if provider list shrinks
   useEffect(() => {
@@ -414,72 +435,156 @@ export function VideoPlayer({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showMenu]);
 
-  // Detect "Content not found" messages from embed provider iframes.
-  // Some providers postMessage when the title isn't in their catalog.
+  const clearTimers = useCallback(() => {
+    if (loadTimerRef.current) {
+      clearTimeout(loadTimerRef.current);
+      loadTimerRef.current = null;
+    }
+    if (verifyTimerRef.current) {
+      clearTimeout(verifyTimerRef.current);
+      verifyTimerRef.current = null;
+    }
+  }, []);
+
+  /** Advance to the next provider, or land on the no-source terminal state. */
+  const advanceToNextProvider = useCallback(() => {
+    clearTimers();
+    // Each new provider must re-prove itself with a fresh stream signal.
+    confirmedRef.current = false;
+    setConfirmedPlaying(false);
+    const current = availableProviders[activeIndex];
+    if (current) {
+      setTriedProviders((prev) =>
+        prev.includes(current.id) ? prev : [...prev, current.id],
+      );
+    }
+    setActiveIndex((prev) => {
+      const next = prev + 1;
+      if (next >= availableProviders.length) {
+        onAllFailed?.();
+        setStatus("all_failed");
+        return prev;
+      }
+      setStatus("loading");
+      return next;
+    });
+  }, [activeIndex, availableProviders, onAllFailed, clearTimers]);
+
+  // Listen for postMessages from provider iframes:
+  //  - POSITIVE playback signals confirm a real stream (cancels auto-advance).
+  //  - Catalog-miss / error signals trigger an immediate advance.
+  // Runs whenever a provider is active (not only after "loaded") so a fast
+  // "not found" during loading also advances.
   useEffect(() => {
-    if (status !== "loaded" || !activeProvider) return;
+    if (!activeProvider) return;
     function handleMessage(e: MessageEvent) {
+      const data = e.data;
       const raw =
-        typeof e.data === "string"
-          ? e.data
-          : typeof e.data?.type === "string"
-            ? e.data.type
-            : "";
+        typeof data === "string"
+          ? data
+          : typeof data?.type === "string"
+            ? data.type
+            : typeof data?.event === "string"
+              ? data.event
+              : "";
       const msg = raw.toLowerCase();
+      if (!msg) return;
+
+      // Positive evidence the provider actually RESOLVED this title's stream.
+      // Verified against live hosts: AutoEmbed emits {"type":"PLAYER_TITLE",...}
+      // only when the movie resolves (a title it lacks never sends it, only ad
+      // chatter). Also honor real HTML5 media events some players forward.
+      if (
+        msg.includes("player_title") ||
+        msg.includes("playertitle") ||
+        msg.includes("timeupdate") ||
+        msg.includes("playing") ||
+        msg.includes("loadedmetadata") ||
+        msg.includes("canplay") ||
+        msg.includes("mediaplay") ||
+        msg === "play" ||
+        msg === "duration"
+      ) {
+        confirmedRef.current = true;
+        setConfirmedPlaying(true);
+        clearTimers();
+        setStatus("loaded");
+        return;
+      }
+
+      // Catalog-miss / hard errors — advance now.
       if (
         msg.includes("content not found") ||
         msg.includes("not available") ||
         msg.includes("no results") ||
-        (msg.includes("404") && msg.includes("content"))
+        msg.includes("no source") ||
+        msg.includes("no sources") ||
+        msg.includes("nosource") ||
+        msg.includes("not found") ||
+        (msg.includes("404") && msg.includes("content")) ||
+        msg.includes("mediaerror") ||
+        msg.includes("fatal")
       ) {
-        handleIframeError();
+        advanceToNextProvider();
       }
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [status, activeProvider?.id]);
+  }, [activeProvider?.id, advanceToNextProvider, clearTimers]);
 
   const handleIframeLoad = useCallback(() => {
     if (loadTimerRef.current) {
       clearTimeout(loadTimerRef.current);
       loadTimerRef.current = null;
     }
+    // Shell loaded. This does NOT mean the title's stream resolved — hosts load
+    // an identical shell (plus ads) for titles they don't actually have, which
+    // is what left Korean movies on a black "loaded" screen. Verified on live
+    // hosts: a provider that truly has the title emits a play/PLAYER_TITLE
+    // postMessage within a few seconds; an empty shell only emits ad chatter.
     setStatus("loaded");
+    onProviderLoad?.(activeProvider.id);
     setTriedProviders((prev) =>
       prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
     );
-    onProviderLoad?.(activeProvider.id);
-  }, [activeProvider?.id, onProviderLoad]);
+
+    // Verification window: if no positive playback signal arrives, move on to
+    // the next provider (one of them may carry the title). Working providers
+    // confirm well within this window, so this won't skip a real stream.
+    // Skip auto-advance entirely when the user manually chose this server.
+    if (userPickedRef.current) return;
+    if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
+    verifyTimerRef.current = setTimeout(() => {
+      if (confirmedRef.current) return; // real stream confirmed — stay
+      const isLast = activeIndex + 1 >= availableProviders.length;
+      if (!isLast) {
+        advanceToNextProvider();
+      } else {
+        // Tried everything, nothing confirmed a stream → honest terminal state.
+        onAllFailed?.();
+        setStatus("all_failed");
+      }
+    }, 9_000);
+  }, [
+    activeProvider?.id,
+    onProviderLoad,
+    activeIndex,
+    availableProviders.length,
+    advanceToNextProvider,
+    onAllFailed,
+  ]);
 
   const handleIframeError = () => {
-    if (loadTimerRef.current) {
-      clearTimeout(loadTimerRef.current);
-      loadTimerRef.current = null;
-    }
-    setStatus("error");
-    setTriedProviders((prev) =>
-      prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
-    );
-    setActiveIndex((prev) => {
-      const next = prev + 1;
-      if (next >= availableProviders.length) {
-        onAllFailed?.();
-        return prev;
-      }
-      return next;
-    });
-    setStatus(() =>
-      activeIndex + 1 >= availableProviders.length ? "all_failed" : "loading",
-    );
+    advanceToNextProvider();
   };
 
   const switchTo = (index: number) => {
     if (index === activeIndex) return;
-    if (loadTimerRef.current) {
-      clearTimeout(loadTimerRef.current);
-      loadTimerRef.current = null;
-    }
+    clearTimers();
     skipLockRef.current = false;
+    userPickedRef.current = true; // respect the manual choice — no auto-advance
+    confirmedRef.current = false;
+    setConfirmedPlaying(false);
     setActiveIndex(index);
     setStatus("loading");
     setResolvedUrl(null);
@@ -487,20 +592,20 @@ export function VideoPlayer({
   };
 
   const retry = () => {
-    if (loadTimerRef.current) {
-      clearTimeout(loadTimerRef.current);
-      loadTimerRef.current = null;
-    }
+    clearTimers();
+    userPickedRef.current = true;
+    confirmedRef.current = false;
+    setConfirmedPlaying(false);
     setResolvedUrl(null);
     setStatus("loading");
   };
 
   const retryAll = () => {
-    if (loadTimerRef.current) {
-      clearTimeout(loadTimerRef.current);
-      loadTimerRef.current = null;
-    }
+    clearTimers();
     skipLockRef.current = false;
+    userPickedRef.current = false; // resume automatic verification/advance
+    confirmedRef.current = false;
+    setConfirmedPlaying(false);
     setActiveIndex(0);
     setStatus("loading");
     setTriedProviders([]);
@@ -539,11 +644,13 @@ export function VideoPlayer({
             </div>
             <div>
               <p className="font-display text-lg font-semibold text-white">
-                All servers unavailable
+                No playable source found
               </p>
               <p className="mt-1 max-w-sm text-sm text-[var(--text-secondary)]">
-                None of the streaming providers could load this title right now.
-                Try again or pick a server below.
+                We tried every streaming provider and none had a working stream
+                for this title right now. This can happen with newer or regional
+                releases. Try again later, or pick a server below to retry
+                manually.
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
@@ -584,9 +691,14 @@ export function VideoPlayer({
       <div className="relative z-30 mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {status === "loaded" && activeProvider && (
-            <Badge tone="primary">
-              <MonitorPlay className="mr-1 h-3 w-3" />
+            <Badge tone={confirmedPlaying ? "primary" : "muted"}>
+              {confirmedPlaying ? (
+                <MonitorPlay className="mr-1 h-3 w-3" />
+              ) : (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              )}
               {activeProvider.name}
+              {confirmedPlaying ? "" : " · verifying"}
             </Badge>
           )}
           {status === "loading" && activeProvider && (
