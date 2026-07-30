@@ -11,6 +11,8 @@
 
 export type EmbedProviderId =
   // General — movies / series
+  | "videasy"
+  | "onetwoonemovies"
   | "vidlink"
   | "vidfast"
   | "autoembed"
@@ -147,6 +149,30 @@ function embedLangParam(language?: string): string | undefined {
  * Filipino movies: use TMDB numeric id + no Tagalog lang flag (see embedLangParam).
  */
 export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
+  {
+    id: "videasy",
+    name: "Videasy",
+    supportsTv: true,
+    // player.videasy.net — broad international catalog incl. Korean/Asian films.
+    // Verified in a real browser to stream Parasite, Oldboy, Memories of Murder
+    // (real .m3u8 manifests) where AutoEmbed/VidFast served only ad shells.
+    // Movie: https://player.videasy.net/movie/{tmdbId}
+    // TV:    https://player.videasy.net/tv/{tmdbId}/{season}/{episode}
+    movieUrl: (tmdbId) => `https://player.videasy.net/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://player.videasy.net/tv/${tmdbId}/${season}/${episode}`,
+  },
+  {
+    id: "onetwoonemovies",
+    name: "111Movies",
+    supportsTv: true,
+    // 111movies.com — verified in a real browser to actually PLAY Korean films
+    // (video element advanced) for Parasite/Oldboy/Memories of Murder. Accepts
+    // TMDB ids. Movie: /movie/{id}  TV: /tv/{id}/{season}/{episode}
+    movieUrl: (tmdbId) => `https://111movies.com/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://111movies.com/tv/${tmdbId}/${season}/${episode}`,
+  },
   {
     id: "autoembed",
     name: "AutoEmbed",
@@ -730,8 +756,14 @@ export function getProvidersForContentType(
     // id) and is filtered out by providerCanPlay. Dead hosts (DramaPlay=SSL
     // 525, Frembed=French-geo redirect) are not placed ahead of live ones.
     if (mediaType === "movie") {
+      // Videasy + 111Movies lead — the only hosts verified in a real browser to
+      // actually stream Korean/Asian films (Parasite, Oldboy, Memories of
+      // Murder). AutoEmbed/VidFast served ad shells with no stream for these, so
+      // they trail as fallback. NontonGo (drama host) after that.
       chain = [
         ...preferProviders(general, [
+          "videasy",
+          "onetwoonemovies",
           "autoembed",
           "vidfast",
           "vidsrc",
@@ -742,9 +774,12 @@ export function getProvidersForContentType(
         ...preferProviders(liveDrama, ["nontongo"]),
       ];
     } else {
+      // Korean/Asian SERIES: drama host first, then the verified aggregators.
       chain = [
         ...preferProviders(liveDrama, ["nontongo"]),
         ...preferProviders(general, [
+          "videasy",
+          "onetwoonemovies",
           "autoembed",
           "vidfast",
           "vidsrc",
@@ -761,6 +796,8 @@ export function getProvidersForContentType(
     // a TMDB id, so it can't lead here — see the kisskh provider.)
     chain = [
       ...preferProviders(general, [
+        "videasy",
+        "onetwoonemovies",
         "vidfast",
         "vidsrc",
         "vidcore",
@@ -772,8 +809,11 @@ export function getProvidersForContentType(
       ...preferProviders(liveDrama, ["nontongo"]),
     ];
   } else {
-    // Default movies + western series: AutoEmbed first
+    // Default movies + western series: Videasy + 111Movies lead (verified real
+    // streams / broad catalog), then AutoEmbed and the rest.
     chain = preferProviders(general, [
+      "videasy",
+      "onetwoonemovies",
       "autoembed",
       "vidfast",
       "vidsrc",
