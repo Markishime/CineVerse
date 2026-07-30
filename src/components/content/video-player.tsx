@@ -537,42 +537,21 @@ export function VideoPlayer({
       clearTimeout(loadTimerRef.current);
       loadTimerRef.current = null;
     }
-    // Shell loaded. This does NOT mean the title's stream resolved — hosts load
-    // an identical shell (plus ads) for titles they don't actually have, which
-    // is what left Korean movies on a black "loaded" screen. Verified on live
-    // hosts: a provider that truly has the title emits a play/PLAYER_TITLE
-    // postMessage within a few seconds; an empty shell only emits ad chatter.
+    // Shell loaded — keep it. IMPORTANT: absence of a postMessage does NOT mean
+    // failure. Many hosts that play perfectly are cross-origin and never
+    // postMessage the parent (verified: Videasy/111Movies stream Korean films
+    // via a <video> with no parent signal). Auto-advancing on "no positive
+    // signal" was skipping these working providers and landing on a blank host.
+    // We now advance ONLY on an explicit negative signal (handled in the
+    // message listener) or a total no-load (the load-timeout effect). A play/
+    // PLAYER_TITLE signal, when a host does send one, upgrades the badge to the
+    // confirmed-playing state but is not required to keep the provider.
     setStatus("loaded");
     onProviderLoad?.(activeProvider.id);
     setTriedProviders((prev) =>
       prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
     );
-
-    // Verification window: if no positive playback signal arrives, move on to
-    // the next provider (one of them may carry the title). Working providers
-    // confirm well within this window, so this won't skip a real stream.
-    // Skip auto-advance entirely when the user manually chose this server.
-    if (userPickedRef.current) return;
-    if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
-    verifyTimerRef.current = setTimeout(() => {
-      if (confirmedRef.current) return; // real stream confirmed — stay
-      const isLast = activeIndex + 1 >= availableProviders.length;
-      if (!isLast) {
-        advanceToNextProvider();
-      } else {
-        // Tried everything, nothing confirmed a stream → honest terminal state.
-        onAllFailed?.();
-        setStatus("all_failed");
-      }
-    }, 9_000);
-  }, [
-    activeProvider?.id,
-    onProviderLoad,
-    activeIndex,
-    availableProviders.length,
-    advanceToNextProvider,
-    onAllFailed,
-  ]);
+  }, [activeProvider?.id, onProviderLoad]);
 
   const handleIframeError = () => {
     advanceToNextProvider();
@@ -691,14 +670,13 @@ export function VideoPlayer({
       <div className="relative z-30 mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {status === "loaded" && activeProvider && (
-            <Badge tone={confirmedPlaying ? "primary" : "muted"}>
+            <Badge tone="primary">
               {confirmedPlaying ? (
-                <MonitorPlay className="mr-1 h-3 w-3" />
+                <Check className="mr-1 h-3 w-3" />
               ) : (
-                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                <MonitorPlay className="mr-1 h-3 w-3" />
               )}
               {activeProvider.name}
-              {confirmedPlaying ? "" : " · verifying"}
             </Badge>
           )}
           {status === "loading" && activeProvider && (
