@@ -41,8 +41,8 @@ function ensureAuth(): typeof authInstance {
   initAttempted = true;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getApps, initializeApp, cert, applicationDefault } =
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require("firebase-admin/app") as {
         getApps: () => unknown[];
         initializeApp: (cfg?: unknown) => unknown;

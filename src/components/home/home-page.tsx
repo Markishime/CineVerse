@@ -40,11 +40,11 @@ export function HomePage() {
   const { data, isError, refetch, isFetching } = useQuery({
     queryKey: ["home", mature, region],
     queryFn: () => fetchHome(region, mature),
-    staleTime: 15_000,
+    staleTime: 60_000,
     // Seed is already on screen — one soft retry is enough.
     retry: 1,
     retryDelay: 600,
-    refetchInterval: 60_000,
+    refetchInterval: 5 * 60_000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchIntervalInBackground: false,
@@ -77,7 +77,7 @@ export function HomePage() {
         <div className="hero-vignette relative z-10">
           <HeroCarousel
             items={carouselItems}
-            liveLabel="Popular & trending today"
+            liveLabel={home.catalogStatus === "live" ? "Popular & trending today" : "Discover your next watch"}
           />
         </div>
       </div>
@@ -90,21 +90,22 @@ export function HomePage() {
 
       <motion.div
         id="home-catalog"
-        className="landing-row-enter relative z-10 mx-auto max-w-7xl space-y-12 px-4 pb-28 pt-2 sm:space-y-14 sm:px-6 will-change-transform"
-        initial={reduce ? false : "hidden"}
+        className="landing-row-enter relative z-10 mx-auto max-w-7xl space-y-12 px-4 pb-28 pt-2 sm:space-y-14 sm:px-6"
+        initial={false}
         whileInView={reduce ? undefined : "visible"}
         viewport={{ once: true, amount: 0.02, margin: "0px 0px -40px 0px" }}
         variants={reduce ? undefined : landingSection}
         style={{ backfaceVisibility: "hidden" }}
       >
-        {isError && (
+        {(isError || home.catalogStatus === "fallback") && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--gold)]/25 bg-[var(--gold)]/10 px-4 py-3">
             <p className="text-sm text-[var(--text-secondary)]">
-              Live catalog is slow right now — showing offline picks.{" "}
+              Showing saved picks. Live availability may be limited.{" "}
               {isFetching ? "Refreshing…" : null}
             </p>
             <button
               type="button"
+              disabled={isFetching}
               onClick={() => void refetch()}
               className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white hover:bg-white/15"
             >
@@ -122,7 +123,17 @@ export function HomePage() {
           showRank
         />
 
-        {/* ── Popular (day-trending when available) ── */}
+        <nav aria-label="Browse catalogs" className="flex flex-wrap gap-2">
+          {[["Movies", "/movies"], ["Series", "/series"], ["Anime", "/anime"], ["K-dramas", "/kdrama"], ["J-dramas", "/jdrama"], ["C-dramas", "/cdrama"], ["Thai dramas", "/thaidrama"]].map(([label, href]) => (
+            <Link key={href} href={href} className="rounded-full border border-white/15 px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-[var(--primary)]">{label}</Link>
+          ))}
+        </nav>
+        <ContentRow title="Latest movies" subtitle="Newest released films in the catalog" items={home.latestMovies ?? []} wide />
+        <ContentRow title="Latest series" subtitle="Recently premiered series" items={home.latestSeries ?? []} />
+        <ContentRow title="Latest anime" subtitle="Recent anime releases and premieres" items={home.latestAnime ?? []} />
+        <ContentRow title="Latest dramas" subtitle="Recent K, J, C, Thai and Filipino premieres" items={home.latestDramas ?? []} />
+
+        {/* Popularity is separate from release date. */}
         <ContentRow
           title="Popular movies today"
           subtitle="Trending & popular right now"
@@ -145,28 +156,6 @@ export function HomePage() {
           items={home.popularDramas ?? []}
         />
 
-        {/* ── All catalogs (broader popularity lists) ── */}
-        <ContentRow
-          title="All movies"
-          subtitle="Full popular movie catalog"
-          items={home.allMovies ?? home.popularMovies}
-          wide
-        />
-        <ContentRow
-          title="All series"
-          subtitle="Full popular series catalog"
-          items={home.allSeries ?? home.popularSeries}
-        />
-        <ContentRow
-          title="All anime"
-          subtitle="Full popular anime catalog"
-          items={home.allAnime ?? home.airingAnime}
-        />
-        <ContentRow
-          title="All dramas"
-          subtitle="K · J · C · Thai · Filipino dramas"
-          items={home.allDramas ?? home.popularDramas ?? []}
-        />
         {(home.animeMovies?.length ?? 0) > 0 && (
           <ContentRow
             title="Anime movies"
@@ -213,12 +202,6 @@ export function HomePage() {
         </div>
 
         {/* ── More picks ── */}
-        <ContentRow
-          title="New releases"
-          subtitle="Recent & recent years"
-          items={home.newReleases}
-          wide
-        />
         <ContentRow
           title="Top rated"
           subtitle="Highest scores across the catalog"

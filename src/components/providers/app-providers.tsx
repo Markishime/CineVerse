@@ -5,7 +5,6 @@ import { LazyMotion, domAnimation, MotionConfig } from "framer-motion";
 import { useState, type ReactNode } from "react";
 import { AuthProvider } from "./auth-provider";
 import { PerformanceProvider } from "./performance-provider";
-import { SmoothScrollProvider } from "./smooth-scroll-provider";
 import { AnalyticsProvider } from "./analytics-provider";
 
 export function AppProviders({ children }: { children: ReactNode }) {
@@ -33,7 +32,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
             */}
             <LazyMotion features={domAnimation} strict={false}>
               <MotionConfig reducedMotion="user">
-                <SmoothScrollProvider>{children}</SmoothScrollProvider>
+                {children}
               </MotionConfig>
             </LazyMotion>
           </PerformanceProvider>

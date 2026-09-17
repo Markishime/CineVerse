@@ -10,7 +10,6 @@ export default function KoreanMoviesPage() {
     <CatalogPage
       type="movie"
       country="KR"
-      matureOnly
       title="Korean Movies"
       subtitle="Discover Korean cinema — from blockbusters to indie gems"
     />

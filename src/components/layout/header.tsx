@@ -47,9 +47,6 @@ const baseNav: NavItem[] = [
     href: "/movies",
     label: "Movies",
     icon: Film,
-    // Country movie catalogs are restricted — the dropdown appears only for
-    // the allowlisted email; otherwise Movies is a plain link.
-    matureChildren: true,
     children: [
       { href: "/movies", label: "All Movies" },
       { href: "/movies/korean", label: "Korean Movies" },
@@ -121,6 +118,9 @@ function NavDropdown({
       className="relative"
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
+      onFocus={handleEnter}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) onLeave(); }}
+      onKeyDown={(event) => { if (event.key === "Escape") onLeave(); }}
     >
       <Link
         href={item.href}
@@ -131,14 +131,6 @@ function NavDropdown({
             : "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
         )}
         aria-current={active ? "page" : undefined}
-        onClick={(e) => {
-          // Allow direct navigation to parent href
-          if (!isOpen) return;
-          // If dropdown is open, prevent default and let the user click a child
-          if (dropdownRef.current?.contains(document.activeElement)) {
-            e.preventDefault();
-          }
-        }}
       >
         {item.label}
         <ChevronDown
@@ -220,10 +212,12 @@ export function Header() {
   }, []);
 
   // Close mobile menu on route change
-  useEffect(() => {
+  const [previousPath, setPreviousPath] = useState(pathname);
+  if (previousPath !== pathname) {
+    setPreviousPath(pathname);
     setOpen(false);
     setOpenDropdown(null);
-  }, [pathname]);
+  }
 
   const closeMenu = () => setOpen(false);
   const solid = scrolled || !isHome || open;

@@ -65,7 +65,7 @@ function toEmbedMode(
     return "archive_embed";
   }
   if (
-    source.manifestPath?.endsWith(".m3u8") ||
+    source.manifestPath?.split(/[?#]/)[0].endsWith(".m3u8") ||
     source.playbackAssetId?.includes(".m3u8")
   ) {
     return "cineverse_hls";
@@ -416,6 +416,7 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
       sourceType: chosen.sourceType,
       mode: mode === "archive_embed" ? "cineverse_mp4" : mode,
       signedUrl,
+      subtitles: chosen.subtitles,
       expiresAt,
       downloadUrl: download?.url,
       downloadLabel: download?.label,

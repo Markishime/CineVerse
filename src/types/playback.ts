@@ -1,3 +1,4 @@
+import { SubtitleTrackSchema } from "@/lib/playback/subtitles";
 /**
  * Legal streaming source-of-truth types.
  * TMDB is metadata only — never a streaming source.
@@ -120,6 +121,7 @@ export const EpisodeDocumentSchema = z.object({
 export type EpisodeDocument = z.infer<typeof EpisodeDocumentSchema>;
 
 export const PlaybackSourceDocumentSchema = z.object({
+  subtitles: z.array(SubtitleTrackSchema).optional(),
   id: z.string().min(1),
   titleId: z.string().min(1),
   /** Required for series/anime/kdrama full episodes — never reuse one URL for all eps */
@@ -174,6 +176,7 @@ export type PlaybackSourceDocument = z.infer<
 
 /** What the signed-in client may use to render the in-app player */
 export const ResolvedPlaybackSchema = z.object({
+  subtitles: z.array(SubtitleTrackSchema).optional(),
   playable: z.boolean(),
   contentKind: ContentKindSchema.optional(),
   sourceType: SourceTypeSchema.optional(),

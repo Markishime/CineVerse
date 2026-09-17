@@ -47,12 +47,17 @@ export function PinGateModal({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
+  const resetKey = `${open}-${mode}`;
+  const [previousKey, setPreviousKey] = useState(resetKey);
+  if (previousKey !== resetKey) {
+    setPreviousKey(resetKey);
     setPin("");
     setPin2("");
     setCurrentPin("");
     setError(null);
+  }
+  useEffect(() => {
+    if (!open) return;
     const t = window.setTimeout(() => inputRef.current?.focus(), 50);
     return () => window.clearTimeout(t);
   }, [open, mode]);

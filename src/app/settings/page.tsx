@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
@@ -23,18 +23,20 @@ export default function SettingsPage() {
     useAuthStore();
   const queryClient = useQueryClient();
   const [signingOut, setSigningOut] = useState(false);
-  const [displayName, setDisplayName] = useState("");
-  const [username, setUsername] = useState("");
-  const [bio, setBio] = useState("");
-  const [animePref, setAnimePref] = useState<AnimeTitlePreference>("english");
-  const [animeAudioLang, setAnimeAudioLang] = useState("ja");
-  const [kdramaAudioLang, setKdramaAudioLang] = useState("ko");
-  const [generalAudioLang, setGeneralAudioLang] = useState("en");
+  const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
+  const [username, setUsername] = useState(profile?.username ?? "");
+  const [bio, setBio] = useState(profile?.bio ?? "");
+  const [animePref, setAnimePref] = useState<AnimeTitlePreference>(settings?.animeTitlePreference ?? "english");
+  const [animeAudioLang, setAnimeAudioLang] = useState(settings?.animeAudioLanguage ?? "ja");
+  const [kdramaAudioLang, setKdramaAudioLang] = useState(settings?.kdramaAudioLanguage ?? "ko");
+  const [generalAudioLang, setGeneralAudioLang] = useState(settings?.generalAudioLanguage ?? "en");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const [previousData, setPreviousData] = useState({ profile, settings });
+  if (previousData.profile !== profile || previousData.settings !== settings) {
+    setPreviousData({ profile, settings });
     if (profile) {
       setDisplayName(profile.displayName ?? "");
       setUsername(profile.username ?? "");
@@ -46,7 +48,7 @@ export default function SettingsPage() {
       setKdramaAudioLang(settings.kdramaAudioLanguage ?? "ko");
       setGeneralAudioLang(settings.generalAudioLanguage ?? "en");
     }
-  }, [profile, settings]);
+  }
 
   if (!user) {
     return (

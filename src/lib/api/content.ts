@@ -1,3 +1,4 @@
+import type { SubtitleTrack } from "@/lib/playback/subtitles";
 import type {
   Content,
   Credit,
@@ -17,6 +18,11 @@ export interface Paginated<T> {
 }
 
 export interface HomePayload {
+  catalogStatus?: "live" | "fallback";
+  latestMovies?: Content[];
+  latestSeries?: Content[];
+  latestAnime?: Content[];
+  latestDramas?: Content[];
   featured: Content | null;
   featuredCarousel?: Content[];
   /** ISO timestamp when featured pool was built (for live hero refresh) */
@@ -84,15 +90,7 @@ export function fetchHome(region?: string, mature?: boolean) {
   })}`;
   // Allow time for live day-trending (server budgets ~12s). Seed is already
   // on screen via placeholderData, so a longer wait upgrades the hero correctly.
-  return Promise.race([
-    apiFetch<HomePayload>(path, { auth: false }),
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("Home catalog timed out — try again")),
-        14_000,
-      ),
-    ),
-  ]);
+  return apiFetch<HomePayload>(path, { auth: false, signal: AbortSignal.timeout(14_000) });
 }
 
 export function fetchMovies(params: {
@@ -298,6 +296,7 @@ export function fetchPlaybackEligibility(id: string, region?: string) {
     legalFull?: {
       type: "archive" | "youtube" | "hls" | "mp4" | "vimeo";
       embedUrl: string;
+      subtitles?: SubtitleTrack[];
       label: string;
       sourceType?: string;
       attributionText?: string;

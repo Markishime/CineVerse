@@ -1,4 +1,5 @@
 "use client";
+import { usePerformanceStore } from "@/stores/performance-store";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -6,7 +7,7 @@ import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import YouTube, { type YouTubeEvent, type YouTubeProps } from "react-youtube";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion, useMotionValue } from "framer-motion";
 import {
   Bookmark,
   ChevronDown,
@@ -139,10 +140,13 @@ function HeroTrailerBg({
   const [failedAll, setFailedAll] = useState(false);
 
   // Reset attempt chain when slide / keys change
-  useEffect(() => {
+  const queueKey = keyQueue.join("|");
+  const [previousQueue, setPreviousQueue] = useState(queueKey);
+  if (previousQueue !== queueKey) {
+    setPreviousQueue(queueKey);
     setKeyIndex(0);
     setFailedAll(false);
-  }, [keyQueue.join("|")]);
+  }
 
   const activeKey =
     !failedAll && keyQueue[keyIndex] ? keyQueue[keyIndex]! : null;
@@ -157,8 +161,10 @@ function HeroTrailerBg({
   const destroyedRef = useRef(false);
   const shouldPlayRef = useRef(shouldPlay);
   const soundOnRef = useRef(soundOn);
-  shouldPlayRef.current = shouldPlay;
-  soundOnRef.current = soundOn;
+  useEffect(() => {
+    shouldPlayRef.current = shouldPlay;
+    soundOnRef.current = soundOn;
+  }, [shouldPlay, soundOn]);
 
   // Mount / unmount player with hard silence on every leave
   useEffect(() => {
@@ -463,6 +469,7 @@ export function HeroCarousel({
   liveLabel?: string;
 }) {
   const reduceMotion = useReducedMotion() ?? false;
+  const effective = usePerformanceStore((s) => s.effective);
 
   // Client hydration: primary trailer + alternate keys for each slide
   const [hydratedTrailers, setHydratedTrailers] = useState<
@@ -569,13 +576,13 @@ export function HeroCarousel({
 
   const [soundOn, setSoundOn] = useState(false);
   const [soundHint, setSoundHint] = useState(true);
-  const [progress, setProgress] = useState(0);
+  const progress = useMotionValue(0);
   const [heroInView, setHeroInView] = useState(true);
   const [docVisible, setDocVisible] = useState(true);
   const sectionRef = useRef<HTMLElement | null>(null);
   const activePlayerRef = useRef<YtPlayer | null>(null);
 
-  const playbackAllowed = heroInView && docVisible;
+  const playbackAllowed = heroInView && docVisible && !reduceMotion && effective === "cinematic";
 
   // Pause / mute when hero leaves the viewport (scroll down)
   useEffect(() => {
@@ -654,8 +661,8 @@ export function HeroCarousel({
       indexRef.current = next;
     }
     setIndex(next);
-    setProgress(0);
-  }, [emblaApi]);
+    progress.set(0);
+  }, [emblaApi, progress]);
 
   useEffect(() => {
     if (!emblaApi) return;
@@ -704,18 +711,18 @@ export function HeroCarousel({
   }, [emblaApi, soundOn, playbackAllowed]);
 
   useEffect(() => {
-    if (reduceMotion || slides.length < 2) return;
-    setProgress(0);
+    if (!playbackAllowed || reduceMotion || slides.length < 2) return;
+    progress.set(0);
     const start = performance.now();
     let raf = 0;
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / autoplayDelay);
-      setProgress(t);
+      progress.set(t);
       if (t < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [index, autoplayDelay, reduceMotion, slides.length]);
+  }, [index, autoplayDelay, reduceMotion, slides.length, playbackAllowed, progress]);
 
   const registerActivePlayer = useCallback((player: YtPlayer | null) => {
     activePlayerRef.current = player;
@@ -841,7 +848,7 @@ export function HeroCarousel({
                           liveLabel={liveLabel}
                           soundOn={soundOn}
                           isActive
-                          animated
+                          animated={false}
                         />
                       </AnimatePresence>
                     )
@@ -868,9 +875,9 @@ export function HeroCarousel({
           className="pointer-events-none absolute inset-x-0 top-0 z-30 h-[2px] bg-white/5"
           aria-hidden
         >
-          <div
+          <motion.div
             className="h-full origin-left bg-[var(--primary-light)]"
-            style={{ transform: `scaleX(${progress})` }}
+            style={{ scaleX: progress }}
           />
         </div>
       )}
@@ -944,10 +951,10 @@ export function HeroCarousel({
               )}
             >
               {i === index && (
-                <span
-                  className="absolute inset-y-0 left-0 rounded-full bg-[var(--primary-light)]"
+                <motion.span
+                  className="absolute inset-0 origin-left rounded-full bg-[var(--primary-light)]"
                   style={{
-                    width: reduceMotion ? "100%" : `${progress * 100}%`,
+                    scaleX: reduceMotion ? 1 : progress,
                   }}
                 />
               )}

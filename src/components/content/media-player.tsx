@@ -15,6 +15,7 @@ import { DownloadButton } from "./download-button";
 export type WatchAvailability = "watch_now" | "trailer_only" | "unavailable";
 
 export interface LegalFullSource {
+  subtitles?: import("@/lib/playback/subtitles").SubtitleTrack[];
   type: "archive" | "youtube" | "hls" | "mp4" | "vimeo" | "cloudflare";
   embedUrl: string;
   label: string;
@@ -201,10 +202,11 @@ function MediaPlayerInner({
               allowFullScreen
               referrerPolicy="strict-origin-when-cross-origin"
             />
-          ) : legalFull.type === "hls" ||
+          ) : legalFull.type === "mp4" || legalFull.type === "hls" ||
             legalFull.embedUrl.includes(".m3u8") ? (
             <HlsPlayer
               src={legalFull.embedUrl}
+              subtitles={legalFull.subtitles}
               autoPlay
               onProgress={onProgress}
               onComplete={onComplete}

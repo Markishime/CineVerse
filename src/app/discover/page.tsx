@@ -12,7 +12,7 @@ import { Chip } from "@/components/ui/chip";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
-import { isMatureEnabledClient } from "@/lib/user/local-profile";
+import { useDeviceMature } from "@/hooks/use-device-mature";
 import { getDeviceRegion } from "@/lib/user/region";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +46,9 @@ const TYPES = [
   { id: "series", label: "Series" },
   { id: "anime", label: "Anime" },
   { id: "kdrama", label: "K-Drama" },
+  { id: "jdrama", label: "J-Drama" },
+  { id: "cdrama", label: "C-Drama" },
+  { id: "thaidrama", label: "Thai Drama" },
 ] as const;
 
 function DiscoverInner() {
@@ -59,20 +62,20 @@ function DiscoverInner() {
   const page = Math.max(1, Number(sp.get("page") ?? "1") || 1);
   const settings = useAuthStore((s) => s.settings);
   const user = useAuthStore((s) => s.user);
-  const [deviceMature, setDeviceMature] = useState(false);
+  const deviceMature = useDeviceMature(user?.uid);
   const [searchDraft, setSearchDraft] = useState(q);
   const [genreDraft, setGenreDraft] = useState(genre);
   const [yearDraft, setYearDraft] = useState(year);
 
-  useEffect(() => {
-    setDeviceMature(isMatureEnabledClient(user?.uid));
-  }, [user?.uid, settings?.matureContent]);
 
-  useEffect(() => {
+  const filterKey = JSON.stringify([q, genre, year]);
+  const [previousFilters, setPreviousFilters] = useState(filterKey);
+  if (previousFilters !== filterKey) {
+    setPreviousFilters(filterKey);
     setSearchDraft(q);
     setGenreDraft(genre);
     setYearDraft(year);
-  }, [q, genre, year]);
+  }
 
   const mature = Boolean(settings?.matureContent) || deviceMature;
 

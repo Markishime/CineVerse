@@ -2,6 +2,9 @@
 
 /* CineVerse — Celestial Noir design tokens (WCAG-friendly dark UI) */
 :root {
+  --font-inter: "Segoe UI";
+  --font-sora: "Segoe UI";
+  --font-instrument: Georgia;
   --background: #05060a;
   --background-secondary: #080b12;
   --surface: #111827;

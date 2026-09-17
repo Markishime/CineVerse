@@ -28,7 +28,7 @@ export function SmoothScrollProvider({ children }: { children: ReactNode }) {
   const reducedMotion = usePerformanceStore((s) => s.reducedMotion);
 
   useEffect(() => {
-    if (reducedMotion || effective === "performance") return;
+    if (reducedMotion || effective !== "cinematic") return;
     if (typeof window === "undefined") return;
 
     let lenis: CineverseLenis | null = null;

@@ -16,7 +16,7 @@ interface PerformanceState {
 }
 
 export const usePerformanceStore = create<PerformanceState>((set) => ({
-  effective: "cinematic",
+  effective: "balanced",
   webglSupported: true,
   reducedMotion: false,
   setEffective: (effective) => set({ effective }),
@@ -43,6 +43,7 @@ export function isLowEndDevice(): boolean {
   if (nav.hardwareConcurrency != null && nav.hardwareConcurrency <= 4) {
     return true;
   }
+  if (nav.connection?.saveData) return true;
   const et = nav.connection?.effectiveType;
   if (et === "slow-2g" || et === "2g") return true;
   return false;

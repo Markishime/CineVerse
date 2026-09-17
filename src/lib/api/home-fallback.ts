@@ -1,3 +1,4 @@
+import { latestRows } from "@/lib/content/latest";
 /**
  * Instant home payload from seed — used when live providers hang/fail.
  * Safe for both server (API route) and client (placeholderData).
@@ -230,6 +231,8 @@ export function seedHomePayload(): HomePayload {
     thaiSeries: withPosters(thaiSeries.slice(0, 48)),
     filipinoMovies: [],
     filipinoSeries: withPosters(filipinoDramas.slice(0, 48)),
+    catalogStatus: "fallback",
+    ...latestRows(safe),
     newReleases,
     comingSoon: [],
     topRated: withPosters(

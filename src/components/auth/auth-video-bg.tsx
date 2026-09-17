@@ -97,7 +97,7 @@ export function AuthVideoBackground() {
           exit={{ opacity: 0 }}
           transition={{ duration: 1.15, ease: [0.16, 1, 0.3, 1] }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <motion.img
             src={active.image}
             alt=""

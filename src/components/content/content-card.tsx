@@ -89,7 +89,6 @@ export function ContentCard({
       className={cn(
         // GPU-only hover (transform): keeps homepage rows at 60fps.
         "group relative flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)]",
-        "will-change-transform",
         "hover:border-white/18 hover:shadow-[0_14px_40px_-18px_rgba(0,0,0,0.8)]",
         "focus-within:border-[var(--primary)]/40 focus-within:ring-2 focus-within:ring-[var(--ring)]",
         wide ? "min-w-[220px] sm:min-w-[280px]" : "min-w-[140px] w-[140px] sm:w-[160px]",
@@ -98,6 +97,7 @@ export function ContentCard({
       )}
     >
       <Link
+        prefetch={false}
         href={watchHref}
         className={cn(
           "relative w-full overflow-hidden bg-[var(--background-secondary)] focus-visible:outline-none",

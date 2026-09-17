@@ -157,6 +157,7 @@ export function VideoPlayer({
       episode,
     ],
   );
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [status, setStatus] = useState<PlayerStatus>("loading");
   const [showMenu, setShowMenu] = useState(false);
@@ -478,6 +479,7 @@ export function VideoPlayer({
   useEffect(() => {
     if (!activeProvider) return;
     function handleMessage(e: MessageEvent) {
+      if (!embedUrl || e.source !== iframeRef.current?.contentWindow || e.origin !== new URL(embedUrl).origin) return;
       const data = e.data;
       const raw =
         typeof data === "string"
@@ -495,15 +497,10 @@ export function VideoPlayer({
       // only when the movie resolves (a title it lacks never sends it, only ad
       // chatter). Also honor real HTML5 media events some players forward.
       if (
-        msg.includes("player_title") ||
-        msg.includes("playertitle") ||
         msg.includes("timeupdate") ||
         msg.includes("playing") ||
-        msg.includes("loadedmetadata") ||
-        msg.includes("canplay") ||
         msg.includes("mediaplay") ||
-        msg === "play" ||
-        msg === "duration"
+        msg === "play"
       ) {
         confirmedRef.current = true;
         setConfirmedPlaying(true);
@@ -530,7 +527,7 @@ export function VideoPlayer({
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [activeProvider?.id, advanceToNextProvider, clearTimers]);
+  }, [activeProvider, embedUrl, advanceToNextProvider, clearTimers]);
 
   const handleIframeLoad = useCallback(() => {
     if (loadTimerRef.current) {
@@ -551,7 +548,7 @@ export function VideoPlayer({
     setTriedProviders((prev) =>
       prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
     );
-  }, [activeProvider?.id, onProviderLoad]);
+  }, [activeProvider, onProviderLoad]);
 
   const handleIframeError = () => {
     advanceToNextProvider();
@@ -646,6 +643,7 @@ export function VideoPlayer({
 
         {iframeSrc && (
           <iframe
+            ref={iframeRef}
             key={`${activeProvider?.id}-${tmdbId}-${anilistId}-${season}-${episode}-${iframeSrc}`}
             title={title}
             src={iframeSrc}
@@ -665,6 +663,8 @@ export function VideoPlayer({
           />
         )}
       </div>
+
+      <p className="mt-2 text-xs text-[var(--text-muted)]">Subtitles are available in the player’s CC menu when supplied by the source. External players may show ads. If playback does not start, choose another server.</p>
 
       {/* Controls always above the iframe stacking context */}
       <div className="relative z-30 mt-3 flex flex-wrap items-center justify-between gap-2">

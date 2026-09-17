@@ -28,8 +28,7 @@ export function ReviewsSection({ contentId }: { contentId: string }) {
   const [live, setLive] = useState(false);
 
   useEffect(() => {
-    setLive(true);
-    return subscribeReviews(contentId, setReviews);
+    return subscribeReviews(contentId, (items) => { setReviews(items); setLive(true); });
   }, [contentId]);
 
   const myReview = user

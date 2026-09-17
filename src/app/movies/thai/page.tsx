@@ -10,7 +10,6 @@ export default function ThaiMoviesPage() {
     <CatalogPage
       type="movie"
       country="TH"
-      matureOnly
       title="Thai Movies"
       subtitle="Discover Thai cinema — action, horror, and comedy"
     />

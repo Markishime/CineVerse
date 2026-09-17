@@ -3,48 +3,13 @@
 import useEmblaCarousel from "embla-carousel-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
-import { useRef, useState, useEffect, useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 import type { Content } from "@/types/content";
 import { ContentCard } from "./content-card";
 import { Button } from "@/components/ui/button";
 import { inViewOnce, rowEnter } from "@/lib/motion";
 import { filterPublicCatalog } from "@/lib/content/mature";
 import { ensureContentPoster } from "@/lib/content/posters";
-
-function LazyRender({
-  children,
-  className,
-  rootMargin = "400px 0px",
-}: {
-  children: ReactNode;
-  className?: string;
-  rootMargin?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          io.disconnect();
-        }
-      },
-      { rootMargin, threshold: 0 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [rootMargin]);
-
-  return (
-    <div ref={ref} className={className}>
-      {visible ? children : <div className="h-48" />}
-    </div>
-  );
-}
 
 export function ContentRow({
   title,
@@ -87,7 +52,7 @@ export function ContentRow({
   if (!uniqueItems.length) return null;
 
   return (
-    <LazyRender className={className}>
+    <div className={className} style={{ contentVisibility: "auto", containIntrinsicSize: wide ? "auto 260px" : "auto 360px" }}>
       <ContentRowInner
         title={title}
         subtitle={subtitle}
@@ -98,7 +63,7 @@ export function ContentRow({
         emblaRef={emblaRef}
         emblaApi={emblaApi}
       />
-    </LazyRender>
+    </div>
   );
 }
 
@@ -123,8 +88,8 @@ function ContentRowInner({
 }) {
   return (
     <motion.section
-      className="relative space-y-3 will-change-transform"
-      initial={reduce ? false : rowEnter.initial}
+      className="relative space-y-3"
+      initial={false}
       whileInView={reduce ? undefined : rowEnter.animate}
       viewport={inViewOnce}
       transition={rowEnter.transition}

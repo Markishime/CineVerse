@@ -641,7 +641,7 @@ function mapAnilist(m: AnilistMedia): Content | null {
 
   // Extract TMDb ID from externalLinks (e.g. "https://www.themoviedb.org/tv/1429" → 1429)
   const fromLinks = extractTmdbFromExternalLinks(m.externalLinks);
-  let tmdbId = fromLinks?.id;
+  const tmdbId = fromLinks?.id;
   let tmdbMediaType = fromLinks?.mediaType;
   // Anime series must always be TV embeds — never movie (Demon Slayer wrong-film bug).
   // Only true AniList MOVIE format uses movie path.
@@ -2491,10 +2491,12 @@ async function fetchTmdbDiscoverWindow(opts: {
   pageSize: number;
   map: (raw: Record<string, unknown>) => Content | null;
 }): Promise<WorldCatalogPage> {
-  const page = Math.max(1, opts.page);
-  const pageSize = Math.min(100, Math.max(1, opts.pageSize));
-  const tmdbPagesNeeded = Math.max(1, Math.ceil(pageSize / TMDB_PAGE_SIZE));
-  const startTmdbPage = (page - 1) * tmdbPagesNeeded + 1;
+  const page = Number.isFinite(opts.page) ? Math.max(1, Math.floor(opts.page)) : 1;
+  const pageSize = Number.isFinite(opts.pageSize) ? Math.min(100, Math.max(1, Math.floor(opts.pageSize))) : 60;
+  const offset = (page - 1) * pageSize;
+  const skip = offset % TMDB_PAGE_SIZE;
+  const tmdbPagesNeeded = Math.ceil((skip + pageSize) / TMDB_PAGE_SIZE);
+  const startTmdbPage = Math.floor(offset / TMDB_PAGE_SIZE) + 1;
 
   if (startTmdbPage > TMDB_MAX_PAGES) {
     return { items: [], page, totalPages: TMDB_MAX_PAGES, total: 0 };
@@ -2526,13 +2528,14 @@ async function fetchTmdbDiscoverWindow(opts: {
 
   const items = responses
     .flatMap((r) => r?.results ?? [])
+    .slice(skip, skip + pageSize)
     .map(opts.map)
     .filter(Boolean) as Content[];
 
   // UI total pages so last catalog page still maps into TMDB
   const totalPages = Math.max(
     1,
-    Math.ceil(tmdbTotalPages / tmdbPagesNeeded),
+    Math.ceil(tmdbTotalResults / pageSize),
   );
 
   return {
@@ -2555,6 +2558,7 @@ export async function fetchWorldMoviesPage(
     return { items: [], page: 1, totalPages: 1, total: 0 };
   }
   const base: Record<string, string> = {
+    ...(sort === "newest" ? { "primary_release_date.lte": new Date().toISOString().slice(0, 10) } : {}),
     sort_by: tmdbSortParam(sort, "movie"),
     include_adult: includeAdult ? "true" : "false",
     language: "en-US",
@@ -2590,6 +2594,7 @@ export async function fetchWorldSeriesPage(
     return { items: [], page: 1, totalPages: 1, total: 0 };
   }
   const base: Record<string, string> = {
+    ...(sort === "newest" ? { "first_air_date.lte": new Date().toISOString().slice(0, 10) } : {}),
     sort_by: tmdbSortParam(sort, "tv"),
     language: "en-US",
     include_adult: includeMature ? "true" : "false",
@@ -2612,7 +2617,7 @@ export async function fetchWorldSeriesPage(
     path: "/discover/tv",
     baseParams: base,
     page,
-    pageSize: pageSize + 40, // headroom after dropping anime/dramas
+    pageSize, // Keep page offsets stable; filtering must not discard the next window.
     map: (r) => {
       // Hard-drop Animation genre before mapping
       const genreIds = Array.isArray(r.genre_ids)
@@ -2652,6 +2657,7 @@ export async function fetchWorldDramaPage(
     return { items: [], page: 1, totalPages: 1, total: 0 };
   }
   const base: Record<string, string> = {
+    ...(sort === "newest" ? { "first_air_date.lte": new Date().toISOString().slice(0, 10) } : {}),
     sort_by: tmdbSortParam(sort, "tv"),
     // Origin country only — pipe-OR across all countries for this type so the
     // full catalog (incl. TW/HK for C-drama) paginates through TMDB.

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Search as SearchIcon } from "lucide-react";
@@ -12,7 +12,7 @@ import { Chip } from "@/components/ui/chip";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
-import { isMatureEnabledClient } from "@/lib/user/local-profile";
+import { useDeviceMature } from "@/hooks/use-device-mature";
 
 const TYPE_FILTERS = [
   { id: "", label: "All" },
@@ -20,6 +20,9 @@ const TYPE_FILTERS = [
   { id: "series", label: "Series" },
   { id: "anime", label: "Anime" },
   { id: "kdrama", label: "K-Drama" },
+  { id: "jdrama", label: "J-Drama" },
+  { id: "cdrama", label: "C-Drama" },
+  { id: "thaidrama", label: "Thai Drama" },
 ] as const;
 
 function SearchInner() {
@@ -30,15 +33,14 @@ function SearchInner() {
   const type = sp.get("type") ?? "";
   const settings = useAuthStore((s) => s.settings);
   const user = useAuthStore((s) => s.user);
-  const [deviceMature, setDeviceMature] = useState(false);
+  const deviceMature = useDeviceMature(user?.uid);
 
-  useEffect(() => {
-    setDeviceMature(isMatureEnabledClient(user?.uid));
-  }, [user?.uid, settings?.matureContent]);
 
-  useEffect(() => {
+  const [previousQuery, setPreviousQuery] = useState(initial);
+  if (previousQuery !== initial) {
+    setPreviousQuery(initial);
     setQ(initial);
-  }, [initial]);
+  }
 
   const mature = Boolean(settings?.matureContent) || deviceMature;
 
