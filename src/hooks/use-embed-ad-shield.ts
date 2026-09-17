@@ -13,9 +13,7 @@ export function useEmbedAdShield(enabled = true) {
     if (!enabled || typeof window === "undefined") return;
 
     const originalOpen = window.open.bind(window);
-    window.open = function blockedOpen(
-      ..._args: Parameters<typeof window.open>
-    ): Window | null {
+    window.open = function blockedOpen(): Window | null {
       // Block all new windows/tabs while the player is active
       console.info("[CineVerse] Blocked popup from embed context");
       return null;

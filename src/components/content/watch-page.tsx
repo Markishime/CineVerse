@@ -30,7 +30,6 @@ import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import { formatScore } from "@/lib/utils";
 import { getDeviceRegion } from "@/lib/user/region";
 import { useAuthStore } from "@/stores/auth-store";
-import { isMatureEnabledClient } from "@/lib/user/local-profile";
 import { isRestrictedContentUser } from "@/lib/content/mature";
 import {
   hasParentalPin,
@@ -63,7 +62,6 @@ export function WatchPage({
 }) {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const [deviceMature, setDeviceMature] = useState(false);
   const [pinUnlocked, setPinUnlocked] = useState(false);
   const [pinGateOpen, setPinGateOpen] = useState(false);
   const [shareMsg, setShareMsg] = useState("");
@@ -72,15 +70,17 @@ export function WatchPage({
   const [embedEpisode, setEmbedEpisode] = useState<number | null>(null);
 
   useEffect(() => {
-    if (isRestrictedContentUser(user?.email)) {
-      setPinUnlocked(true);
-      setPinGateOpen(false);
-      return;
-    }
-    setDeviceMature(isMatureEnabledClient(user?.uid));
-    const unlocked = isMatureSessionUnlocked();
-    setPinUnlocked(unlocked);
-    if (!unlocked) setPinGateOpen(true);
+    const t = window.setTimeout(() => {
+      if (isRestrictedContentUser(user?.email)) {
+        setPinUnlocked(true);
+        setPinGateOpen(false);
+        return;
+      }
+      const unlocked = isMatureSessionUnlocked();
+      setPinUnlocked(unlocked);
+      if (!unlocked) setPinGateOpen(true);
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [user?.uid, user?.email]);
 
   const matureOn = isRestrictedContentUser(user?.email);
@@ -164,7 +164,10 @@ export function WatchPage({
     enabled: Boolean(contentId && content?.contentType !== "movie"),
   });
 
-  const seasons = seasonsData?.seasons ?? [];
+  const seasons = useMemo(
+    () => seasonsData?.seasons ?? [],
+    [seasonsData?.seasons],
+  );
   const activeSeasonNum =
     seasonParam ??
     seasons[0]?.seasonNumber ??
@@ -178,7 +181,10 @@ export function WatchPage({
     enabled: Boolean(activeSeason?.id),
   });
 
-  const episodes = episodesData?.episodes ?? [];
+  const episodes = useMemo(
+    () => episodesData?.episodes ?? [],
+    [episodesData?.episodes],
+  );
   const activeEpisodeNum = episodeParam ?? episodes[0]?.episodeNumber ?? 1;
   const activeEpisode =
     episodes.find((e) => e.episodeNumber === activeEpisodeNum) ??
@@ -225,18 +231,20 @@ export function WatchPage({
   useEffect(() => {
     if (countdown === null || !content) return;
     if (countdown <= 0) {
-      if (nextEpisode && "episodeNumber" in nextEpisode) {
-        const sn =
-          "seasonNumber" in nextEpisode && nextEpisode.seasonNumber
-            ? nextEpisode.seasonNumber
-            : activeSeasonNum;
-        const en =
-          "episodeNumber" in nextEpisode
-            ? nextEpisode.episodeNumber
-            : 1;
-        router.push(getWatchHref(content, { season: sn, episode: en }));
-      }
-      setCountdown(null);
+      queueMicrotask(() => {
+        if (nextEpisode && "episodeNumber" in nextEpisode) {
+          const sn =
+            "seasonNumber" in nextEpisode && nextEpisode.seasonNumber
+              ? nextEpisode.seasonNumber
+              : activeSeasonNum;
+          const en =
+            "episodeNumber" in nextEpisode
+              ? nextEpisode.episodeNumber
+              : 1;
+          router.push(getWatchHref(content, { season: sn, episode: en }));
+        }
+        setCountdown(null);
+      });
       return;
     }
     const t = window.setTimeout(() => setCountdown((c) => (c == null ? null : c - 1)), 1000);

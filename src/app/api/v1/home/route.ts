@@ -1,7 +1,6 @@
 import { seedHomePayload } from "@/lib/api/home-fallback";
 import type { HomePayload } from "@/lib/api/content";
 import { json } from "@/lib/server/http";
-import { NextRequest } from "next/server";
 
 /**
  * Home catalog API — must always return 200 quickly.
@@ -10,11 +9,7 @@ import { NextRequest } from "next/server";
  * on cold start OOMs/timeouts the Cloud Function. We serve seed first, then
  * optionally upgrade from live catalog under a hard budget.
  */
-export async function GET(request: NextRequest) {
-  const includeMature =
-    request.nextUrl.searchParams.get("mature") === "1" ||
-    request.nextUrl.searchParams.get("mature") === "true";
-
+export async function GET() {
   // Synchronous seed — no network, no heavy imports beyond this module tree.
   let seed: HomePayload;
   try {
@@ -69,7 +64,7 @@ export async function GET(request: NextRequest) {
       (async (): Promise<HomePayload | null> => {
         const { catalog } = await import("@/lib/content/catalog-service");
         // No forced US region — wildcard for global playback eligibility
-        return await catalog.home("*", includeMature);
+        return await catalog.home("*");
       })().catch((err) => {
         console.warn(
           "[api/v1/home] live catalog skipped",

@@ -35,7 +35,6 @@ import {
   getTrailerHref,
   getWatchHref,
   hasOfficialTrailer,
-  watchCtaLabel,
 } from "@/lib/content/watch-href";
 import { easeOutExpo } from "@/lib/motion";
 import { useAuthStore } from "@/stores/auth-store";
@@ -464,7 +463,6 @@ function CatalogListRow({
   const watchHref = getWatchHref(item);
   const trailerHref = getTrailerHref(item);
   const detailsHref = getDetailsHref(item);
-  const cta = watchCtaLabel(item);
   const showTrailer = hasOfficialTrailer(item);
 
   return (

@@ -17,7 +17,6 @@ import {
   getProvidersForContentType,
   buildEmbedUrl,
   buildAnimeEmbedUrl,
-  getProviderName,
 } from "@/lib/embed/providers";
 import { EMBED_ALLOW } from "@/lib/embed/ad-shield";
 import {
@@ -177,17 +176,47 @@ export function VideoPlayer({
   const menuRef = useRef<HTMLDivElement>(null);
   const skipLockRef = useRef(false);
 
-  // Reset to first playable provider when the title / id set changes
-  useEffect(() => {
+  // Reset to first playable provider when the title / id set changes.
+  const identityKey = [
+    tmdbId,
+    anilistId,
+    malId,
+    resolvedContentType,
+    season,
+    episode,
+  ].join("|");
+  const [prevIdentityKey, setPrevIdentityKey] = useState(identityKey);
+  if (prevIdentityKey !== identityKey) {
+    setPrevIdentityKey(identityKey);
     setActiveIndex(0);
     setStatus("loading");
     setTriedProviders([]);
     setResolvedUrl(null);
     setShowMenu(false);
     setConfirmedPlaying(false);
+  }
+
+  // Clamp the menu selection if a provider list shrinks under it.
+  const activeProvider =
+    availableProviders.length > 0 && activeIndex >= availableProviders.length
+      ? availableProviders[0]
+      : availableProviders[activeIndex];
+
+  // Drop a previously-resolved async stream when the active provider changes.
+  const activeProviderId = activeProvider?.id ?? "";
+  const [prevActiveProviderId, setPrevActiveProviderId] =
+    useState(activeProviderId);
+  if (prevActiveProviderId !== activeProviderId) {
+    setPrevActiveProviderId(activeProviderId);
+    setStatus("loading");
+    setResolvedUrl(null);
+  }
+
+  // Manual-pick / confirmation guards belong to the current identity.
+  useEffect(() => {
     confirmedRef.current = false;
     userPickedRef.current = false;
-  }, [tmdbId, anilistId, malId, resolvedContentType, season, episode]);
+  }, [identityKey]);
 
   // Clear any pending load/verify timers on unmount.
   useEffect(() => {
@@ -196,15 +225,6 @@ export function VideoPlayer({
       if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
     };
   }, []);
-
-  // Keep index in range if provider list shrinks
-  useEffect(() => {
-    if (activeIndex >= availableProviders.length && availableProviders.length > 0) {
-      setActiveIndex(0);
-    }
-  }, [availableProviders.length, activeIndex]);
-
-  const activeProvider = availableProviders[activeIndex];
 
   /**
    * Origin language for UI (KR→ko, JP→ja, PH→tl, …).
@@ -293,11 +313,9 @@ export function VideoPlayer({
 
   // Async resolve for AnimePahe / SupaPlay
   useEffect(() => {
-    setResolvedUrl(null);
     if (!activeProvider?.needsResolve || !isAnime) return;
 
     let cancelled = false;
-    setStatus("loading");
 
     (async () => {
       try {
@@ -420,7 +438,7 @@ export function VideoPlayer({
   }, [
     status,
     embedUrl,
-    activeProvider?.id,
+    activeProvider,
     availableProviders.length,
     onAllFailed,
   ]);

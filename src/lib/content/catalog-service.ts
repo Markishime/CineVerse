@@ -44,10 +44,7 @@ import {
   hasTmdbAccess,
   LEGAL_FULL_PLAYBACK,
 } from "@/lib/providers/live-catalog";
-import {
-  FREE_FULL_MOVIES,
-  isFreeFullMovieId,
-} from "@/lib/playback/free-movies";
+import { isFreeFullMovieId } from "@/lib/playback/free-movies";
 import {
   FREE_FULL_SHOWS,
   findFreeShow,
@@ -56,17 +53,10 @@ import {
 } from "@/lib/playback/free-shows";
 import {
   filterOfficialTrailers,
-  isValidYoutubeKey,
   pickHeroTrailer,
-  pickOfficialTrailer,
   sanitizeContentTrailer,
 } from "@/lib/content/trailers";
-import {
-  ensureKnownTrailers,
-  filterPlayableTrailers,
-  isPlayableTrailerKey,
-  lookupKnownTrailer,
-} from "@/lib/content/known-trailers";
+import { ensureKnownTrailers } from "@/lib/content/known-trailers";
 import {
   applyMatureFlag,
   filterAdultLibrary,
@@ -107,7 +97,6 @@ import {
 } from "@/lib/content/classification";
 import type { HomePayload, Paginated } from "@/lib/api/content";
 import {
-  cinematicPosterUrl,
   ensureContentPoster,
   isLikelyBrokenPosterUrl,
   normalizeImageUrl,
@@ -1040,7 +1029,7 @@ export class CatalogService {
     return null;
   }
 
-  async home(_region = "*", includeMature = false): Promise<HomePayload> {
+  async home(_region = "*"): Promise<HomePayload> {
     // No forced market lock — use caller region or unrestricted wildcard.
     const regionCode =
       !_region || _region === "*" || _region.toUpperCase() === "AUTO"
@@ -2298,103 +2287,6 @@ export function softMatchByIdentity(
   return undefined;
 }
 
-function freeMovieToContent(m: (typeof FREE_FULL_MOVIES)[number]): Content {
-  return {
-    id: m.seedId,
-    slug: m.slug,
-    contentType: "movie",
-    title: m.title,
-    originalTitle: m.originalTitle,
-    overview: m.overview,
-    poster: m.posterPath
-      ? { url: m.posterPath, source: "tmdb" }
-      : {
-          url: cinematicPosterUrl(m.seedId, m.title, "movie"),
-          source: "local",
-        },
-    backdrop: m.backdropPath
-      ? { url: m.backdropPath, source: "tmdb" }
-      : null,
-    releaseDate: `${m.year}-01-01`,
-    year: m.year,
-    status: "released",
-    language: "en",
-    countries: ["US"],
-    genres: m.genres.map((g) => ({
-      id: g.toLowerCase().replace(/\W+/g, "-"),
-      name: g,
-    })),
-    runtime: m.runtime ?? null,
-    seasonCount: null,
-    episodeCount: null,
-    ageRating: m.ageRating ?? "NR",
-    scores: [{ source: "cineverse", score: 7.5 }],
-    popularity: 100 + (m.year > 1950 ? 10 : 20),
-    trailer: null,
-    watchProviders: [
-      { id: 191, name: "Internet Archive", type: "free", logoPath: null },
-    ],
-    providerIds: m.tmdbId
-      ? { tmdb: m.tmdbId, tmdbMediaType: "movie" }
-      : {},
-    studios: [],
-    tags: ["public-domain", "free-stream", "watch-now"],
-    alternateTitles: [],
-    approved: true,
-    mature: Boolean(m.mature),
-    playable: true,
-    lastSyncedAt: new Date().toISOString(),
-  };
-}
-
-function freeShowToContent(s: (typeof FREE_FULL_SHOWS)[number]): Content {
-  const seasons = new Set(s.episodes.map((e) => e.seasonNumber)).size;
-  return {
-    id: s.seedId,
-    slug: s.slug,
-    contentType: s.contentType,
-    title: s.title,
-    originalTitle: s.originalTitle,
-    overview: s.overview,
-    poster: s.posterPath
-      ? { url: s.posterPath, source: "tmdb" }
-      : {
-          url: cinematicPosterUrl(s.seedId, s.title, s.contentType),
-          source: "local",
-        },
-    backdrop: null,
-    releaseDate: `${s.year}-01-01`,
-    year: s.year,
-    status: "ended",
-    language: s.contentType === "kdrama" ? "ko" : "en",
-    countries: s.contentType === "kdrama" ? ["KR"] : ["US"],
-    genres: s.genres.map((g) => ({
-      id: g.toLowerCase().replace(/\W+/g, "-"),
-      name: g,
-    })),
-    runtime: s.episodes[0]?.runtime ?? 25,
-    seasonCount: seasons,
-    episodeCount: s.episodes.length,
-    ageRating: s.mature ? "TV-MA" : "NR",
-    scores: [{ source: "cineverse", score: 7.2 }],
-    popularity: 110,
-    trailer: null,
-    watchProviders: [
-      { id: 191, name: "Internet Archive", type: "free", logoPath: null },
-    ],
-    providerIds: s.tmdbId
-      ? { tmdb: s.tmdbId, tmdbMediaType: "tv" }
-      : {},
-    studios: [],
-    tags: ["public-domain", "free-stream", "watch-now"],
-    alternateTitles: [],
-    approved: true,
-    mature: Boolean(s.mature),
-    playable: true,
-    lastSyncedAt: new Date().toISOString(),
-  };
-}
-
 function applyRegionPlayable(
   c: Content,
   region: string,
@@ -2499,115 +2391,6 @@ function ensurePoster(c: Content): Content {
     };
   }
   return next;
-}
-
-function attachHeroTrailer(c: Content, t: Trailer | null): Content {
-  // Prefer curated known-good key over provider/dead keys
-  const known = lookupKnownTrailer(c);
-  const pick = known ?? t;
-  if (!pick || !isPlayableTrailerKey(pick.key)) {
-    const keep =
-      c.trailer && isPlayableTrailerKey(c.trailer.key) ? c.trailer : null;
-    return { ...c, trailer: keep };
-  }
-  const key = pick.key.trim();
-  return {
-    ...c,
-    trailer: {
-      ...pick,
-      key,
-      id: pick.id || `yt_${key}`,
-      site: "youtube",
-      name: pick.name || "Official Trailer",
-      official: Boolean(pick.official || /official/i.test(pick.name ?? "")),
-      type: pick.type || "Trailer",
-    },
-  };
-}
-
-/**
- * Attach YouTube trailers for featured hero titles (movies · series · anime · dramas).
- * Known-good keys win; dead keys are stripped; TMDB fills the rest.
- */
-async function enrichTrailersForFeatured(items: Content[]): Promise<Content[]> {
-  const out = await Promise.all(
-    items.map(async (c) => {
-      // Pin known-good keys first so dead seed/TMDB keys never win
-      const pinned = ensureKnownTrailers(c);
-      const existing = pickHeroTrailer(
-        filterPlayableTrailers(pinned.trailer ? [pinned.trailer] : []),
-      );
-      if (existing) return attachHeroTrailer(pinned, existing);
-
-      let tmdbId = c.providerIds?.tmdb;
-      let mediaType: "movie" | "tv" =
-        c.providerIds?.tmdbMediaType ??
-        (c.contentType === "movie" || c.animeFormat === "MOVIE"
-          ? "movie"
-          : "tv");
-
-      if (!tmdbId && hasTmdbAccess()) {
-        try {
-          const resolved = await resolveTmdbIdForTitle({
-            title: c.title,
-            year: c.year,
-            preferMovie:
-              c.contentType === "movie" || c.animeFormat === "MOVIE",
-            alternateTitles: [
-              c.englishTitle,
-              c.romajiTitle,
-              c.originalTitle,
-              c.nativeTitle,
-              ...(c.alternateTitles ?? []),
-            ].filter(Boolean) as string[],
-            requireAnimation: c.contentType === "anime",
-          });
-          if (resolved) {
-            tmdbId = resolved.tmdb;
-            mediaType = resolved.tmdbMediaType;
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
-      if (tmdbId) {
-        try {
-          let videos = filterPlayableTrailers(
-            await fetchTmdbVideos(mediaType, tmdbId, { includeTeasers: true }),
-          );
-          let best = pickHeroTrailer(videos);
-          if (!best) {
-            const alt: "movie" | "tv" =
-              mediaType === "movie" ? "tv" : "movie";
-            videos = filterPlayableTrailers(
-              await fetchTmdbVideos(alt, tmdbId, { includeTeasers: true }),
-            );
-            best = pickHeroTrailer(videos);
-            if (best) mediaType = alt;
-          }
-          if (best) {
-            return attachHeroTrailer(
-              {
-                ...pinned,
-                providerIds: {
-                  ...pinned.providerIds,
-                  tmdb: tmdbId,
-                  tmdbMediaType: mediaType,
-                },
-              },
-              best,
-            );
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
-      return attachHeroTrailer(pinned, null);
-    }),
-  );
-  return out;
 }
 
 /** Merge + keep only official Trailer-type YouTube videos */

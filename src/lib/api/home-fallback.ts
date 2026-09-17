@@ -15,7 +15,7 @@ import {
   isGeneralSeriesOnly,
   matchesAnimeFormatCategory,
 } from "@/lib/content/classification";
-import { isDramaType, type Content } from "@/types/content";
+import { type Content } from "@/types/content";
 import type { HomePayload } from "@/lib/api/content";
 import { ensureContentPoster } from "@/lib/content/posters";
 
@@ -149,7 +149,6 @@ export function seedHomePayload(): HomePayload {
       (c.language === "ko" || c.countries?.some((cn) => cn === "KR")),
   );
 
-  const dramas = byPop.filter((c) => isDramaType(c.contentType));
   const allDramas = [
     ...kdrama,
     ...jdrama,

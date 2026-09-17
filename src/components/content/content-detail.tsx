@@ -38,7 +38,6 @@ import {
   posterFallbackLabel,
 } from "@/lib/content/posters";
 import { formatRuntime, formatScore } from "@/lib/utils";
-import { isMatureEnabledClient } from "@/lib/user/local-profile";
 import { isRestrictedContentUser } from "@/lib/content/mature";
 import {
   hasParentalPin,
@@ -63,18 +62,20 @@ export function ContentDetail({ slug }: { slug: string }) {
   );
   const [matureUnlocked, setMatureUnlocked] = useState(false);
   const [pinGateOpen, setPinGateOpen] = useState(false);
-  const settings = useAuthStore((s) => s.settings);
   const matureOn = isRestrictedContentUser(user?.email);
 
   useEffect(() => {
-    if (isRestrictedContentUser(user?.email)) {
-      setMatureUnlocked(true);
-      setPinGateOpen(false);
-      return;
-    }
-    const unlocked = isMatureSessionUnlocked();
-    setMatureUnlocked(unlocked);
-    if (!unlocked) setPinGateOpen(true);
+    const t = window.setTimeout(() => {
+      if (isRestrictedContentUser(user?.email)) {
+        setMatureUnlocked(true);
+        setPinGateOpen(false);
+        return;
+      }
+      const unlocked = isMatureSessionUnlocked();
+      setMatureUnlocked(unlocked);
+      if (!unlocked) setPinGateOpen(true);
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [user?.uid, user?.email]);
 
   const { data: content, isLoading, isError } = useQuery({

@@ -51,7 +51,7 @@ export function ContinueWatchingRow({
   }, [user?.uid]);
 
   useEffect(() => {
-    refresh();
+    const t = window.setTimeout(refresh, 0);
     const onFocus = () => refresh();
     const onStorage = (e: StorageEvent) => {
       if (e.key?.includes("continue_watching")) refresh();
@@ -63,6 +63,7 @@ export function ContinueWatchingRow({
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("storage", onStorage);
       window.clearInterval(id);
+      window.clearTimeout(t);
     };
   }, [refresh]);
 

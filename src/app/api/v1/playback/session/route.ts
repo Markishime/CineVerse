@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { z } from "zod";
 import { errorJson, json, resolveAuth } from "@/lib/server/auth";
 import { resolvePlayback } from "@/lib/playback/resolve-playback";
 import { PlaybackSessionRequestSchema } from "@/types/playback";

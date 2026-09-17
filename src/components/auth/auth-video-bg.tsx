@@ -64,7 +64,6 @@ export function AuthVideoBackground() {
   // Soft progress fill for the active pill rail
   useEffect(() => {
     if (reduce) return;
-    setProgress(0);
     const start = performance.now();
     let raf = 0;
     const tick = (now: number) => {

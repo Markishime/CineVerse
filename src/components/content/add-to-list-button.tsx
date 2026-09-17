@@ -43,7 +43,8 @@ export function AddToListButton({
   }, [uid, content.id]);
 
   useEffect(() => {
-    refresh();
+    const t = window.setTimeout(refresh, 0);
+    return () => window.clearTimeout(t);
   }, [refresh]);
 
   // Stay in sync if another card toggles the same title

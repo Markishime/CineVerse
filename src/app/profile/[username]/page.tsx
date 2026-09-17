@@ -304,7 +304,8 @@ export default function ProfilePage({
   // Guest list mutations update zustand — re-pulse when lengths change
   useEffect(() => {
     if (user) return;
-    setLivePulse((n) => n + 1);
+    const t = window.setTimeout(() => setLivePulse((n) => n + 1), 0);
+    return () => window.clearTimeout(t);
   }, [user, guestLibrary.length, guestFavorites.length]);
 
   const profile: UserProfile | null = useMemo(() => {
@@ -355,10 +356,12 @@ export default function ProfilePage({
   });
 
   useEffect(() => {
-    if (profile) {
+    if (!profile) return;
+    const t = window.setTimeout(() => {
       setDisplayName(profile.displayName);
       setBio(profile.bio ?? "");
-    }
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [profile]);
 
   const refreshAll = useCallback(async () => {
@@ -384,7 +387,6 @@ export default function ProfilePage({
     dataUpdatedAt,
     libraryQuery.dataUpdatedAt,
     favoritesQuery.dataUpdatedAt,
-    now, // keep relative label fresh
   ]);
 
   if (!isOwn && isLoading) {

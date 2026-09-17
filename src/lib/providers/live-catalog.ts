@@ -173,7 +173,7 @@ async function fetchTvMazeJson<T>(
   return fetchJson<T>(`${TVMAZE}${path}`, undefined, timeoutMs);
 }
 
-function posterFallback(title: string, _hue: number): string {
+function posterFallback(title: string): string {
   // Local SVG data-URI — never blank, never blocked by ad blockers (unlike
   // placehold.co). Imported logic kept inline to avoid circular deps.
   const t = (title || "CineVerse")
@@ -678,7 +678,7 @@ function mapAnilist(m: AnilistMedia): Content | null {
       .replace(/<[^>]+>/g, ""),
     poster: cover
       ? { url: cover, source: "anilist" }
-      : { url: posterFallback(title, 0x7867ff), source: "local" },
+      : { url: posterFallback(title), source: "local" },
     backdrop: m.bannerImage
       ? { url: m.bannerImage, source: "anilist" }
       : null,
@@ -1433,7 +1433,6 @@ function mapTvMaze(s: TvMazeShow, forceType?: ContentType): Content | null {
     (isDramaType(forceType) ? (forceType as ContentType) : null) ??
     detectedDrama ??
     "series";
-  const isDrama = isDramaType(contentType);
   const img = s.image?.original || s.image?.medium;
   const year = s.premiered ? Number(s.premiered.slice(0, 4)) : null;
 
@@ -1447,10 +1446,7 @@ function mapTvMaze(s: TvMazeShow, forceType?: ContentType): Content | null {
     poster: img
       ? { url: img, source: "tmdb" }
       : {
-          url: posterFallback(
-            s.name,
-            isDrama ? 0x5c1a2e : 0x172033,
-          ),
+          url: posterFallback(s.name),
           source: "local",
         },
     backdrop: img ? { url: img, source: "tmdb" } : null,
@@ -1898,7 +1894,7 @@ function mapJikan(a: JikanAnime): Content | null {
     overview: a.synopsis ?? "",
     poster: img
       ? { url: img, source: "anilist" }
-      : { url: posterFallback(title, 0x7867ff), source: "local" },
+      : { url: posterFallback(title), source: "local" },
     backdrop: null,
     releaseDate: a.year ? `${a.year}-01-01` : null,
     year: a.year ?? null,
@@ -2754,7 +2750,6 @@ export async function fetchWorldAnimePage(
         ? fetchTmdbAnimeMovies().catch(() => [] as Content[])
         : Promise.resolve([] as Content[]),
     ]);
-    const firstM = moviePages[0];
     const seenM = new Set<string>();
     const mergedM: Content[] = [];
     const pushM = (list: Content[]) => {
@@ -3097,7 +3092,7 @@ function mapTmdbMovie(
     overview,
     poster: posterPath
       ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
-      : { url: posterFallback(title, 0x111827), source: "local" },
+      : { url: posterFallback(title), source: "local" },
     backdrop: backdropPath
       ? { url: tmdbPoster(backdropPath, "w1280")!, source: "tmdb" }
       : null,
@@ -3159,7 +3154,7 @@ function mapTmdbAnimeMovie(raw: Record<string, unknown>): Content | null {
     overview: String(raw.overview ?? ""),
     poster: posterPath
       ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
-      : { url: posterFallback(title, 0x7867ff), source: "local" },
+      : { url: posterFallback(title), source: "local" },
     backdrop: backdropPath
       ? { url: tmdbPoster(backdropPath, "w1280")!, source: "tmdb" }
       : null,
@@ -3265,7 +3260,7 @@ function mapTmdbTv(
       overview,
       poster: posterPath
         ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
-        : { url: posterFallback(title, 0x7867ff), source: "local" },
+        : { url: posterFallback(title), source: "local" },
       backdrop: backdropPath
         ? { url: tmdbPoster(backdropPath, "w1280")!, source: "tmdb" }
         : null,
@@ -3323,7 +3318,7 @@ function mapTmdbTv(
     poster: posterPath
       ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
       : {
-          url: posterFallback(title, isDrama ? 0x5c1a2e : 0x172033),
+          url: posterFallback(title),
           source: "local",
         },
     backdrop: backdropPath

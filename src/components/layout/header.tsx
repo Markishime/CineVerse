@@ -151,11 +151,6 @@ function NavDropdown({
           >
             <div className="py-1">
               {item.children.map((child) => {
-                const childActive = child.href === "/"
-                  ? false
-                  : child.href === item.href
-                    ? false
-                    : false; // children are never "active" in the parent sense
                 return (
                   <Link
                     key={child.href}
