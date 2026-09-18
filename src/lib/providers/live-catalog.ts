@@ -64,6 +64,59 @@ const TMDB_GENRE_NAMES: Record<number, string> = {
   10768: "War & Politics",
 };
 
+const TMDB_MOVIE_GENRE_IDS: Record<string, number> = {
+  action: 28,
+  adventure: 12,
+  animation: 16,
+  comedy: 35,
+  crime: 80,
+  documentary: 99,
+  drama: 18,
+  family: 10751,
+  fantasy: 14,
+  history: 36,
+  horror: 27,
+  music: 10402,
+  mystery: 9648,
+  romance: 10749,
+  "science fiction": 878,
+  "sci-fi": 878,
+  thriller: 53,
+  war: 10752,
+  western: 37,
+};
+
+const TMDB_TV_GENRE_IDS: Record<string, number> = {
+  "action & adventure": 10759,
+  action: 10759,
+  adventure: 10759,
+  animation: 16,
+  comedy: 35,
+  crime: 80,
+  documentary: 99,
+  drama: 18,
+  family: 10751,
+  kids: 10762,
+  mystery: 9648,
+  news: 10763,
+  reality: 10764,
+  "sci-fi & fantasy": 10765,
+  "science fiction": 10765,
+  "sci-fi": 10765,
+  soap: 10766,
+  talk: 10767,
+  "war & politics": 10768,
+  war: 10768,
+  western: 37,
+};
+
+function tmdbGenreId(genre: string | undefined, media: "movie" | "tv") {
+  if (!genre) return undefined;
+  return (media === "movie" ? TMDB_MOVIE_GENRE_IDS : TMDB_TV_GENRE_IDS)[
+    genre.trim().toLowerCase()
+  ];
+}
+
 /** Map a TMDB genre id to a real name (falls back to a readable "Genre N"). */
 function tmdbGenreName(gid: number): string {
   return TMDB_GENRE_NAMES[gid] ?? `Genre ${gid}`;
@@ -200,10 +253,10 @@ function tmdbPoster(path?: string | null, size = "w500"): string | null {
 /* ─── AniList ─────────────────────────────────────────────── */
 
 const ANIME_QUERY = `
-query ($page: Int, $perPage: Int, $sort: [MediaSort], $search: String, $status: MediaStatus, $seasonYear: Int, $isAdult: Boolean, $format: MediaFormat) {
+query ($page: Int, $perPage: Int, $sort: [MediaSort], $search: String, $status: MediaStatus, $seasonYear: Int, $isAdult: Boolean, $format: MediaFormat, $genre: String) {
   Page(page: $page, perPage: $perPage) {
     pageInfo { total currentPage lastPage hasNextPage }
-    media(type: ANIME, isAdult: $isAdult, sort: $sort, search: $search, status: $status, seasonYear: $seasonYear, format: $format) {
+    media(type: ANIME, isAdult: $isAdult, sort: $sort, search: $search, status: $status, seasonYear: $seasonYear, format: $format, genre: $genre) {
       id
       format
       status
@@ -399,7 +452,10 @@ export function titlesLikelySame(
     const nn = normalizeTitleKey(candidateName);
     if (nc && nn && (nc === nn || nc.includes(nn) || nn.includes(nc))) {
       // Only allow includes when both sides have enough tokens (avoid short junk)
-      if (significantTokens(c).length >= 2 && significantTokens(candidateName).length >= 2) {
+      if (
+        significantTokens(c).length >= 2 &&
+        significantTokens(candidateName).length >= 2
+      ) {
         return true;
       }
       if (nc === nn) return true;
@@ -461,10 +517,7 @@ export async function resolveTmdbIdForTitle(opts: {
         : Promise.resolve({ results: [] as TmdbSearchRow[] }),
     ]);
 
-    const scoreHit = (
-      r: TmdbSearchRow,
-      mediaType: "movie" | "tv",
-    ): number => {
+    const scoreHit = (r: TmdbSearchRow, mediaType: "movie" | "tv"): number => {
       if (!r.id) return -1;
       const names = [r.title, r.name, r.original_title, r.original_name]
         .filter(Boolean)
@@ -488,11 +541,7 @@ export async function resolveTmdbIdForTitle(opts: {
       const bestName =
         names.find((n) => normalizeTitleKey(n) === normalizeTitleKey(q)) ??
         names[0]!;
-      const sim = Math.max(
-        ...names.map((n) =>
-          titleTokenSimilarity(q, n),
-        ),
-      );
+      const sim = Math.max(...names.map((n) => titleTokenSimilarity(q, n)));
       score += sim * 2000;
       if (normalizeTitleKey(bestName) === normalizeTitleKey(q)) score += 800;
       const date = r.release_date || r.first_air_date || "";
@@ -559,9 +608,7 @@ export async function verifyTmdbMatchesTitleDetailed(opts: {
   requireAnimation?: boolean;
 }): Promise<TmdbVerifyResult> {
   const path =
-    opts.mediaType === "movie"
-      ? `/movie/${opts.tmdbId}`
-      : `/tv/${opts.tmdbId}`;
+    opts.mediaType === "movie" ? `/movie/${opts.tmdbId}` : `/tv/${opts.tmdbId}`;
   const detail = await tmdbGet<{
     id?: number;
     title?: string;
@@ -612,8 +659,7 @@ export async function verifyTmdbMatchesTitle(opts: {
 
 function mapAnilist(m: AnilistMedia): Content | null {
   // Adult anime is included when the catalog loads with includeMature
-  const title =
-    m.title?.english || m.title?.romaji || m.title?.native || null;
+  const title = m.title?.english || m.title?.romaji || m.title?.native || null;
   if (!title) return null;
   const cover = m.coverImage?.extraLarge || m.coverImage?.large;
   const format = normalizeAnimeFormat(m.format);
@@ -670,18 +716,18 @@ function mapAnilist(m: AnilistMedia): Content | null {
     romajiTitle: m.title?.romaji,
     nativeTitle: m.title?.native,
     originalTitle: m.title?.native,
-    alternateTitles: [m.title?.english, m.title?.romaji, m.title?.native].filter(
-      Boolean,
-    ) as string[],
+    alternateTitles: [
+      m.title?.english,
+      m.title?.romaji,
+      m.title?.native,
+    ].filter(Boolean) as string[],
     overview: (m.description ?? "")
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<[^>]+>/g, ""),
     poster: cover
       ? { url: cover, source: "anilist" }
       : { url: posterFallback(title), source: "local" },
-    backdrop: m.bannerImage
-      ? { url: m.bannerImage, source: "anilist" }
-      : null,
+    backdrop: m.bannerImage ? { url: m.bannerImage, source: "anilist" } : null,
     releaseDate: m.startDate?.year ? `${m.startDate.year}-01-01` : null,
     year: m.startDate?.year ?? null,
     status: statusMap[m.status ?? ""] ?? "unknown",
@@ -726,7 +772,10 @@ function mapAnilist(m: AnilistMedia): Content | null {
   });
 }
 
-export function mapAnilistCredits(m: AnilistMedia, contentId: string): {
+export function mapAnilistCredits(
+  m: AnilistMedia,
+  contentId: string,
+): {
   cast: Credit[];
   crew: Credit[];
 } {
@@ -805,6 +854,7 @@ export async function fetchAnilistAnime(opts?: {
   /** When true, request 18+ anime catalog from AniList */
   isAdult?: boolean;
   format?: string;
+  genre?: string;
 }): Promise<Content[]> {
   const page = await fetchAnilistAnimePage(opts);
   return page.items;
@@ -821,6 +871,7 @@ export async function fetchAnilistAnimePage(opts?: {
   isAdult?: boolean;
   /** AniList MediaFormat: TV, MOVIE, OVA, ONA, SPECIAL, … */
   format?: string;
+  genre?: string;
 }): Promise<WorldCatalogPage> {
   const page = Math.max(1, opts?.page ?? 1);
   const perPage = Math.min(50, Math.max(1, opts?.perPage ?? 50));
@@ -835,6 +886,7 @@ export async function fetchAnilistAnimePage(opts?: {
   if (opts?.status) variables.status = opts.status;
   if (opts?.seasonYear) variables.seasonYear = opts.seasonYear;
   if (opts?.format) variables.format = opts.format;
+  if (opts?.genre) variables.genre = opts.genre;
   if (opts?.isAdult !== undefined) variables.isAdult = Boolean(opts.isAdult);
   else variables.isAdult = false; // default safe catalog
 
@@ -863,7 +915,8 @@ export async function fetchAnilistAnimePage(opts?: {
     .map(mapAnilist)
     .filter(Boolean) as Content[];
   const total = pageInfo?.total ?? items.length;
-  const lastPage = pageInfo?.lastPage ?? Math.max(1, Math.ceil(total / perPage));
+  const lastPage =
+    pageInfo?.lastPage ?? Math.max(1, Math.ceil(total / perPage));
   return {
     items,
     page: pageInfo?.currentPage ?? page,
@@ -885,7 +938,12 @@ export async function fetchAnilistById(id: number): Promise<{
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
       query: ANIME_QUERY,
-      variables: { page: 1, perPage: 1, search: undefined, sort: ["POPULARITY_DESC"] },
+      variables: {
+        page: 1,
+        perPage: 1,
+        search: undefined,
+        sort: ["POPULARITY_DESC"],
+      },
     }),
   });
   // Better: Media(id: $id) query
@@ -1461,7 +1519,7 @@ function mapTvMaze(s: TvMazeShow, forceType?: ContentType): Content | null {
     language:
       s.language?.toLowerCase() === "korean"
         ? "ko"
-        : s.language?.slice(0, 2).toLowerCase() ?? null,
+        : (s.language?.slice(0, 2).toLowerCase() ?? null),
     countries,
     genres,
     runtime: s.runtime ?? null,
@@ -1526,11 +1584,13 @@ export async function fetchTvMazeSearch(q: string): Promise<Content[]> {
 }
 
 /** Resolve a TVMaze show id by title (single best match). */
-export async function resolveTvMazeShowId(title: string): Promise<number | null> {
+export async function resolveTvMazeShowId(
+  title: string,
+): Promise<number | null> {
   if (!title.trim()) return null;
-  const data = await fetchTvMazeJson<Array<{ show: TvMazeShow; score?: number }>>(
-    `/search/shows?q=${encodeURIComponent(title)}`,
-  );
+  const data = await fetchTvMazeJson<
+    Array<{ show: TvMazeShow; score?: number }>
+  >(`/search/shows?q=${encodeURIComponent(title)}`);
   const hit = data?.[0]?.show;
   return hit?.id ?? null;
 }
@@ -1692,8 +1752,7 @@ export async function fetchTvMazeById(id: number): Promise<{
     contentId: content.id,
     personId: `tvmaze_person_${c.person?.id ?? i}`,
     personName: c.person?.name ?? "Unknown",
-    profilePath:
-      c.person?.image?.original || c.person?.image?.medium || null,
+    profilePath: c.person?.image?.original || c.person?.image?.medium || null,
     character: c.character?.name ?? null,
     job: null,
     department: "Acting",
@@ -1707,8 +1766,7 @@ export async function fetchTvMazeById(id: number): Promise<{
       contentId: content.id,
       personId: `tvmaze_person_${c.person?.id ?? i}`,
       personName: c.person?.name ?? "Unknown",
-      profilePath:
-        c.person?.image?.original || c.person?.image?.medium || null,
+      profilePath: c.person?.image?.original || c.person?.image?.medium || null,
       character: null,
       job: c.type ?? "Crew",
       department: "Crew",
@@ -1748,12 +1806,7 @@ export async function fetchJikanTop(): Promise<Content[]> {
       .map((c) => ({
         ...c!,
         tags: Array.from(
-          new Set([
-            ...(c!.tags ?? []),
-            "trending-today",
-            "popular",
-            "anime",
-          ]),
+          new Set([...(c!.tags ?? []), "trending-today", "popular", "anime"]),
         ),
         popularity: (c!.popularity ?? 0) + 28,
       })) as Content[];
@@ -1868,17 +1921,15 @@ interface JikanAnime {
 function jikanIsAdult(a: JikanAnime): boolean {
   const r = (a.rating ?? "").toLowerCase();
   if (r.includes("rx") || r.includes("hentai")) return true;
-  const genreNames = [
-    ...(a.genres ?? []),
-    ...(a.themes ?? []),
-  ].map((g) => g.name.toLowerCase());
+  const genreNames = [...(a.genres ?? []), ...(a.themes ?? [])].map((g) =>
+    g.name.toLowerCase(),
+  );
   return genreNames.some((g) => g === "hentai" || g === "erotica");
 }
 
 function mapJikan(a: JikanAnime): Content | null {
   const title = a.title_english || a.title;
-  const img =
-    a.images?.jpg?.large_image_url || a.images?.jpg?.image_url;
+  const img = a.images?.jpg?.large_image_url || a.images?.jpg?.image_url;
   const adult = jikanIsAdult(a);
   return safeParse({
     id: `jikan_${a.mal_id}`,
@@ -1926,7 +1977,15 @@ function mapJikan(a: JikanAnime): Content | null {
     animeFormat: normalizeAnimeFormat(a.type),
     studios: [],
     tags: adult
-      ? ["18+", "mature", "adult-anime", "jikan-rx", "anime", "explicit", "hentai"]
+      ? [
+          "18+",
+          "mature",
+          "adult-anime",
+          "jikan-rx",
+          "anime",
+          "explicit",
+          "hentai",
+        ]
       : ["anime"],
     approved: true,
     mature: adult,
@@ -2140,9 +2199,7 @@ function parseHentaiOceanRss(xml: string): Content[] {
 
     // Extract series slug (remove trailing -N episode number)
     const seriesSlug = guid.replace(/-\d+$/, "");
-    const seriesTitle = title
-      .replace(/\s+\d+$/, "")
-      .trim();
+    const seriesTitle = title.replace(/\s+\d+$/, "").trim();
 
     // Extract episode number from the end of the guid
     const epMatch = guid.match(/-(\d+)$/);
@@ -2317,8 +2374,7 @@ function mapAniPubAnime(
     (genreHint === "ecchi" ||
       genreHint === "harem" ||
       (a.Genres ?? []).some(
-        (g) =>
-          g.toLowerCase() === "ecchi" || g.toLowerCase() === "harem",
+        (g) => g.toLowerCase() === "ecchi" || g.toLowerCase() === "harem",
       ));
 
   return {
@@ -2361,7 +2417,10 @@ function mapAniPubAnime(
   };
 }
 
-export async function fetchJikanCredits(malId: number, contentId: string): Promise<{
+export async function fetchJikanCredits(
+  malId: number,
+  contentId: string,
+): Promise<{
   cast: Credit[];
   crew: Credit[];
 }> {
@@ -2453,16 +2512,27 @@ const TMDB_MAX_PAGES = 500;
 const TMDB_PAGE_SIZE = 20;
 
 function tmdbSortParam(
-  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime",
+  sort:
+    | "popularity"
+    | "rating"
+    | "newest"
+    | "oldest"
+    | "title_asc"
+    | "title_desc"
+    | "runtime",
   media: "movie" | "tv",
 ): string {
   switch (sort) {
     case "rating":
       return "vote_average.desc";
     case "newest":
-      return media === "movie" ? "primary_release_date.desc" : "first_air_date.desc";
+      return media === "movie"
+        ? "primary_release_date.desc"
+        : "first_air_date.desc";
     case "oldest":
-      return media === "movie" ? "primary_release_date.asc" : "first_air_date.asc";
+      return media === "movie"
+        ? "primary_release_date.asc"
+        : "first_air_date.asc";
     case "title_asc":
       return media === "movie" ? "original_title.asc" : "original_name.asc";
     case "title_desc":
@@ -2487,8 +2557,12 @@ async function fetchTmdbDiscoverWindow(opts: {
   pageSize: number;
   map: (raw: Record<string, unknown>) => Content | null;
 }): Promise<WorldCatalogPage> {
-  const page = Number.isFinite(opts.page) ? Math.max(1, Math.floor(opts.page)) : 1;
-  const pageSize = Number.isFinite(opts.pageSize) ? Math.min(100, Math.max(1, Math.floor(opts.pageSize))) : 60;
+  const page = Number.isFinite(opts.page)
+    ? Math.max(1, Math.floor(opts.page))
+    : 1;
+  const pageSize = Number.isFinite(opts.pageSize)
+    ? Math.min(100, Math.max(1, Math.floor(opts.pageSize)))
+    : 60;
   const offset = (page - 1) * pageSize;
   const skip = offset % TMDB_PAGE_SIZE;
   const tmdbPagesNeeded = Math.ceil((skip + pageSize) / TMDB_PAGE_SIZE);
@@ -2529,10 +2603,7 @@ async function fetchTmdbDiscoverWindow(opts: {
     .filter(Boolean) as Content[];
 
   // UI total pages so last catalog page still maps into TMDB
-  const totalPages = Math.max(
-    1,
-    Math.ceil(tmdbTotalResults / pageSize),
-  );
+  const totalPages = Math.max(1, Math.ceil(tmdbTotalResults / pageSize));
 
   return {
     items: items.slice(0, pageSize),
@@ -2546,15 +2617,25 @@ async function fetchTmdbDiscoverWindow(opts: {
 export async function fetchWorldMoviesPage(
   page = 1,
   pageSize = 60,
-  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  sort:
+    | "popularity"
+    | "rating"
+    | "newest"
+    | "oldest"
+    | "title_asc"
+    | "title_desc"
+    | "runtime" = "popularity",
   includeAdult = false,
   country?: string,
+  genre?: string,
 ): Promise<WorldCatalogPage> {
   if (!hasTmdbAccess()) {
     return { items: [], page: 1, totalPages: 1, total: 0 };
   }
   const base: Record<string, string> = {
-    ...(sort === "newest" ? { "primary_release_date.lte": new Date().toISOString().slice(0, 10) } : {}),
+    ...(sort === "newest"
+      ? { "primary_release_date.lte": new Date().toISOString().slice(0, 10) }
+      : {}),
     sort_by: tmdbSortParam(sort, "movie"),
     include_adult: includeAdult ? "true" : "false",
     language: "en-US",
@@ -2564,6 +2645,8 @@ export async function fetchWorldMoviesPage(
   if (country) {
     base.with_origin_country = country.toUpperCase();
   }
+  const genreId = tmdbGenreId(genre, "movie");
+  if (genreId) base.with_genres = String(genreId);
   // Rating/newest need a vote floor so empty stubs don't dominate
   if (sort === "rating") {
     base["vote_count.gte"] = "50";
@@ -2582,15 +2665,25 @@ export async function fetchWorldMoviesPage(
 export async function fetchWorldSeriesPage(
   page = 1,
   pageSize = 60,
-  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  sort:
+    | "popularity"
+    | "rating"
+    | "newest"
+    | "oldest"
+    | "title_asc"
+    | "title_desc"
+    | "runtime" = "popularity",
   country?: string,
   includeMature = false,
+  genre?: string,
 ): Promise<WorldCatalogPage> {
   if (!hasTmdbAccess()) {
     return { items: [], page: 1, totalPages: 1, total: 0 };
   }
   const base: Record<string, string> = {
-    ...(sort === "newest" ? { "first_air_date.lte": new Date().toISOString().slice(0, 10) } : {}),
+    ...(sort === "newest"
+      ? { "first_air_date.lte": new Date().toISOString().slice(0, 10) }
+      : {}),
     sort_by: tmdbSortParam(sort, "tv"),
     language: "en-US",
     include_adult: includeMature ? "true" : "false",
@@ -2602,12 +2695,12 @@ export async function fetchWorldSeriesPage(
   if (country) {
     base.with_origin_country = country.toUpperCase();
   }
+  const genreId = tmdbGenreId(genre, "tv");
+  if (genreId) base.with_genres = String(genreId);
   if (sort === "rating") {
     base["vote_count.gte"] = "40";
   }
-  const { isGeneralSeriesOnly } = await import(
-    "@/lib/content/classification"
-  );
+  const { isGeneralSeriesOnly } = await import("@/lib/content/classification");
 
   const result = await fetchTmdbDiscoverWindow({
     path: "/discover/tv",
@@ -2646,14 +2739,24 @@ export async function fetchWorldDramaPage(
   type: DramaContentType,
   page = 1,
   pageSize = 60,
-  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  sort:
+    | "popularity"
+    | "rating"
+    | "newest"
+    | "oldest"
+    | "title_asc"
+    | "title_desc"
+    | "runtime" = "popularity",
   includeMature = false,
+  genre?: string,
 ): Promise<WorldCatalogPage> {
   if (!hasTmdbAccess()) {
     return { items: [], page: 1, totalPages: 1, total: 0 };
   }
   const base: Record<string, string> = {
-    ...(sort === "newest" ? { "first_air_date.lte": new Date().toISOString().slice(0, 10) } : {}),
+    ...(sort === "newest"
+      ? { "first_air_date.lte": new Date().toISOString().slice(0, 10) }
+      : {}),
     sort_by: tmdbSortParam(sort, "tv"),
     // Origin country only — pipe-OR across all countries for this type so the
     // full catalog (incl. TW/HK for C-drama) paginates through TMDB.
@@ -2666,6 +2769,8 @@ export async function fetchWorldDramaPage(
   if (sort === "rating") {
     base["vote_count.gte"] = "20";
   }
+  const genreId = tmdbGenreId(genre, "tv");
+  if (genreId) base.with_genres = String(genreId);
   return fetchTmdbDiscoverWindow({
     path: "/discover/tv",
     baseParams: base,
@@ -2679,7 +2784,14 @@ export async function fetchWorldDramaPage(
 export async function fetchWorldKdramaPage(
   page = 1,
   pageSize = 60,
-  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  sort:
+    | "popularity"
+    | "rating"
+    | "newest"
+    | "oldest"
+    | "title_asc"
+    | "title_desc"
+    | "runtime" = "popularity",
 ): Promise<WorldCatalogPage> {
   return fetchWorldDramaPage("kdrama", page, pageSize, sort);
 }
@@ -2692,9 +2804,17 @@ export async function fetchWorldKdramaPage(
 export async function fetchWorldAnimePage(
   page = 1,
   pageSize = 60,
-  sort: "popularity" | "rating" | "newest" | "oldest" | "title_asc" | "title_desc" | "runtime" = "popularity",
+  sort:
+    | "popularity"
+    | "rating"
+    | "newest"
+    | "oldest"
+    | "title_asc"
+    | "title_desc"
+    | "runtime" = "popularity",
   includeMature = false,
   formatCategory?: "movie" | "series",
+  genre?: string,
 ): Promise<WorldCatalogPage> {
   const isMovieOnly = formatCategory === "movie";
   const isSeriesOnly = formatCategory === "series";
@@ -2702,6 +2822,8 @@ export async function fetchWorldAnimePage(
   // AniList max 50/page — if UI wants 60, fetch 2 AniList pages
   const pagesNeeded = Math.max(1, Math.ceil(pageSize / perPage));
   const start = (Math.max(1, page) - 1) * pagesNeeded + 1;
+  const anilistGenre =
+    genre?.trim().toLowerCase() === "science fiction" ? "Sci-Fi" : genre;
 
   const anilistSort =
     sort === "rating"
@@ -2729,6 +2851,7 @@ export async function fetchWorldAnimePage(
             sort: anilistSort,
             format: "MOVIE",
             isAdult: false,
+            genre: anilistGenre,
           }),
         ),
       ).then(async (safe) => {
@@ -2741,6 +2864,7 @@ export async function fetchWorldAnimePage(
               sort: anilistSort,
               format: "MOVIE",
               isAdult: true,
+              genre: anilistGenre,
             }),
           ),
         );
@@ -2801,6 +2925,7 @@ export async function fetchWorldAnimePage(
               sort: anilistSort,
               format,
               isAdult: false,
+              genre: anilistGenre,
             }),
           ),
         ).then(async (safe) => {
@@ -2813,6 +2938,7 @@ export async function fetchWorldAnimePage(
                 sort: anilistSort,
                 format,
                 isAdult: true,
+                genre: anilistGenre,
               }),
             ),
           );
@@ -2887,6 +3013,7 @@ export async function fetchWorldAnimePage(
           perPage,
           sort: anilistSort,
           isAdult: false,
+          genre: anilistGenre,
         }),
       ),
     ).then(async (safe) => {
@@ -2898,6 +3025,7 @@ export async function fetchWorldAnimePage(
             perPage,
             sort: anilistSort,
             isAdult: true,
+            genre: anilistGenre,
           }),
         ),
       );
@@ -2910,6 +3038,7 @@ export async function fetchWorldAnimePage(
           sort: anilistSort,
           format: "MOVIE",
           isAdult: false,
+          genre: anilistGenre,
         })
           .then(async (safe) => {
             if (!includeMature) return safe;
@@ -2919,6 +3048,7 @@ export async function fetchWorldAnimePage(
               sort: anilistSort,
               format: "MOVIE",
               isAdult: true,
+              genre: anilistGenre,
             });
             return {
               items: [...safe.items, ...(adult?.items ?? [])],
@@ -3012,7 +3142,12 @@ export function tmdbLooksAdult(
   if (TMDB_ADULT_OVERVIEW.test(overview)) return true;
   // Title signal alone is weaker (false positives like "Sex Education" exist),
   // so require a title hit AND at least a soft overview corroboration.
-  if (TMDB_ADULT_TITLE.test(title) && /\b(affair|desire|passion|body|night|seduc|lust|nude|bed|lover)\b/i.test(overview)) {
+  if (
+    TMDB_ADULT_TITLE.test(title) &&
+    /\b(affair|desire|passion|body|night|seduc|lust|nude|bed|lover)\b/i.test(
+      overview,
+    )
+  ) {
     return true;
   }
   return false;
@@ -3029,9 +3164,7 @@ function mapTmdbMovie(
   const posterPath = raw.poster_path ? String(raw.poster_path) : null;
   const backdropPath = raw.backdrop_path ? String(raw.backdrop_path) : null;
   const release = raw.release_date ? String(raw.release_date) : null;
-  let lang = raw.original_language
-    ? String(raw.original_language)
-    : null;
+  let lang = raw.original_language ? String(raw.original_language) : null;
   // Normalize Tagalog aliases used by TMDB
   if (lang === "fil" || lang === "tgl") lang = "tl";
 
@@ -3059,7 +3192,9 @@ function mapTmdbMovie(
   const genreIds = Array.isArray(raw.genre_ids)
     ? (raw.genre_ids as number[])
     : Array.isArray(raw.genres)
-      ? (raw.genres as Array<{ id?: number }>).map((g) => Number(g.id)).filter(Boolean)
+      ? (raw.genres as Array<{ id?: number }>)
+          .map((g) => Number(g.id))
+          .filter(Boolean)
       : [];
 
   // Movies catalog keeps every theatrical title as contentType=movie so the
@@ -3086,9 +3221,7 @@ function mapTmdbMovie(
     slug: slugify(`${title}-${id}`),
     contentType: "movie",
     title,
-    originalTitle: raw.original_title
-      ? String(raw.original_title)
-      : undefined,
+    originalTitle: raw.original_title ? String(raw.original_title) : undefined,
     overview,
     poster: posterPath
       ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
@@ -3139,18 +3272,14 @@ function mapTmdbAnimeMovie(raw: Record<string, unknown>): Content | null {
   const posterPath = raw.poster_path ? String(raw.poster_path) : null;
   const backdropPath = raw.backdrop_path ? String(raw.backdrop_path) : null;
   const release = raw.release_date ? String(raw.release_date) : null;
-  const lang = raw.original_language
-    ? String(raw.original_language)
-    : "ja";
+  const lang = raw.original_language ? String(raw.original_language) : "ja";
 
   return safeParse({
     id: `tmdb_anime_movie_${id}`,
     slug: slugify(`${title}-${id}`),
     contentType: "anime",
     title,
-    originalTitle: raw.original_title
-      ? String(raw.original_title)
-      : undefined,
+    originalTitle: raw.original_title ? String(raw.original_title) : undefined,
     overview: String(raw.overview ?? ""),
     poster: posterPath
       ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
@@ -3222,13 +3351,13 @@ function mapTmdbTv(
   const origin = Array.isArray(raw.origin_country)
     ? (raw.origin_country as string[])
     : [];
-  const lang = raw.original_language
-    ? String(raw.original_language)
-    : null;
+  const lang = raw.original_language ? String(raw.original_language) : null;
   const genreIds = Array.isArray(raw.genre_ids)
     ? (raw.genre_ids as number[])
     : Array.isArray(raw.genres)
-      ? (raw.genres as Array<{ id?: number }>).map((g) => Number(g.id)).filter(Boolean)
+      ? (raw.genres as Array<{ id?: number }>)
+          .map((g) => Number(g.id))
+          .filter(Boolean)
       : [];
   const isAnimation = genreIds.includes(16);
   const genres =
@@ -3254,9 +3383,7 @@ function mapTmdbTv(
       slug: slugify(`${title}-${id}`),
       contentType: "anime",
       title,
-      originalTitle: raw.original_name
-        ? String(raw.original_name)
-        : undefined,
+      originalTitle: raw.original_name ? String(raw.original_name) : undefined,
       overview,
       poster: posterPath
         ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
@@ -3311,9 +3438,7 @@ function mapTmdbTv(
     slug: slugify(`${title}-${id}`),
     contentType: dramaType ?? "series",
     title,
-    originalTitle: raw.original_name
-      ? String(raw.original_name)
-      : undefined,
+    originalTitle: raw.original_name ? String(raw.original_name) : undefined,
     overview,
     poster: posterPath
       ? { url: tmdbPoster(posterPath)!, source: "tmdb" }
@@ -3331,12 +3456,10 @@ function mapTmdbTv(
     countries: origin,
     genres,
     runtime: null,
-    seasonCount: raw.number_of_seasons != null
-      ? Number(raw.number_of_seasons)
-      : null,
-    episodeCount: raw.number_of_episodes != null
-      ? Number(raw.number_of_episodes)
-      : null,
+    seasonCount:
+      raw.number_of_seasons != null ? Number(raw.number_of_seasons) : null,
+    episodeCount:
+      raw.number_of_episodes != null ? Number(raw.number_of_episodes) : null,
     ageRating: isAdult ? "18+" : null,
     scores: raw.vote_average
       ? [{ source: "tmdb", score: Number(raw.vote_average) }]
@@ -3524,66 +3647,126 @@ export async function fetchTmdbMature(): Promise<Content[]> {
 
 export async function fetchTmdbMovies(): Promise<Content[]> {
   // Warm cache: deep popular + top + now + multi-genre (world-scale browse is paginated on demand)
-  const [popular, top, now, upcoming, action, comedy, scifi, thriller, horror, romance, drama, adventure] =
-    await Promise.all([
-      tmdbFetchManyPages("/discover/movie", {
+  const [
+    popular,
+    top,
+    now,
+    upcoming,
+    action,
+    comedy,
+    scifi,
+    thriller,
+    horror,
+    romance,
+    drama,
+    adventure,
+  ] = await Promise.all([
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         include_adult: "false",
         region: "US",
         language: "en-US",
-      }, 20),
-      tmdbFetchManyPages("/movie/top_rated", { region: "US", language: "en-US" }, 8),
-      tmdbFetchManyPages("/movie/now_playing", { region: "US", language: "en-US" }, 4),
-      tmdbFetchManyPages("/movie/upcoming", { region: "US", language: "en-US" }, 3),
-      tmdbFetchManyPages("/discover/movie", {
+      },
+      20,
+    ),
+    tmdbFetchManyPages(
+      "/movie/top_rated",
+      { region: "US", language: "en-US" },
+      8,
+    ),
+    tmdbFetchManyPages(
+      "/movie/now_playing",
+      { region: "US", language: "en-US" },
+      4,
+    ),
+    tmdbFetchManyPages(
+      "/movie/upcoming",
+      { region: "US", language: "en-US" },
+      3,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         with_genres: "28",
         "vote_count.gte": "50",
         region: "US",
-      }, 3),
-      tmdbFetchManyPages("/discover/movie", {
+      },
+      3,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         with_genres: "35",
         "vote_count.gte": "50",
         region: "US",
-      }, 3),
-      tmdbFetchManyPages("/discover/movie", {
+      },
+      3,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         with_genres: "878",
         "vote_count.gte": "40",
         region: "US",
-      }, 3),
-      tmdbFetchManyPages("/discover/movie", {
+      },
+      3,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         with_genres: "53",
         "vote_count.gte": "40",
         region: "US",
-      }, 3),
-      tmdbFetchManyPages("/discover/movie", {
+      },
+      3,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         with_genres: "27",
         "vote_count.gte": "30",
         region: "US",
-      }, 3),
-      tmdbFetchManyPages("/discover/movie", {
+      },
+      3,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         with_genres: "10749",
         "vote_count.gte": "30",
         region: "US",
-      }, 3),
-      tmdbFetchManyPages("/discover/movie", {
+      },
+      3,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         with_genres: "18",
         "vote_count.gte": "50",
         region: "US",
-      }, 3),
-      tmdbFetchManyPages("/discover/movie", {
+      },
+      3,
+    ),
+    tmdbFetchManyPages(
+      "/discover/movie",
+      {
         sort_by: "popularity.desc",
         with_genres: "12",
         "vote_count.gte": "40",
         region: "US",
-      }, 3),
-    ]);
+      },
+      3,
+    ),
+  ]);
   return [
     ...popular,
     ...top,
@@ -3733,37 +3916,61 @@ export async function fetchTmdbSeriesByCountry(
 export async function fetchTmdbSeries(): Promise<Content[]> {
   const [popular, top, airing, drama, crime, scifi, comedy, action] =
     await Promise.all([
-      tmdbFetchManyPages("/discover/tv", {
-        sort_by: "popularity.desc",
-        language: "en-US",
-      }, 18),
+      tmdbFetchManyPages(
+        "/discover/tv",
+        {
+          sort_by: "popularity.desc",
+          language: "en-US",
+        },
+        18,
+      ),
       tmdbFetchManyPages("/tv/top_rated", { language: "en-US" }, 6),
       tmdbFetchManyPages("/tv/on_the_air", { language: "en-US" }, 4),
-      tmdbFetchManyPages("/discover/tv", {
-        sort_by: "popularity.desc",
-        with_genres: "18",
-        "vote_count.gte": "40",
-      }, 3),
-      tmdbFetchManyPages("/discover/tv", {
-        sort_by: "popularity.desc",
-        with_genres: "80",
-        "vote_count.gte": "40",
-      }, 3),
-      tmdbFetchManyPages("/discover/tv", {
-        sort_by: "popularity.desc",
-        with_genres: "10765",
-        "vote_count.gte": "30",
-      }, 3),
-      tmdbFetchManyPages("/discover/tv", {
-        sort_by: "popularity.desc",
-        with_genres: "35",
-        "vote_count.gte": "30",
-      }, 3),
-      tmdbFetchManyPages("/discover/tv", {
-        sort_by: "popularity.desc",
-        with_genres: "10759",
-        "vote_count.gte": "30",
-      }, 3),
+      tmdbFetchManyPages(
+        "/discover/tv",
+        {
+          sort_by: "popularity.desc",
+          with_genres: "18",
+          "vote_count.gte": "40",
+        },
+        3,
+      ),
+      tmdbFetchManyPages(
+        "/discover/tv",
+        {
+          sort_by: "popularity.desc",
+          with_genres: "80",
+          "vote_count.gte": "40",
+        },
+        3,
+      ),
+      tmdbFetchManyPages(
+        "/discover/tv",
+        {
+          sort_by: "popularity.desc",
+          with_genres: "10765",
+          "vote_count.gte": "30",
+        },
+        3,
+      ),
+      tmdbFetchManyPages(
+        "/discover/tv",
+        {
+          sort_by: "popularity.desc",
+          with_genres: "35",
+          "vote_count.gte": "30",
+        },
+        3,
+      ),
+      tmdbFetchManyPages(
+        "/discover/tv",
+        {
+          sort_by: "popularity.desc",
+          with_genres: "10759",
+          "vote_count.gte": "30",
+        },
+        3,
+      ),
     ]);
   return [
     ...popular,
@@ -3812,7 +4019,9 @@ export async function fetchTmdbTrending(): Promise<Content[]> {
     return {
       ...c,
       contentType: "anime" as const,
-      id: c.id.startsWith("tmdb_") ? c.id.replace("tmdb_tv_", "tmdb_anime_") : c.id,
+      id: c.id.startsWith("tmdb_")
+        ? c.id.replace("tmdb_tv_", "tmdb_anime_")
+        : c.id,
       tags: Array.from(new Set([...(c.tags ?? []), "trending-today", "anime"])),
     };
   });
@@ -3848,50 +4057,50 @@ export async function fetchTrendingTodayByType(): Promise<{
     popularTv,
     popularTv2,
   ] = await Promise.all([
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/movie/day"),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/movie/week"),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/tv/day"),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/tv/week"),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-        with_genres: "16",
-        with_original_language: "ja",
-        sort_by: "popularity.desc",
-        "vote_count.gte": "30",
-        page: "1",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-        with_genres: "16",
-        with_original_language: "ja",
-        sort_by: "popularity.desc",
-        "vote_count.gte": "20",
-        page: "2",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-        with_origin_country: "KR",
-        with_original_language: "ko",
-        sort_by: "popularity.desc",
-        page: "1",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-        with_origin_country: "KR",
-        with_original_language: "ko",
-        sort_by: "popularity.desc",
-        page: "2",
-      }),
-      // Global popular — do not force region=US
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
-        page: "1",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
-        page: "2",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/popular", {
-        page: "1",
-      }),
-      tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/popular", {
-        page: "2",
-      }),
-    ]);
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/movie/day"),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/movie/week"),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/tv/day"),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/trending/tv/week"),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
+      with_genres: "16",
+      with_original_language: "ja",
+      sort_by: "popularity.desc",
+      "vote_count.gte": "30",
+      page: "1",
+    }),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
+      with_genres: "16",
+      with_original_language: "ja",
+      sort_by: "popularity.desc",
+      "vote_count.gte": "20",
+      page: "2",
+    }),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
+      with_origin_country: "KR",
+      with_original_language: "ko",
+      sort_by: "popularity.desc",
+      page: "1",
+    }),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
+      with_origin_country: "KR",
+      with_original_language: "ko",
+      sort_by: "popularity.desc",
+      page: "2",
+    }),
+    // Global popular — do not force region=US
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
+      page: "1",
+    }),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/movie/popular", {
+      page: "2",
+    }),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/popular", {
+      page: "1",
+    }),
+    tmdbGet<{ results?: Record<string, unknown>[] }>("/tv/popular", {
+      page: "2",
+    }),
+  ]);
 
   const movies = [
     ...(moviesDay?.results ?? []),
@@ -3967,16 +4176,15 @@ export async function fetchTrendingTodayByType(): Promise<{
         ...c,
         contentType: "anime" as const,
         id: c.id.replace("tmdb_tv_", "tmdb_anime_"),
-        tags: Array.from(new Set([...(c.tags ?? []), "trending-today", "popular", "anime"])),
+        tags: Array.from(
+          new Set([...(c.tags ?? []), "trending-today", "popular", "anime"]),
+        ),
         popularity: (c.popularity ?? 0) + 45,
       };
     })
     .filter(Boolean) as Content[];
 
-  const kdrama = [
-    ...(kdramaDay?.results ?? []),
-    ...(kdramaDay2?.results ?? []),
-  ]
+  const kdrama = [...(kdramaDay?.results ?? []), ...(kdramaDay2?.results ?? [])]
     .map((r) => {
       const c = mapTmdbTv(r, true);
       if (!c) return null;
@@ -4109,12 +4317,14 @@ export async function fetchTmdbWatchProviders(
   const link = regionData.link ?? null;
   const out: WatchProvider[] = [];
   const push = (
-    list: Array<{
-      provider_id?: number;
-      provider_name?: string;
-      logo_path?: string | null;
-      display_priority?: number;
-    }> | undefined,
+    list:
+      | Array<{
+          provider_id?: number;
+          provider_name?: string;
+          logo_path?: string | null;
+          display_priority?: number;
+        }>
+      | undefined,
     type: WatchProvider["type"],
   ) => {
     for (const p of list ?? []) {
@@ -4336,9 +4546,7 @@ export async function fetchTmdbDetail(
 ): Promise<Content | null> {
   const raw = await tmdbGet<Record<string, unknown>>(`/${mediaType}/${id}`);
   if (!raw) return null;
-  return mediaType === "movie"
-    ? mapTmdbMovie(raw)
-    : mapTmdbTv(raw, asKdrama);
+  return mediaType === "movie" ? mapTmdbMovie(raw) : mapTmdbTv(raw, asKdrama);
 }
 
 /** Catalog IDs with free legal full in-app playback (archive embeds). */

@@ -18,7 +18,6 @@ import { getDeviceRegion } from "@/lib/user/region";
 import { landingSection } from "@/lib/motion";
 import { filterPublicCatalog } from "@/lib/content/mature";
 import { isRestrictedContentUser } from "@/lib/content/mature";
-import { isAnimeLikeContent } from "@/lib/content/classification";
 
 const HeroOrbits = dynamic(
   () => import("./hero-orbits").then((m) => m.HeroOrbits),
@@ -55,15 +54,14 @@ export function HomePage() {
   const home = data ?? fallback;
 
   const carouselItems = useMemo(() => {
-    // Hero "Popular & trending today" — never anime / animation
+    // Server order already blends popular and genuinely new titles from every
+    // primary catalog; keep that mix intact for the rotating hero.
     const raw = (
       home.featuredCarousel?.length
         ? home.featuredCarousel
         : [home.featured, ...home.trending].filter(Boolean)
     ).filter(Boolean) as NonNullable<typeof home.featured>[];
-    return filterPublicCatalog(raw)
-      .filter((c) => !isAnimeLikeContent(c))
-      .slice(0, 12);
+    return filterPublicCatalog(raw).slice(0, 12);
   }, [home]);
 
   return (
@@ -77,7 +75,11 @@ export function HomePage() {
         <div className="hero-vignette relative z-10">
           <HeroCarousel
             items={carouselItems}
-            liveLabel={home.catalogStatus === "live" ? "Popular & trending today" : "Discover your next watch"}
+            liveLabel={
+              home.catalogStatus === "live"
+                ? "Popular & new right now"
+                : "Discover your next watch"
+            }
           />
         </div>
       </div>
@@ -123,15 +125,54 @@ export function HomePage() {
           showRank
         />
 
-        <nav aria-label="Browse catalogs" className="flex flex-wrap gap-2">
-          {[["Movies", "/movies"], ["Series", "/series"], ["Anime", "/anime"], ["K-dramas", "/kdrama"], ["J-dramas", "/jdrama"], ["C-dramas", "/cdrama"], ["Thai dramas", "/thaidrama"]].map(([label, href]) => (
-            <Link key={href} href={href} className="rounded-full border border-white/15 px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-[var(--primary)]">{label}</Link>
+        <nav
+          aria-label="Browse catalogs"
+          className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-[var(--surface)]/80 p-2 sm:grid-cols-4 lg:grid-cols-7"
+        >
+          {[
+            ["Movies", "Global cinema", "/movies"],
+            ["Series", "Binge-worthy TV", "/series"],
+            ["Anime", "Series & films", "/anime"],
+            ["K-dramas", "Korean stories", "/kdrama"],
+            ["J-dramas", "Japanese drama", "/jdrama"],
+            ["C-dramas", "Chinese drama", "/cdrama"],
+            ["Thai dramas", "Thai favorites", "/thaidrama"],
+          ].map(([label, note, href]) => (
+            <Link
+              key={href}
+              href={href}
+              className="group rounded-xl px-3 py-3 transition-colors hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-[var(--primary)]"
+            >
+              <span className="block text-sm font-semibold text-white group-hover:text-[var(--primary-light)]">
+                {label}
+              </span>
+              <span className="mt-0.5 block text-[11px] text-[var(--text-muted)]">
+                {note}
+              </span>
+            </Link>
           ))}
         </nav>
-        <ContentRow title="Latest movies" subtitle="Newest released films in the catalog" items={home.latestMovies ?? []} wide />
-        <ContentRow title="Latest series" subtitle="Recently premiered series" items={home.latestSeries ?? []} />
-        <ContentRow title="Latest anime" subtitle="Recent anime releases and premieres" items={home.latestAnime ?? []} />
-        <ContentRow title="Latest dramas" subtitle="Recent K, J, C, Thai and Filipino premieres" items={home.latestDramas ?? []} />
+        <ContentRow
+          title="Latest movies"
+          subtitle="Newest released films in the catalog"
+          items={home.latestMovies ?? []}
+          wide
+        />
+        <ContentRow
+          title="Latest series"
+          subtitle="Recently premiered series"
+          items={home.latestSeries ?? []}
+        />
+        <ContentRow
+          title="Latest anime"
+          subtitle="Recent anime releases and premieres"
+          items={home.latestAnime ?? []}
+        />
+        <ContentRow
+          title="Latest dramas"
+          subtitle="Recent K, J, C, Thai and Filipino premieres"
+          items={home.latestDramas ?? []}
+        />
 
         {/* Popularity is separate from release date. */}
         <ContentRow
@@ -154,6 +195,29 @@ export function HomePage() {
           title="Popular dramas today"
           subtitle="K · J · C · Thai · Filipino"
           items={home.popularDramas ?? []}
+        />
+
+        <div className="cinematic-divider" />
+        <ContentRow
+          title="All movies"
+          subtitle="A broader mix from cinemas worldwide"
+          items={home.allMovies ?? home.popularMovies}
+          wide
+        />
+        <ContentRow
+          title="All series"
+          subtitle="Popular shows across the global catalog"
+          items={home.allSeries ?? home.popularSeries}
+        />
+        <ContentRow
+          title="All anime"
+          subtitle="TV, OVA, ONA and feature anime"
+          items={home.allAnime ?? home.airingAnime}
+        />
+        <ContentRow
+          title="All dramas"
+          subtitle="Korean · Japanese · Chinese · Thai · Filipino"
+          items={home.allDramas ?? home.popularDramas ?? []}
         />
 
         {(home.animeMovies?.length ?? 0) > 0 && (
@@ -244,6 +308,21 @@ export function HomePage() {
             subtitle="Top Korean cinema"
             items={home.koreanMovies}
             wide
+          />
+        )}
+        {(home.englishMovies?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular English-language movies"
+            subtitle="US · UK · Canada · Australia · more"
+            items={home.englishMovies ?? []}
+            wide
+          />
+        )}
+        {(home.englishSeries?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Popular English-language series"
+            subtitle="Top shows from English-speaking markets"
+            items={home.englishSeries ?? []}
           />
         )}
         {(home.koreanSeries?.length ?? 0) > 0 && (

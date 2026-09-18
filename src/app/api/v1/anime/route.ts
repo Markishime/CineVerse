@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
       : formatParam === "series" || formatParam === "tv"
         ? "series"
         : undefined;
+  const genre = request.nextUrl.searchParams.get("genre") ?? undefined;
   try {
     const result = await catalog.byType(
       "anime",
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
       region,
       undefined,
       animeFormat,
+      genre,
     );
     return json(result);
   } catch (err) {

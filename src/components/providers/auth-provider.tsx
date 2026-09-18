@@ -4,10 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { useAuthStore } from "@/stores/auth-store";
 import { useGuestLibraryStore } from "@/stores/guest-library-store";
-import {
-  getClientAuth,
-  isFirebaseConfigured,
-} from "@/lib/firebase/client";
+import { getClientAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 import { fetchMe } from "@/lib/api/user";
 import { putFavorite, putLibrary } from "@/lib/api/user";
 import {
@@ -64,20 +61,17 @@ async function migrateGuestData(uid: string) {
     }
     writeLocalLibrary(null, []);
     guest.clear();
+    const { migrateGuestContinueWatching } =
+      await import("@/lib/content/watch-progress");
+    migrateGuestContinueWatching(uid);
   } catch {
     // migration best-effort
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const {
-    setUser,
-    setProfile,
-    setSettings,
-    setLoading,
-    setIsAdmin,
-    reset,
-  } = useAuthStore();
+  const { setUser, setProfile, setSettings, setLoading, setIsAdmin, reset } =
+    useAuthStore();
 
   useEffect(() => {
     if (!isFirebaseConfigured()) {

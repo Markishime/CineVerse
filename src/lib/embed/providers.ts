@@ -11,10 +11,9 @@
 
 export type EmbedProviderId =
   // General — movies / series
-  | "videasy"
+  | "vidfast"
   | "onetwoonemovies"
   | "vidlink"
-  | "vidfast"
   | "autoembed"
   | "vidsrc"
   | "vidcore"
@@ -144,50 +143,11 @@ function embedLangParam(language?: string): string | undefined {
  * General TMDB providers — researched endpoint formats (2025–2026).
  *
  * Priority (most reliable first):
- * AutoEmbed (autoembed.co) → VidFast (vidfast.vc) → VidSrc → VixSrc → 2Embed → …
+ * VidFast (vidfast.vc) → AutoEmbed (autoembed.co) → VidSrc → VixSrc → 2Embed → …
  *
  * Filipino movies: use TMDB numeric id + no Tagalog lang flag (see embedLangParam).
  */
 export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
-  {
-    id: "videasy",
-    name: "Videasy",
-    supportsTv: true,
-    // player.videasy.net — broad international catalog incl. Korean/Asian films.
-    // Verified in a real browser to stream Parasite, Oldboy, Memories of Murder
-    // (real .m3u8 manifests) where AutoEmbed/VidFast served only ad shells.
-    // Movie: https://player.videasy.net/movie/{tmdbId}
-    // TV:    https://player.videasy.net/tv/{tmdbId}/{season}/{episode}
-    movieUrl: (tmdbId) => `https://player.videasy.net/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://player.videasy.net/tv/${tmdbId}/${season}/${episode}`,
-  },
-  {
-    id: "onetwoonemovies",
-    name: "111Movies",
-    supportsTv: true,
-    // 111movies.com — verified in a real browser to actually PLAY Korean films
-    // (video element advanced) for Parasite/Oldboy/Memories of Murder. Accepts
-    // TMDB ids. Movie: /movie/{id}  TV: /tv/{id}/{season}/{episode}
-    movieUrl: (tmdbId) => `https://111movies.com/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://111movies.com/tv/${tmdbId}/${season}/${episode}`,
-  },
-  {
-    id: "autoembed",
-    name: "AutoEmbed",
-    supportsTv: true,
-    // Live host: autoembed.co (verified reachable — returns HTTP 200). The
-    // player.autoembed.cc AND player.autoembed.app hosts both time out / no
-    // longer resolve ("IP address could not be found"). autoembed.co uses a
-    // DASH-separated TV path, not slash segments:
-    // Movie: https://autoembed.co/movie/tmdb/{tmdbId}
-    // TV:    https://autoembed.co/tv/tmdb/{tmdbId}-{season}-{episode}
-    // TMDB or IMDb ids accepted. No lang param.
-    movieUrl: (tmdbId) => `https://autoembed.co/movie/tmdb/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`,
-  },
   {
     id: "vidfast",
     name: "VidFast",
@@ -203,6 +163,22 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
       qs(`https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`, {
         autoPlay: opts?.autoplay === false ? "false" : "true",
       }),
+  },
+  {
+    id: "onetwoonemovies",
+    name: "111Movies",
+    supportsTv: true,
+    movieUrl: (tmdbId) => `https://111movies.com/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://111movies.com/tv/${tmdbId}/${season}/${episode}`,
+  },
+  {
+    id: "autoembed",
+    name: "AutoEmbed",
+    supportsTv: true,
+    movieUrl: (tmdbId) => `https://autoembed.co/movie/tmdb/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`,
   },
   {
     id: "vidsrc",
@@ -396,10 +372,11 @@ export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
       if (!ids.anilist) return null;
       const ep = Math.max(1, ids.episode ?? 1);
       const dub = preferDub(undefined, ids);
-      return qs(
-        `https://player.cinezo.live/embed/anime/${ids.anilist}/${ep}`,
-        { dub: dub ? "true" : "false", autoplay: true, poster: true },
-      );
+      return qs(`https://player.cinezo.live/embed/anime/${ids.anilist}/${ep}`, {
+        dub: dub ? "true" : "false",
+        autoplay: true,
+        poster: true,
+      });
     },
   },
   {
@@ -563,12 +540,9 @@ export const DRAMA_EMBED_PROVIDERS: EmbedProvider[] = [
         autoplay: opts?.autoplay,
       }),
     tvUrl: (tmdbId, season, episode, opts) =>
-      qs(
-        `https://www.nontongo.win/embed/tv/${tmdbId}/${season}/${episode}`,
-        {
-          autoplay: opts?.autoplay,
-        },
-      ),
+      qs(`https://www.nontongo.win/embed/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay,
+      }),
   },
   {
     id: "frembed",
@@ -691,11 +665,8 @@ export function providerCanPlay(
 /**
  * Content-type aware provider chain (user product rules):
  *
- * - Movies (non-PH): AutoEmbed → VidFast → VidSrc → VixSrc → …
- * - Filipino movies: VixSrc → VidSrc → VidFast → 2Embed → AutoEmbed (fast PH loads)
- * - K-Drama: NontonGo first → DramaPlay → KissKH → Frembed → AutoEmbed → …
- * - Anime: AutoEmbed first (correct TV tmdb) → VidFast → VidSrc → anime-native
- * - Other dramas: NontonGo-first drama pack + generals
+ * VidFast is always first when a TMDB id is available. Content-specific hosts
+ * remain available as fallbacks for anime and regional dramas.
  */
 export function getProvidersForContentType(
   contentType: string,
@@ -730,14 +701,14 @@ export function getProvidersForContentType(
     );
     const resolveNatives = liveNatives.filter((p) => p.needsResolve);
     chain = [
-      ...instantNatives,
       ...preferProviders(generalSafe, [
-        "autoembed",
         "vidfast",
+        "autoembed",
         "vidsrc",
         "vixsrc",
         "2embed",
       ]),
+      ...instantNatives,
       ...resolveNatives,
     ];
   } else if (
@@ -756,16 +727,11 @@ export function getProvidersForContentType(
     // id) and is filtered out by providerCanPlay. Dead hosts (DramaPlay=SSL
     // 525, Frembed=French-geo redirect) are not placed ahead of live ones.
     if (mediaType === "movie") {
-      // Videasy + 111Movies lead — the only hosts verified in a real browser to
-      // actually stream Korean/Asian films (Parasite, Oldboy, Memories of
-      // Murder). AutoEmbed/VidFast served ad shells with no stream for these, so
-      // they trail as fallback. NontonGo (drama host) after that.
       chain = [
         ...preferProviders(general, [
-          "videasy",
+          "vidfast",
           "onetwoonemovies",
           "autoembed",
-          "vidfast",
           "vidsrc",
           "vixsrc",
           "2embed",
@@ -774,18 +740,16 @@ export function getProvidersForContentType(
         ...preferProviders(liveDrama, ["nontongo"]),
       ];
     } else {
-      // Korean/Asian SERIES: drama host first, then the verified aggregators.
       chain = [
-        ...preferProviders(liveDrama, ["nontongo"]),
         ...preferProviders(general, [
-          "videasy",
+          "vidfast",
           "onetwoonemovies",
           "autoembed",
-          "vidfast",
           "vidsrc",
           "vixsrc",
           "2embed",
         ]),
+        ...preferProviders(liveDrama, ["nontongo"]),
       ];
     }
   } else if (isFilipinoContent(ids)) {
@@ -796,9 +760,8 @@ export function getProvidersForContentType(
     // a TMDB id, so it can't lead here — see the kisskh provider.)
     chain = [
       ...preferProviders(general, [
-        "videasy",
-        "onetwoonemovies",
         "vidfast",
+        "onetwoonemovies",
         "vidsrc",
         "vidcore",
         "vixsrc",
@@ -809,13 +772,10 @@ export function getProvidersForContentType(
       ...preferProviders(liveDrama, ["nontongo"]),
     ];
   } else {
-    // Default movies + western series: Videasy + 111Movies lead (verified real
-    // streams / broad catalog), then AutoEmbed and the rest.
     chain = preferProviders(general, [
-      "videasy",
+      "vidfast",
       "onetwoonemovies",
       "autoembed",
-      "vidfast",
       "vidsrc",
       "vixsrc",
       "2embed",

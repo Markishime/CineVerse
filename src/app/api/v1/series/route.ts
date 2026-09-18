@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
       ? "*"
       : regionRaw.toUpperCase();
   const country = request.nextUrl.searchParams.get("country") ?? undefined;
+  const genre = request.nextUrl.searchParams.get("genre") ?? undefined;
   try {
     return json(
       await catalog.byType(
@@ -31,6 +32,8 @@ export async function GET(request: NextRequest) {
         playableOnly,
         region,
         country,
+        undefined,
+        genre,
       ),
     );
   } catch (err) {

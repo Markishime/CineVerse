@@ -303,10 +303,17 @@ export function VideoPlayer({
         { language: effectiveLanguage, autoplay: autoPlay },
       );
     }
-    return buildEmbedUrl(activeProvider.id, tmdbId, "movie", undefined, undefined, {
-      language: effectiveLanguage,
-      autoplay: autoPlay,
-    });
+    return buildEmbedUrl(
+      activeProvider.id,
+      tmdbId,
+      "movie",
+      undefined,
+      undefined,
+      {
+        language: effectiveLanguage,
+        autoplay: autoPlay,
+      },
+    );
   })();
 
   const embedUrl = resolvedUrl ?? staticEmbedUrl;
@@ -405,12 +412,7 @@ export function VideoPlayer({
       skipLockRef.current = false;
     }, 50);
     return () => window.clearTimeout(t);
-  }, [
-    activeProvider,
-    staticEmbedUrl,
-    availableProviders.length,
-    onAllFailed,
-  ]);
+  }, [activeProvider, staticEmbedUrl, availableProviders.length, onAllFailed]);
 
   // Longer timeout — don't race into SuperEmbed; user can still switch Servers
   useEffect(() => {
@@ -497,7 +499,12 @@ export function VideoPlayer({
   useEffect(() => {
     if (!activeProvider) return;
     function handleMessage(e: MessageEvent) {
-      if (!embedUrl || e.source !== iframeRef.current?.contentWindow || e.origin !== new URL(embedUrl).origin) return;
+      if (
+        !embedUrl ||
+        e.source !== iframeRef.current?.contentWindow ||
+        e.origin !== new URL(embedUrl).origin
+      )
+        return;
       const data = e.data;
       const raw =
         typeof data === "string"
@@ -554,7 +561,7 @@ export function VideoPlayer({
     }
     // Shell loaded — keep it. IMPORTANT: absence of a postMessage does NOT mean
     // failure. Many hosts that play perfectly are cross-origin and never
-    // postMessage the parent (verified: Videasy/111Movies stream Korean films
+    // postMessage the parent (verified: some providers stream regional films
     // via a <video> with no parent signal). Auto-advancing on "no positive
     // signal" was skipping these working providers and landing on a blank host.
     // We now advance ONLY on an explicit negative signal (handled in the
@@ -611,7 +618,10 @@ export function VideoPlayer({
   const iframeSrc = embedUrl;
 
   return (
-    <div className={cn("relative isolate", showMenu && "z-50", className)} data-cineverse-player>
+    <div
+      className={cn("relative isolate", showMenu && "z-50", className)}
+      data-cineverse-player
+    >
       {/* Player frame — overflow clips any embed chrome that tries to spill out */}
       <div className="relative z-0 aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
         {status === "loading" && (
@@ -682,7 +692,11 @@ export function VideoPlayer({
         )}
       </div>
 
-      <p className="mt-2 text-xs text-[var(--text-muted)]">Subtitles are available in the player’s CC menu when supplied by the source. External players may show ads. If playback does not start, choose another server.</p>
+      <p className="mt-2 text-xs text-[var(--text-muted)]">
+        Subtitles are available in the player’s CC menu when supplied by the
+        source. External players may show ads. If playback does not start,
+        choose another server.
+      </p>
 
       {/* Controls always above the iframe stacking context */}
       <div className="relative z-30 mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -716,9 +730,7 @@ export function VideoPlayer({
           )}
           <Badge tone="muted">
             Audio {effectiveLanguage.toUpperCase()}
-            {isFilipino && originLanguage !== effectiveLanguage
-              ? ` · PH`
-              : ""}
+            {isFilipino && originLanguage !== effectiveLanguage ? ` · PH` : ""}
           </Badge>
         </div>
 

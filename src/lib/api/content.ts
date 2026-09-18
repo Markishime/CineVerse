@@ -56,6 +56,8 @@ export interface HomePayload {
   thaiSeries: Content[];
   filipinoMovies: Content[];
   filipinoSeries: Content[];
+  englishMovies?: Content[];
+  englishSeries?: Content[];
   newReleases: Content[];
   comingSoon: Content[];
   topRated: Content[];
@@ -90,7 +92,10 @@ export function fetchHome(region?: string, mature?: boolean) {
   })}`;
   // Allow time for live day-trending (server budgets ~12s). Seed is already
   // on screen via placeholderData, so a longer wait upgrades the hero correctly.
-  return apiFetch<HomePayload>(path, { auth: false, signal: AbortSignal.timeout(14_000) });
+  return apiFetch<HomePayload>(path, {
+    auth: false,
+    signal: AbortSignal.timeout(14_000),
+  });
 }
 
 export function fetchMovies(params: {
@@ -209,7 +214,9 @@ export function fetchKdrama(params: {
   return fetchDrama("kdrama", params);
 }
 
-export function fetchDiscover(params: Record<string, string | number | undefined>) {
+export function fetchDiscover(
+  params: Record<string, string | number | undefined>,
+) {
   return apiFetch<Paginated<Content>>(`/discover${buildQuery(params)}`);
 }
 
@@ -320,9 +327,7 @@ export function fetchPlaybackEligibility(id: string, region?: string) {
     } | null;
     region?: string;
     tmdbIsMetadataOnly?: boolean;
-  }>(
-    `/content/${encodeURIComponent(id)}/playback${buildQuery({ region })}`,
-  );
+  }>(`/content/${encodeURIComponent(id)}/playback${buildQuery({ region })}`);
 }
 
 /** Authenticated per-title / per-episode legal session */

@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Play, X } from "lucide-react";
 import {
   listContinueWatching,
   removeContinueWatching,
+  subscribeAccountContinueWatching,
   type ContinueWatchingItem,
 } from "@/lib/content/watch-progress";
 import { useAuthStore } from "@/stores/auth-store";
@@ -16,10 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { easeOutExpo, inViewOnce } from "@/lib/motion";
-import {
-  normalizeImageUrl,
-  posterFallbackLabel,
-} from "@/lib/content/posters";
+import { normalizeImageUrl, posterFallbackLabel } from "@/lib/content/posters";
 
 const typeLabel: Record<string, string> = {
   movie: "Movie",
@@ -51,21 +49,37 @@ export function ContinueWatchingRow({
   }, [user?.uid]);
 
   useEffect(() => {
+    let unsubscribeAccount: (() => void) | undefined;
+    let cancelled = false;
     const t = window.setTimeout(refresh, 0);
     const onFocus = () => refresh();
+    const onContinueChange = () => refresh();
     const onStorage = (e: StorageEvent) => {
       if (e.key?.includes("continue_watching")) refresh();
     };
     window.addEventListener("focus", onFocus);
     window.addEventListener("storage", onStorage);
+    window.addEventListener("cineverse:continue-watching", onContinueChange);
+    if (user?.uid) {
+      void subscribeAccountContinueWatching(user.uid, setItems).then((stop) => {
+        if (cancelled) stop();
+        else unsubscribeAccount = stop;
+      });
+    }
     const id = window.setInterval(refresh, 60_000);
     return () => {
+      cancelled = true;
+      unsubscribeAccount?.();
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener(
+        "cineverse:continue-watching",
+        onContinueChange,
+      );
       window.clearInterval(id);
       window.clearTimeout(t);
     };
-  }, [refresh]);
+  }, [refresh, user?.uid]);
 
   const reduce = useReducedMotion();
 
@@ -113,7 +127,6 @@ export function ContinueWatchingRow({
             <ContinueCard
               key={item.contentId}
               item={item}
-              uid={user?.uid}
               onRemove={() => {
                 removeContinueWatching(item.contentId, user?.uid);
                 refresh();
@@ -131,7 +144,6 @@ function ContinueCard({
   onRemove,
 }: {
   item: ContinueWatchingItem;
-  uid?: string | null;
   onRemove: () => void;
 }) {
   const img =
@@ -168,7 +180,9 @@ function ContinueCard({
             />
           </div>
           <div className="absolute left-2 top-2">
-            <Badge tone="muted">{typeLabel[item.contentType] ?? item.contentType}</Badge>
+            <Badge tone="muted">
+              {typeLabel[item.contentType] ?? item.contentType}
+            </Badge>
           </div>
         </div>
         <div className="space-y-0.5 p-2.5">

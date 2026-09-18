@@ -19,28 +19,39 @@ import { type Content } from "@/types/content";
 import type { HomePayload } from "@/lib/api/content";
 import { ensureContentPoster } from "@/lib/content/posters";
 
-/** Hero carousel only — movies · series · dramas (never anime). */
+/** Hero carousel: popularity + newest releases across every primary catalog. */
 function interleaveHero(
   movies: Content[],
   series: Content[],
+  anime: Content[],
   dramas: Content[],
-  n = 12,
+  recent: Content[],
+  n = 16,
 ): Content[] {
   const out: Content[] = [];
   const seen = new Set<string>();
   const push = (c?: Content) => {
     if (!c?.id || seen.has(c.id)) return;
-    if (isAnimeLikeContent(c)) return;
     seen.add(c.id);
     out.push(c);
   };
-  const max = Math.max(movies.length, series.length, dramas.length);
+  const max = Math.max(
+    movies.length,
+    series.length,
+    anime.length,
+    dramas.length,
+    recent.length,
+  );
   for (let i = 0; i < max && out.length < n; i++) {
     push(movies[i]);
     if (out.length >= n) break;
     push(series[i]);
     if (out.length >= n) break;
+    push(anime[i]);
+    if (out.length >= n) break;
     push(dramas[i]);
+    if (out.length >= n) break;
+    push(recent[i]);
   }
   return out;
 }
@@ -162,9 +173,28 @@ export function seedHomePayload(): HomePayload {
   const popularAnime = anime.slice(0, 48);
   const popularDramas = allDramas.slice(0, 48);
 
-  // Hero: no anime — movies · series · dramas only
+  const latest = latestRows(safe);
+  const year = new Date().getFullYear();
+  const newReleases = withPosters(
+    [...byPop]
+      .filter((c) => c.year && c.year >= year - 2)
+      .sort(
+        (a, b) =>
+          (b.releaseDate ?? "").localeCompare(a.releaseDate ?? "") ||
+          (b.year ?? 0) - (a.year ?? 0),
+      )
+      .slice(0, 36),
+  );
+
   const featured = withPosters(
-    interleaveHero(popularMovies, popularSeries, popularDramas, 12),
+    interleaveHero(
+      popularMovies,
+      popularSeries,
+      popularAnime,
+      popularDramas,
+      newReleases,
+      16,
+    ),
   );
 
   const trending = withPosters(
@@ -180,14 +210,6 @@ export function seedHomePayload(): HomePayload {
       const rest = byPop.filter((c) => !ids.has(c.id));
       return [...head, ...rest].slice(0, 60);
     })(),
-  );
-
-  const year = new Date().getFullYear();
-  const newReleases = withPosters(
-    [...byPop]
-      .filter((c) => c.year && c.year >= year - 2)
-      .sort((a, b) => (b.year ?? 0) - (a.year ?? 0))
-      .slice(0, 36),
   );
 
   // Seed stand-in for Trakt when the live API is unavailable
@@ -230,16 +252,35 @@ export function seedHomePayload(): HomePayload {
     thaiSeries: withPosters(thaiSeries.slice(0, 48)),
     filipinoMovies: [],
     filipinoSeries: withPosters(filipinoDramas.slice(0, 48)),
+    englishMovies: withPosters(
+      movies
+        .filter(
+          (c) =>
+            c.language === "en" ||
+            c.countries?.some((cn) =>
+              ["US", "GB", "CA", "AU", "NZ", "IE"].includes(cn),
+            ),
+        )
+        .slice(0, 48),
+    ),
+    englishSeries: withPosters(
+      series
+        .filter(
+          (c) =>
+            c.language === "en" ||
+            c.countries?.some((cn) =>
+              ["US", "GB", "CA", "AU", "NZ", "IE"].includes(cn),
+            ),
+        )
+        .slice(0, 48),
+    ),
     catalogStatus: "fallback",
-    ...latestRows(safe),
+    ...latest,
     newReleases,
     comingSoon: [],
     topRated: withPosters(
       [...byPop]
-        .sort(
-          (a, b) =>
-            (b.scores[0]?.score ?? 0) - (a.scores[0]?.score ?? 0),
-        )
+        .sort((a, b) => (b.scores[0]?.score ?? 0) - (a.scores[0]?.score ?? 0))
         .slice(0, 36),
     ),
     animeNextEpisode: [],

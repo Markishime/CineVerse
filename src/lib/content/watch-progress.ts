@@ -1,6 +1,8 @@
 /**
- * Watch progress + Continue Watching (Netflix-style).
- * Device-local per browser; keyed so multi-profile use stays independent when uid is set.
+ * Watch progress + Continue Watching.
+ *
+ * Guests stay device-local. Signed-in accounts use the same local-first cache
+ * and mirror it to Firestore so progress follows the account across devices.
  */
 
 import type { Content } from "@/types/content";
@@ -122,7 +124,9 @@ export function listContinueWatching(
     const items = JSON.parse(raw) as ContinueWatchingItem[];
     const now = Date.now();
     return (Array.isArray(items) ? items : [])
-      .filter((i) => i?.contentId && now - (i.updatedAt ?? 0) < PROGRESS_EXPIRY_MS)
+      .filter(
+        (i) => i?.contentId && now - (i.updatedAt ?? 0) < PROGRESS_EXPIRY_MS,
+      )
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
       .slice(0, MAX_CONTINUE);
   } catch {
@@ -141,6 +145,200 @@ function writeContinueList(items: ContinueWatchingItem[], uid?: string | null) {
   }
 }
 
+function notifyContinueWatchingChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("cineverse:continue-watching"));
+}
+
+function writeTvProgressFromContinue(item: ContinueWatchingItem): void {
+  if (
+    !item.tmdbId ||
+    item.contentType === "movie" ||
+    item.season == null ||
+    item.episode == null
+  ) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(
+      `${PROGRESS_PREFIX}tv_${item.tmdbId}`,
+      JSON.stringify({
+        season: item.season,
+        episode: item.episode,
+        updatedAt: item.updatedAt,
+      } satisfies WatchProgress),
+    );
+  } catch {
+    /* local cache is best-effort */
+  }
+}
+
+function cleanForFirestore(item: ContinueWatchingItem): ContinueWatchingItem {
+  return JSON.parse(JSON.stringify(item)) as ContinueWatchingItem;
+}
+
+async function syncContinueItemToAccount(
+  item: ContinueWatchingItem,
+  uid: string,
+): Promise<void> {
+  try {
+    const [{ doc, setDoc }, { getClientDb }, { COLLECTIONS, libraryDocId }] =
+      await Promise.all([
+        import("firebase/firestore"),
+        import("@/lib/firebase/client"),
+        import("@/lib/firebase/collections"),
+      ]);
+    const clean = cleanForFirestore(item);
+    const iso = new Date(clean.updatedAt).toISOString();
+    await setDoc(
+      doc(
+        getClientDb(),
+        COLLECTIONS.userLibrary,
+        libraryDocId(uid, clean.contentId),
+      ),
+      {
+        id: libraryDocId(uid, clean.contentId),
+        uid,
+        contentId: clean.contentId,
+        status: "watching",
+        progress: {
+          season: clean.season ?? 0,
+          episode: clean.episode ?? 0,
+          percent: clean.percent ?? 0,
+        },
+        continueWatching: clean,
+        createdAt: iso,
+        updatedAt: iso,
+      },
+      { merge: true },
+    );
+  } catch {
+    // Firestore offline/network failures never block playback; its SDK and the
+    // next local save/subscription will retry the account mirror.
+  }
+}
+
+async function removeContinueItemFromAccount(
+  contentId: string,
+  uid: string,
+): Promise<void> {
+  try {
+    const [
+      { deleteField, doc, updateDoc },
+      { getClientDb },
+      { COLLECTIONS, libraryDocId },
+    ] = await Promise.all([
+      import("firebase/firestore"),
+      import("@/lib/firebase/client"),
+      import("@/lib/firebase/collections"),
+    ]);
+    await updateDoc(
+      doc(getClientDb(), COLLECTIONS.userLibrary, libraryDocId(uid, contentId)),
+      { continueWatching: deleteField() },
+    );
+  } catch {
+    /* local removal still succeeds */
+  }
+}
+
+function isContinueWatchingItem(value: unknown): value is ContinueWatchingItem {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<ContinueWatchingItem>;
+  return Boolean(
+    item.contentId &&
+    item.title &&
+    item.href &&
+    typeof item.updatedAt === "number",
+  );
+}
+
+/**
+ * Realtime account subscription used by the home/history rows. Newer local
+ * entries are uploaded; newer remote entries hydrate this device immediately.
+ */
+export async function subscribeAccountContinueWatching(
+  uid: string,
+  onChange: (items: ContinueWatchingItem[]) => void,
+): Promise<() => void> {
+  if (typeof window === "undefined" || !uid) return () => {};
+
+  const [
+    { collection, onSnapshot, query, where },
+    { getClientDb },
+    { COLLECTIONS },
+  ] = await Promise.all([
+    import("firebase/firestore"),
+    import("@/lib/firebase/client"),
+    import("@/lib/firebase/collections"),
+  ]);
+
+  const ref = query(
+    collection(getClientDb(), COLLECTIONS.userLibrary),
+    where("uid", "==", uid),
+  );
+
+  return onSnapshot(
+    ref,
+    (snapshot) => {
+      const now = Date.now();
+      const remote = snapshot.docs
+        .map((entry) => entry.data().continueWatching as unknown)
+        .filter(isContinueWatchingItem)
+        .filter((item) => now - item.updatedAt < PROGRESS_EXPIRY_MS);
+      const local = listContinueWatching(uid);
+      const remoteById = new Map(remote.map((item) => [item.contentId, item]));
+      const mergedById = new Map<string, ContinueWatchingItem>();
+
+      for (const item of [...remote, ...local]) {
+        const current = mergedById.get(item.contentId);
+        if (!current || item.updatedAt > current.updatedAt) {
+          mergedById.set(item.contentId, item);
+        }
+      }
+
+      const merged = Array.from(mergedById.values())
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, MAX_CONTINUE);
+      writeContinueList(merged, uid);
+      for (const item of merged) writeTvProgressFromContinue(item);
+      onChange(merged);
+
+      // Upload anything watched offline or before this account was signed in.
+      for (const item of local) {
+        const accountItem = remoteById.get(item.contentId);
+        if (!accountItem || item.updatedAt > accountItem.updatedAt) {
+          void syncContinueItemToAccount(item, uid);
+        }
+      }
+    },
+    () => onChange(listContinueWatching(uid)),
+  );
+}
+
+/** Move guest-device history into the signed-in account without losing either list. */
+export function migrateGuestContinueWatching(uid: string): void {
+  if (!uid || typeof window === "undefined") return;
+  const guest = listContinueWatching(null);
+  const account = listContinueWatching(uid);
+  const byId = new Map<string, ContinueWatchingItem>();
+  for (const item of [...account, ...guest]) {
+    const current = byId.get(item.contentId);
+    if (!current || item.updatedAt > current.updatedAt)
+      byId.set(item.contentId, item);
+  }
+  const merged = Array.from(byId.values())
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_CONTINUE);
+  writeContinueList(merged, uid);
+  for (const item of merged) void syncContinueItemToAccount(item, uid);
+  try {
+    window.localStorage.removeItem(CONTINUE_KEY);
+  } catch {
+    /* ignore */
+  }
+  notifyContinueWatchingChanged();
+}
+
 /**
  * Upsert a title into Continue Watching (moves to front).
  */
@@ -157,6 +355,9 @@ export function saveContinueWatching(
     (i) => i.contentId !== next.contentId,
   );
   writeContinueList([next, ...prev], uid);
+  writeTvProgressFromContinue(next);
+  notifyContinueWatchingChanged();
+  if (uid) void syncContinueItemToAccount(next, uid);
 }
 
 export function removeContinueWatching(
@@ -167,6 +368,8 @@ export function removeContinueWatching(
     listContinueWatching(uid).filter((i) => i.contentId !== contentId),
     uid,
   );
+  notifyContinueWatchingChanged();
+  if (uid) void removeContinueItemFromAccount(contentId, uid);
 }
 
 /** Build continue entry from catalog Content + optional episode position */
@@ -227,9 +430,7 @@ export function continueFromContent(
 }
 
 /** Map continue items into lightweight Content-shaped cards for ContentRow */
-export function continueToContentStub(
-  item: ContinueWatchingItem,
-): Content {
+export function continueToContentStub(item: ContinueWatchingItem): Content {
   return {
     id: item.contentId,
     slug: item.slug,

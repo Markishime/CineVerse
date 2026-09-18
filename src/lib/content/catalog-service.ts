@@ -67,10 +67,7 @@ import {
   isHentaiContent,
   isMatureContent,
 } from "@/lib/content/mature";
-import {
-  fetchOmdbByImdbId,
-  extractRatings,
-} from "@/lib/providers/omdb-client";
+import { fetchOmdbByImdbId, extractRatings } from "@/lib/providers/omdb-client";
 import {
   fetchTraktTrendingShows,
   fetchTraktTrendingMovies,
@@ -109,6 +106,30 @@ function isAtLeastMinYear(c: Content): boolean {
   // Keep upcoming / unknown year; drop confirmed pre-1980 titles
   if (c.year == null || c.year === 0) return true;
   return c.year >= MIN_CATALOG_YEAR;
+}
+
+function contentHasGenre(content: Content, genre: string): boolean {
+  const wanted = genre.trim().toLowerCase();
+  if (!wanted) return true;
+  return content.genres.some((item) => {
+    const name = item.name.trim().toLowerCase();
+    if (name === wanted || name.includes(wanted)) return true;
+    if (
+      (wanted === "action" || wanted === "adventure") &&
+      name === "action & adventure"
+    ) {
+      return true;
+    }
+    if (
+      (wanted === "science fiction" || wanted === "sci-fi") &&
+      (name === "sci-fi" || name === "sci-fi & fantasy")
+    ) {
+      return true;
+    }
+    if (wanted === "fantasy" && name === "sci-fi & fantasy") return true;
+    if (wanted === "war" && name === "war & politics") return true;
+    return false;
+  });
 }
 
 /**
@@ -195,29 +216,69 @@ export class CatalogService {
 
     // Home needs a small fresh snapshot. Full browsing stays paginated on demand.
     const snapshot = async (requests: Promise<{ items: Content[] }>[]) =>
-      (await Promise.all(requests.map((p) => p.catch(() => ({ items: [] as Content[] }))))).flatMap((p) => p.items);
-    const dramaSnapshot = (type: "kdrama" | "cdrama" | "jdrama" | "thaidrama") => snapshot([
-      fetchWorldDramaPage(type, 1, 20, "popularity", false),
-      fetchWorldDramaPage(type, 1, 20, "newest", false),
-    ]);
+      (
+        await Promise.all(
+          requests.map((p) => p.catch(() => ({ items: [] as Content[] }))),
+        )
+      ).flatMap((p) => p.items);
+    const dramaSnapshot = (
+      type: "kdrama" | "cdrama" | "jdrama" | "thaidrama",
+    ) =>
+      snapshot([
+        fetchWorldDramaPage(type, 1, 20, "popularity", false),
+        fetchWorldDramaPage(type, 1, 20, "newest", false),
+      ]);
     const providers = Promise.all([
       Promise.all([
-        fetchAnilistAnime({ perPage: 30, sort: "TRENDING_DESC", isAdult: false }),
-        fetchAnilistAnime({ perPage: 30, sort: "START_DATE_DESC", status: "RELEASING", isAdult: false }),
-        fetchAnilistAnime({ perPage: 20, sort: "START_DATE_DESC", status: "FINISHED", isAdult: false }),
-        fetchAnilistAnime({ perPage: 20, sort: "POPULARITY_DESC", format: "MOVIE", isAdult: false }),
-      ]).then((lists) => lists.flat()).catch(() => [] as Content[]),
+        fetchAnilistAnime({
+          perPage: 30,
+          sort: "TRENDING_DESC",
+          isAdult: false,
+        }),
+        fetchAnilistAnime({
+          perPage: 30,
+          sort: "START_DATE_DESC",
+          status: "RELEASING",
+          isAdult: false,
+        }),
+        fetchAnilistAnime({
+          perPage: 20,
+          sort: "START_DATE_DESC",
+          status: "FINISHED",
+          isAdult: false,
+        }),
+        fetchAnilistAnime({
+          perPage: 20,
+          sort: "POPULARITY_DESC",
+          format: "MOVIE",
+          isAdult: false,
+        }),
+      ])
+        .then((lists) => lists.flat())
+        .catch(() => [] as Content[]),
       includeMature
         ? fetchAdultAnimeCatalog().catch(() => [] as Content[])
         : Promise.resolve([] as Content[]),
       fetchJikanTop().catch(() => [] as Content[]),
-      (hasTmdbAccess() ? Promise.resolve([] as Content[]) : fetchTvMazePopular()).catch(() => [] as Content[]),
-      (hasTmdbAccess() ? Promise.resolve([] as Content[]) : fetchTvMazeKdrama()).catch(() => [] as Content[]),
+      (hasTmdbAccess()
+        ? Promise.resolve([] as Content[])
+        : fetchTvMazePopular()
+      ).catch(() => [] as Content[]),
+      (hasTmdbAccess()
+        ? Promise.resolve([] as Content[])
+        : fetchTvMazeKdrama()
+      ).catch(() => [] as Content[]),
       dramaSnapshot("cdrama").catch(() => [] as Content[]),
       dramaSnapshot("jdrama").catch(() => [] as Content[]),
       dramaSnapshot("thaidrama").catch(() => [] as Content[]),
-      snapshot([fetchWorldMoviesPage(1, 40, "popularity"), fetchWorldMoviesPage(1, 40, "newest")]).catch(() => [] as Content[]),
-      snapshot([fetchWorldSeriesPage(1, 40, "popularity"), fetchWorldSeriesPage(1, 40, "newest")]).catch(() => [] as Content[]),
+      snapshot([
+        fetchWorldMoviesPage(1, 40, "popularity"),
+        fetchWorldMoviesPage(1, 40, "newest"),
+      ]).catch(() => [] as Content[]),
+      snapshot([
+        fetchWorldSeriesPage(1, 40, "popularity"),
+        fetchWorldSeriesPage(1, 40, "newest"),
+      ]).catch(() => [] as Content[]),
       fetchTmdbTrending().catch(() => [] as Content[]),
       dramaSnapshot("kdrama").catch(() => [] as Content[]),
       includeMature
@@ -227,15 +288,17 @@ export class CatalogService {
       // Per-country movie catalogs (Korean / Japanese / Chinese / Thai / Filipino)
       Promise.all(
         COUNTRY_CODES.map((cc) =>
-          snapshot([fetchWorldMoviesPage(1, 20, "popularity", false, cc)]).catch(
-            () => [] as Content[],
-          ),
+          snapshot([
+            fetchWorldMoviesPage(1, 20, "popularity", false, cc),
+          ]).catch(() => [] as Content[]),
         ),
       ),
       // Per-country live-action series (anime excluded in the fetcher)
       Promise.all(
         COUNTRY_CODES.map((cc) =>
-          snapshot([fetchWorldSeriesPage(1, 20, "popularity", cc)]).catch(() => [] as Content[]),
+          snapshot([fetchWorldSeriesPage(1, 20, "popularity", cc)]).catch(
+            () => [] as Content[],
+          ),
         ),
       ),
     ]);
@@ -356,9 +419,7 @@ export class CatalogService {
       ...tmdbKd,
       ...tmdbMature,
     ])
-      .map((c) =>
-        sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))),
-      )
+      .map((c) => sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))))
       .map((c) => applyMatureFlag(c))
       .map((c) => tagPlayable(c));
 
@@ -394,7 +455,10 @@ export class CatalogService {
   }
 
   async byId(id: string): Promise<Content | null> {
-    const known = this.detailCache.get(id)?.content ?? this.liveCache?.items.find((c) => c.id === id) ?? SEED_CONTENT.find((c) => c.id === id);
+    const known =
+      this.detailCache.get(id)?.content ??
+      this.liveCache?.items.find((c) => c.id === id) ??
+      SEED_CONTENT.find((c) => c.id === id);
     if (known) return known;
     const hydrated = await this.hydrate(id);
     if (hydrated) return hydrated.content;
@@ -413,7 +477,9 @@ export class CatalogService {
 
   async bySlug(slug: string): Promise<Content | null> {
     const decoded = decodeURIComponent(slug).trim();
-    const known = [...(this.liveCache?.items ?? []), ...SEED_CONTENT].find((c) => c.slug === decoded || c.id === decoded);
+    const known = [...(this.liveCache?.items ?? []), ...SEED_CONTENT].find(
+      (c) => c.slug === decoded || c.id === decoded,
+    );
     if (known) return this.detailCache.get(known.id)?.content ?? known;
     const all = await this.loadForDetail();
     const hit = all.find(
@@ -438,12 +504,22 @@ export class CatalogService {
   /**
    * Pull full detail, cast/crew images, and all trailers from the source provider.
    */
-  private detailInflight = new Map<string, Promise<{ content: Content; cast: Credit[]; crew: Credit[]; trailers: Trailer[] } | null>>();
+  private detailInflight = new Map<
+    string,
+    Promise<{
+      content: Content;
+      cast: Credit[];
+      crew: Credit[];
+      trailers: Trailer[];
+    } | null>
+  >();
 
   async hydrate(idOrSlug: string) {
     const existing = this.detailInflight.get(idOrSlug);
     if (existing) return existing;
-    const pending = this.hydrateUncached(idOrSlug).finally(() => this.detailInflight.delete(idOrSlug));
+    const pending = this.hydrateUncached(idOrSlug).finally(() =>
+      this.detailInflight.delete(idOrSlug),
+    );
     this.detailInflight.set(idOrSlug, pending);
     return pending;
   }
@@ -456,7 +532,9 @@ export class CatalogService {
   } | null> {
     const decoded = decodeURIComponent(idOrSlug).trim();
     const available = [...(this.liveCache?.items ?? []), ...SEED_CONTENT];
-    const all = available.some((c) => c.id === decoded || c.slug === decoded) ? available : await this.loadForDetail();
+    const all = available.some((c) => c.id === decoded || c.slug === decoded)
+      ? available
+      : await this.loadForDetail();
     const base =
       all.find(
         (c) =>
@@ -512,8 +590,7 @@ export class CatalogService {
         }
       } else if (base.id.startsWith("jikan_") || base.providerIds.mal) {
         const mal =
-          base.providerIds.mal ??
-          Number(base.id.replace("jikan_", ""));
+          base.providerIds.mal ?? Number(base.id.replace("jikan_", ""));
         if (Number.isFinite(mal) && mal > 0) {
           const j = await fetchJikanCredits(mal, base.id);
           cast = j.cast;
@@ -633,11 +710,7 @@ export class CatalogService {
       officialOnly.length ? officialOnly : trailers,
       content.trailer,
     );
-    trailers = officialOnly.length
-      ? officialOnly
-      : primary
-        ? [primary]
-        : [];
+    trailers = officialOnly.length ? officialOnly : primary ? [primary] : [];
     content = {
       ...content,
       trailer: primary,
@@ -712,7 +785,10 @@ export class CatalogService {
       content.contentType === "movie" || content.animeFormat === "MOVIE";
 
     // ── Existing TMDB id: validate, never trust a mismatched link ──
-    if (content.providerIds?.tmdb && Number.isFinite(content.providerIds.tmdb)) {
+    if (
+      content.providerIds?.tmdb &&
+      Number.isFinite(content.providerIds.tmdb)
+    ) {
       let mediaType: "movie" | "tv" =
         content.providerIds.tmdbMediaType === "movie" ||
         content.providerIds.tmdbMediaType === "tv"
@@ -843,6 +919,7 @@ export class CatalogService {
     region = "*",
     country?: string,
     animeFormat?: "movie" | "series",
+    genre?: string,
   ): Promise<Paginated<Content>> {
     const regionCode = (region || "*").toUpperCase();
     const { isTitlePlayable } = await import("@/lib/playback/playback-store");
@@ -858,6 +935,7 @@ export class CatalogService {
         includeMature,
         country,
         animeFormat,
+        genre,
       );
       // Only use world result when it actually has items — empty AniList/TMDB
       // responses must fall through to loadLive (seed + cached anime series).
@@ -869,7 +947,9 @@ export class CatalogService {
           .map((c) => applyMatureFlag(c))
           .map((c) => tagPlayable(c))
           .map((c) => applyRegionPlayable(c, regionCode, isTitlePlayable))
-          .map((c) => sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))))
+          .map((c) =>
+            sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))),
+          )
           .filter((c) => !isMatureContent(c))
           .filter((c) => !isBlockedTitle(c))
           .filter(isAtLeastMinYear);
@@ -904,6 +984,8 @@ export class CatalogService {
             );
           }
         }
+
+        if (genre) items = items.filter((c) => contentHasGenre(c, genre));
 
         if (items.length > 0) {
           return {
@@ -958,11 +1040,10 @@ export class CatalogService {
     if (type === "anime") {
       items = items.filter((c) => !isHentaiContent(c));
       if (animeFormat) {
-        items = items.filter((c) =>
-          matchesAnimeFormatCategory(c, animeFormat),
-        );
+        items = items.filter((c) => matchesAnimeFormatCategory(c, animeFormat));
       }
     }
+    if (genre) items = items.filter((c) => contentHasGenre(c, genre));
     items = sortContent(items, sort);
     return paginate(items, page, size);
   }
@@ -979,6 +1060,7 @@ export class CatalogService {
     includeMature: boolean,
     country?: string,
     animeFormat?: "movie" | "series",
+    genre?: string,
   ): Promise<{
     items: Content[];
     page: number;
@@ -993,6 +1075,7 @@ export class CatalogService {
           sort,
           includeMature,
           animeFormat,
+          genre,
         );
       }
       if (!hasTmdbAccess()) return null;
@@ -1003,6 +1086,7 @@ export class CatalogService {
           sort,
           includeMature,
           country,
+          genre,
         );
       }
       if (type === "series") {
@@ -1012,6 +1096,7 @@ export class CatalogService {
           sort,
           country,
           includeMature,
+          genre,
         );
       }
       if (isDramaType(type)) {
@@ -1021,6 +1106,7 @@ export class CatalogService {
           pageSize,
           sort,
           includeMature,
+          genre,
         );
       }
     } catch {
@@ -1084,20 +1170,28 @@ export class CatalogService {
     const isKoreanMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "ko" || c.countries?.some((cn) => cn === "KR"));
-    const koreanMovies = uniqueById([...allMovies].filter(isKoreanMovie).sort(byPop));
+    const koreanMovies = uniqueById(
+      [...allMovies].filter(isKoreanMovie).sort(byPop),
+    );
     const isJapaneseMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "ja" || c.countries?.some((cn) => cn === "JP"));
-    const japaneseMovies = uniqueById([...allMovies].filter(isJapaneseMovie).sort(byPop));
+    const japaneseMovies = uniqueById(
+      [...allMovies].filter(isJapaneseMovie).sort(byPop),
+    );
     const isChineseMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "zh" ||
         c.countries?.some((cn) => ["CN", "TW", "HK"].includes(cn)));
-    const chineseMovies = uniqueById([...allMovies].filter(isChineseMovie).sort(byPop));
+    const chineseMovies = uniqueById(
+      [...allMovies].filter(isChineseMovie).sort(byPop),
+    );
     const isThaiMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "th" || c.countries?.some((cn) => cn === "TH"));
-    const thaiMovies = uniqueById([...allMovies].filter(isThaiMovie).sort(byPop));
+    const thaiMovies = uniqueById(
+      [...allMovies].filter(isThaiMovie).sort(byPop),
+    );
     const isFilipinoMovie = (c: Content) =>
       c.contentType === "movie" &&
       (c.language === "tl" ||
@@ -1105,7 +1199,20 @@ export class CatalogService {
         c.language === "tgl" ||
         (c.tags ?? []).some((t) => /filipino|philippine|^ph$/i.test(t)) ||
         c.countries?.some((cn) => cn.toUpperCase() === "PH"));
-    const filipinoMovies = uniqueById([...allMovies].filter(isFilipinoMovie).sort(byPop));
+    const filipinoMovies = uniqueById(
+      [...allMovies].filter(isFilipinoMovie).sort(byPop),
+    );
+    const englishMovies = uniqueById(
+      [...allMovies]
+        .filter(
+          (c) =>
+            c.language === "en" ||
+            c.countries?.some((cn) =>
+              ["US", "GB", "CA", "AU", "NZ", "IE"].includes(cn),
+            ),
+        )
+        .sort(byPop),
+    );
     // Filipino series / dramas (full catalog; no dedicated contentType)
     const isFilipinoSeries = (c: Content) =>
       !isAnimeLikeContent(c) &&
@@ -1117,6 +1224,18 @@ export class CatalogService {
         c.countries?.some((cn) => cn.toUpperCase() === "PH"));
     const filipinoSeries = uniqueById(
       [...all].filter(isFilipinoSeries).sort(byPop),
+    );
+    const englishSeries = uniqueById(
+      [...all]
+        .filter(
+          (c) =>
+            isGeneralSeriesOnly(c) &&
+            (c.language === "en" ||
+              c.countries?.some((cn) =>
+                ["US", "GB", "CA", "AU", "NZ", "IE"].includes(cn),
+              )),
+        )
+        .sort(byPop),
     );
     // Korean series (includes kdrama content type)
     const isKoreanSeries = (c: Content) =>
@@ -1148,21 +1267,20 @@ export class CatalogService {
       !isAnimeLikeContent(c) &&
       (c.contentType === "series" || c.contentType === "thaidrama") &&
       (c.language === "th" || c.countries?.some((cn) => cn === "TH"));
-    const thaiSeries = uniqueById(
-      [...all].filter(isThaiSeries).sort(byPop),
-    );
+    const thaiSeries = uniqueById([...all].filter(isThaiSeries).sort(byPop));
     const topMovies = uniqueById([...movies].sort(byPop));
     const topSeries = uniqueById([...series].sort(byPop));
     // Home "Popular anime" should surface TV/OVA series first, not only films.
     // Never mix hentai into public home rows.
     const animeSeriesOnly = anime.filter(
-      (c) =>
-        matchesAnimeFormatCategory(c, "series") && !isHentaiContent(c),
+      (c) => matchesAnimeFormatCategory(c, "series") && !isHentaiContent(c),
     );
     const topAnime = uniqueById(
-      [...(animeSeriesOnly.length ? animeSeriesOnly : anime.filter((c) => !isHentaiContent(c)))].sort(
-        byPop,
-      ),
+      [
+        ...(animeSeriesOnly.length
+          ? animeSeriesOnly
+          : anime.filter((c) => !isHentaiContent(c))),
+      ].sort(byPop),
     );
     const topKdrama = uniqueById([...kdrama].sort(byPop));
     // Tag top cdrama/jdrama/thaidrama as trending-today so they appear in the
@@ -1213,6 +1331,8 @@ export class CatalogService {
     const todayThaiMovies = todayOnly(thaiMovies, POPULAR_N);
     const todayFilipinoMovies = todayOnly(filipinoMovies, POPULAR_N);
     const todayFilipinoSeries = todayOnly(filipinoSeries, POPULAR_N);
+    const todayEnglishMovies = todayOnly(englishMovies, POPULAR_N);
+    const todayEnglishSeries = todayOnly(englishSeries, POPULAR_N);
     const todayKoreanSeries = todayOnly(koreanSeries, POPULAR_N);
     const todayJapaneseSeries = todayOnly(japaneseSeries, POPULAR_N);
     const todayChineseSeries = todayOnly(chineseSeries, POPULAR_N);
@@ -1251,8 +1371,10 @@ export class CatalogService {
       ALL_N,
     );
 
-    // Featured hero ("Popular & trending today"): movies · series · dramas only.
-    // Never anime / animation — those live in dedicated anime rows below.
+    const latest = latestRows(all);
+
+    // Featured hero blends what is popular now with genuinely recent releases
+    // across every major catalog. The lead group rotates hourly.
     const movieFeat = todayMovies
       .filter((c) => !isAnimeLikeContent(c))
       .slice(0, 6);
@@ -1262,30 +1384,46 @@ export class CatalogService {
     const dramaFeat = todayDramas
       .filter((c) => !isAnimeLikeContent(c))
       .slice(0, 6);
+    const animeFeat = todayAnime.slice(0, 6);
+    const recentFeat = uniqueById([
+      ...latest.latestMovies,
+      ...latest.latestSeries,
+      ...latest.latestAnime,
+      ...latest.latestDramas,
+    ])
+      .sort((a, b) => (b.releaseDate ?? "").localeCompare(a.releaseDate ?? ""))
+      .slice(0, 8);
 
     const featuredPool: Content[] = [];
-    const featBuckets = [movieFeat, seriesFeat, dramaFeat];
+    const featBuckets = [
+      movieFeat,
+      seriesFeat,
+      animeFeat,
+      dramaFeat,
+      recentFeat,
+    ];
     const maxLen = Math.max(...featBuckets.map((b) => b.length), 0);
     for (let i = 0; i < maxLen; i++) {
       for (const b of featBuckets) {
         if (b[i]) featuredPool.push(b[i]!);
       }
     }
-    // Light hourly rotation so the lead title changes; type order stays
-    // movie → series → drama within each round-robin slot.
+    // Light hourly rotation keeps the first feature fresh without reshuffling
+    // the carousel while somebody is browsing it.
     const slot = Math.floor(Date.now() / 3_600_000);
     const rotateGroups = (arr: Content[], s: number): Content[] => {
       if (arr.length <= 3) return arr;
       const groups: Content[][] = [];
-      for (let i = 0; i < arr.length; i += 3) {
-        groups.push(arr.slice(i, i + 3));
+      for (let i = 0; i < arr.length; i += featBuckets.length) {
+        groups.push(arr.slice(i, i + featBuckets.length));
       }
       const o = ((s % groups.length) + groups.length) % groups.length;
       return [...groups.slice(o), ...groups.slice(0, o)].flat();
     };
-    const featuredUnique = uniqueById(rotateGroups(featuredPool, slot))
-      .filter((c) => !isAnimeLikeContent(c))
-      .slice(0, 16);
+    const featuredUnique = uniqueById(rotateGroups(featuredPool, slot)).slice(
+      0,
+      16,
+    );
 
     // Keep the balanced order. Do NOT re-sort by trailer (that buried real
     // trending titles behind seed hits that happened to have YouTube keys).
@@ -1327,11 +1465,15 @@ export class CatalogService {
           poster: posterUrl
             ? { url: posterUrl, source: "local" }
             : posterFromCatalog(show.ids.tmdb),
-          backdrop: fanartUrl
-            ? { url: fanartUrl, source: "local" }
-            : undefined,
+          backdrop: fanartUrl ? { url: fanartUrl, source: "local" } : undefined,
           scores: show.rating
-            ? [{ source: "trakt" as const, score: show.rating * 10, count: show.votes }]
+            ? [
+                {
+                  source: "trakt" as const,
+                  score: show.rating * 10,
+                  count: show.votes,
+                },
+              ]
             : [],
           genres: (show.genres ?? []).map((g) => ({
             id: g,
@@ -1367,11 +1509,15 @@ export class CatalogService {
           poster: posterUrl
             ? { url: posterUrl, source: "local" }
             : posterFromCatalog(movie.ids.tmdb),
-          backdrop: fanartUrl
-            ? { url: fanartUrl, source: "local" }
-            : undefined,
+          backdrop: fanartUrl ? { url: fanartUrl, source: "local" } : undefined,
           scores: movie.rating
-            ? [{ source: "trakt" as const, score: movie.rating * 10, count: movie.votes }]
+            ? [
+                {
+                  source: "trakt" as const,
+                  score: movie.rating * 10,
+                  count: movie.votes,
+                },
+              ]
             : [],
           genres: (movie.genres ?? []).map((g) => ({
             id: g,
@@ -1455,8 +1601,14 @@ export class CatalogService {
     return {
       featured: featuredUnique[0] ? ensurePoster(featuredUnique[0]) : null,
       featuredCarousel: withPosters(featuredUnique),
-      catalogStatus: raw.some((c) => !SEED_CONTENT.some((seed) => seed.id === c.id)) ? "live" : "fallback",
-      featuredUpdatedAt: new Date(this.liveCache?.at ?? Date.now()).toISOString(),
+      catalogStatus: raw.some(
+        (c) => !SEED_CONTENT.some((seed) => seed.id === c.id),
+      )
+        ? "live"
+        : "fallback",
+      featuredUpdatedAt: new Date(
+        this.liveCache?.at ?? Date.now(),
+      ).toISOString(),
       region: regionCode,
       trending: withPosters(rankedToday.slice(0, 60)),
       popularMovies: withPosters(todayMovies),
@@ -1482,7 +1634,9 @@ export class CatalogService {
       thaiSeries: withPosters(todayThaiSeries),
       filipinoMovies: withPosters(todayFilipinoMovies),
       filipinoSeries: withPosters(todayFilipinoSeries),
-      ...latestRows(all),
+      englishMovies: withPosters(todayEnglishMovies),
+      englishSeries: withPosters(todayEnglishSeries),
+      ...latest,
       newReleases: withPosters(latestReleased(all, new Date(), 24)),
       comingSoon: withPosters(
         uniqueById(all.filter((c) => c.status === "upcoming")).slice(0, 24),
@@ -1665,8 +1819,7 @@ export class CatalogService {
       results = results.filter((c) => c.status === params.status);
     if (params.format) {
       results = results.filter(
-        (c) =>
-          c.animeFormat?.toLowerCase() === params.format!.toLowerCase(),
+        (c) => c.animeFormat?.toLowerCase() === params.format!.toLowerCase(),
       );
     }
 
@@ -1707,7 +1860,9 @@ export class CatalogService {
     });
   }
 
-  async credits(contentId: string): Promise<{ cast: Credit[]; crew: Credit[] }> {
+  async credits(
+    contentId: string,
+  ): Promise<{ cast: Credit[]; crew: Credit[] }> {
     const h = await this.hydrate(contentId);
     if (!h) return { cast: [], crew: [] };
     return { cast: h.cast, crew: h.crew };
@@ -1887,11 +2042,7 @@ export class CatalogService {
       return freeShow.episodes
         .filter((e) => e.seasonNumber === seasonNumber)
         .map((e) => ({
-          id: freeEpisodeId(
-            freeShow.seedId,
-            e.seasonNumber,
-            e.episodeNumber,
-          ),
+          id: freeEpisodeId(freeShow.seedId, e.seasonNumber, e.episodeNumber),
           contentId: freeShow.seedId,
           seasonId: `${freeShow.seedId}_s${seasonNumber}`,
           seasonNumber: e.seasonNumber,
@@ -1997,14 +2148,14 @@ export class CatalogService {
         format === "MUSIC";
       let count = 0;
       if (isSingle) {
-        count = Math.max(1, c.episodeCount && c.episodeCount > 0 ? c.episodeCount : 1);
+        count = Math.max(
+          1,
+          c.episodeCount && c.episodeCount > 0 ? c.episodeCount : 1,
+        );
       } else if (c.episodeCount && c.episodeCount > 0) {
         const seasons =
           c.seasonCount && c.seasonCount > 0 ? Math.min(c.seasonCount, 50) : 1;
-        count = Math.max(
-          1,
-          Math.ceil(c.episodeCount / Math.max(seasons, 1)),
-        );
+        count = Math.max(1, Math.ceil(c.episodeCount / Math.max(seasons, 1)));
       } else if (c.contentType === "anime" || c.mature) {
         // Hentai / anime with unknown length — default a full cour so every
         // episode slot is selectable; embeds resolve by number.
@@ -2045,9 +2196,8 @@ export class CatalogService {
     const match = seasonId.match(/^(.*)_s(\d+)$/);
     if (!match) return eps.map((e) => ({ ...e, playable: false }));
     const contentId = match[1]!;
-    const { isEpisodePlayable } = await import(
-      "@/lib/playback/resolve-playback"
-    );
+    const { isEpisodePlayable } =
+      await import("@/lib/playback/resolve-playback");
     return eps.map((e) => ({
       ...e,
       playable: isEpisodePlayable(contentId, {
@@ -2061,12 +2211,8 @@ export class CatalogService {
   }
 
   async playback(contentId: string, region = "*") {
-    const { resolvePlayback } = await import(
-      "@/lib/playback/resolve-playback"
-    );
-    const { isTitlePlayable } = await import(
-      "@/lib/playback/playback-store"
-    );
+    const { resolvePlayback } = await import("@/lib/playback/resolve-playback");
+    const { isTitlePlayable } = await import("@/lib/playback/playback-store");
 
     const c = await this.byId(contentId);
     if (!c) {
@@ -2079,7 +2225,7 @@ export class CatalogService {
         legalFull: null as null | {
           type: "archive" | "youtube" | "hls" | "mp4" | "vimeo" | "cloudflare";
           embedUrl: string;
-      subtitles?: SubtitleTrack[];
+          subtitles?: SubtitleTrack[];
           label: string;
           sourceType?: string;
           attributionText?: string;
@@ -2197,10 +2343,10 @@ export class CatalogService {
 
     const eligible = Boolean(resolved.playable && legalFull);
     const playableFlag =
-      eligible || isTitlePlayable(c.id, region) || aliases.some((a) => isTitlePlayable(a, region));
-    const hasTrailer = Boolean(
-      trailers[0]?.key || c.trailer?.key,
-    );
+      eligible ||
+      isTitlePlayable(c.id, region) ||
+      aliases.some((a) => isTitlePlayable(a, region));
+    const hasTrailer = Boolean(trailers[0]?.key || c.trailer?.key);
     const watchLabel = eligible
       ? ("Watch Now" as const)
       : hasTrailer
@@ -2213,8 +2359,8 @@ export class CatalogService {
       watchLabel,
       reason: eligible
         ? undefined
-        : resolved.reason ??
-          "Full playback isn’t available yet. Watch the official trailer or open a free legal service like Tubi.",
+        : (resolved.reason ??
+          "Full playback isn’t available yet. Watch the official trailer or open a free legal service like Tubi."),
       trailer: trailers[0] ?? c.trailer,
       providers: c.watchProviders,
       legalFull,
@@ -2344,18 +2490,17 @@ function tagPlayable(c: Content): Content {
     tags: Array.from(
       new Set([...(c.tags ?? []), "watch-now", "free-stream", "public-domain"]),
     ),
-    watchProviders:
-      c.watchProviders?.some((p) => p.type === "free")
-        ? c.watchProviders
-        : [
-            ...(c.watchProviders ?? []),
-            {
-              id: 191,
-              name: "Internet Archive",
-              type: "free" as const,
-              logoPath: null,
-            },
-          ],
+    watchProviders: c.watchProviders?.some((p) => p.type === "free")
+      ? c.watchProviders
+      : [
+          ...(c.watchProviders ?? []),
+          {
+            id: 191,
+            name: "Internet Archive",
+            type: "free" as const,
+            logoPath: null,
+          },
+        ],
   };
 }
 
@@ -2398,10 +2543,7 @@ function mergeTrailers(a: Trailer[], b: Trailer[]): Trailer[] {
   return filterOfficialTrailers([...a, ...b]);
 }
 
-function demoCredits(
-  contentId: string,
-  kind: "cast" | "crew",
-): Credit[] {
+function demoCredits(contentId: string, kind: "cast" | "crew"): Credit[] {
   // Prefer empty over fake faces — real images come from live providers
   void contentId;
   void kind;

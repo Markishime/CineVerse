@@ -42,10 +42,7 @@ import { isRestrictedContentUser } from "@/lib/content/mature";
 import { getDeviceRegion } from "@/lib/user/region";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Chip } from "@/components/ui/chip";
-import {
-  normalizeImageUrl,
-  posterFallbackLabel,
-} from "@/lib/content/posters";
+import { normalizeImageUrl, posterFallbackLabel } from "@/lib/content/posters";
 
 export type CatalogSort =
   | "popularity"
@@ -69,6 +66,100 @@ const SORT_OPTIONS: Array<{
   { id: "title_desc", label: "Title Z–A", icon: ArrowUpAZ },
   { id: "runtime", label: "Longest", icon: Clock },
 ];
+
+const GENRE_OPTIONS: Record<ContentType, string[]> = {
+  movie: [
+    "Action",
+    "Adventure",
+    "Animation",
+    "Comedy",
+    "Crime",
+    "Documentary",
+    "Drama",
+    "Family",
+    "Fantasy",
+    "History",
+    "Horror",
+    "Music",
+    "Mystery",
+    "Romance",
+    "Science Fiction",
+    "Thriller",
+    "War",
+    "Western",
+  ],
+  series: [
+    "Action",
+    "Adventure",
+    "Animation",
+    "Comedy",
+    "Crime",
+    "Documentary",
+    "Drama",
+    "Family",
+    "Kids",
+    "Mystery",
+    "Reality",
+    "Romance",
+    "Science Fiction",
+    "War",
+    "Western",
+  ],
+  anime: [
+    "Action",
+    "Adventure",
+    "Comedy",
+    "Drama",
+    "Fantasy",
+    "Horror",
+    "Mystery",
+    "Romance",
+    "Sci-Fi",
+    "Slice of Life",
+    "Sports",
+    "Supernatural",
+  ],
+  kdrama: [
+    "Action",
+    "Comedy",
+    "Crime",
+    "Drama",
+    "Family",
+    "Mystery",
+    "Romance",
+    "Thriller",
+  ],
+  cdrama: [
+    "Action",
+    "Comedy",
+    "Crime",
+    "Drama",
+    "Family",
+    "Mystery",
+    "Romance",
+    "Fantasy",
+  ],
+  jdrama: [
+    "Action",
+    "Comedy",
+    "Crime",
+    "Drama",
+    "Family",
+    "Mystery",
+    "Romance",
+    "Thriller",
+  ],
+  thaidrama: [
+    "Action",
+    "Comedy",
+    "Crime",
+    "Drama",
+    "Family",
+    "Mystery",
+    "Romance",
+    "Fantasy",
+  ],
+};
 
 const meta: Record<
   ContentType,
@@ -127,6 +218,7 @@ async function load(
   region: string,
   country?: string,
   animeFormat?: "movie" | "series",
+  genre?: string,
 ) {
   const params = {
     page,
@@ -136,6 +228,7 @@ async function load(
     playable: watchNowOnly || undefined,
     region,
     country,
+    genre: genre || undefined,
   };
   switch (type) {
     case "movie":
@@ -177,6 +270,7 @@ export function CatalogPage({
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<CatalogSort>("popularity");
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [genre, setGenre] = useState("");
   /** Default all popular/trending; free full via Watch Now toggle */
   const [watchNowOnly, setWatchNowOnly] = useState(false);
 
@@ -191,9 +285,20 @@ export function CatalogPage({
       region,
       country,
       animeFormat,
+      genre,
     ],
     queryFn: () =>
-      load(type, page, sort, mature, watchNowOnly, region, country, animeFormat),
+      load(
+        type,
+        page,
+        sort,
+        mature,
+        watchNowOnly,
+        region,
+        country,
+        animeFormat,
+        genre,
+      ),
     staleTime: 20_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
@@ -242,49 +347,111 @@ export function CatalogPage({
           )}
         >
           <header>
-          <h1 className="font-display text-3xl font-bold text-white sm:text-4xl">
-            {title ?? m.title}
-          </h1>
-          <p className="max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
-            {subtitle ?? m.subtitle}
-            {mature ? " · 18+ mature content" : ""}
-          </p>
-          {mature && (
-            <Badge tone="accent" className="mt-2">
-              18+ mature content enabled
-            </Badge>
-          )}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Chip
-              active={watchNowOnly}
-              onClick={() => {
-                setWatchNowOnly(true);
-                setPage(1);
-              }}
-              className={
-                watchNowOnly
-                  ? "watch-now-cta !bg-[var(--gold)] !text-black font-semibold"
-                  : undefined
-              }
-            >
-              <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
-              Watch Now
-            </Chip>
-            <Chip
-              active={!watchNowOnly}
-              onClick={() => {
-                setWatchNowOnly(false);
-                setPage(1);
-              }}
-            >
-              All {m.title.toLowerCase()}
-            </Chip>
-          </div>
+            <h1 className="font-display text-3xl font-bold text-white sm:text-4xl">
+              {title ?? m.title}
+            </h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
+              {subtitle ?? m.subtitle}
+              {mature ? " · 18+ mature content" : ""}
+            </p>
+            {mature && (
+              <Badge tone="accent" className="mt-2">
+                18+ mature content enabled
+              </Badge>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Chip
+                active={watchNowOnly}
+                onClick={() => {
+                  setWatchNowOnly(true);
+                  setPage(1);
+                }}
+                className={
+                  watchNowOnly
+                    ? "watch-now-cta !bg-[var(--gold)] !text-black font-semibold"
+                    : undefined
+                }
+              >
+                <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
+                Watch Now
+              </Chip>
+              <Chip
+                active={!watchNowOnly}
+                onClick={() => {
+                  setWatchNowOnly(false);
+                  setPage(1);
+                }}
+              >
+                All {m.title.toLowerCase()}
+              </Chip>
+            </div>
           </header>
         </Reveal>
 
+        <Reveal
+          delay={0.03}
+          inView={false}
+          className="mb-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-3 sm:p-4"
+        >
+          <div className="mb-2 flex items-center justify-between gap-3 px-1">
+            <div>
+              <p className="text-sm font-semibold text-white">
+                Browse by genre
+              </p>
+              <p className="text-xs text-[var(--text-muted)]">
+                Filter this entire catalog, then sort the results below.
+              </p>
+            </div>
+            {genre && (
+              <button
+                type="button"
+                onClick={() => {
+                  setGenre("");
+                  setPage(1);
+                }}
+                className="text-xs font-medium text-[var(--primary-light)] hover:text-white"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div
+            className="no-scrollbar flex gap-2 overflow-x-auto pb-1"
+            role="group"
+            aria-label="Filter by genre"
+          >
+            <Chip
+              active={!genre}
+              onClick={() => {
+                setGenre("");
+                setPage(1);
+              }}
+              className="shrink-0"
+            >
+              All genres
+            </Chip>
+            {GENRE_OPTIONS[type].map((name) => (
+              <Chip
+                key={name}
+                active={genre === name}
+                onClick={() => {
+                  setGenre(name);
+                  setPage(1);
+                }}
+                className="shrink-0"
+              >
+                {name}
+              </Chip>
+            ))}
+          </div>
+        </Reveal>
+
         {/* Toolbar: sort + view */}
-        <Reveal delay={0.05} inView={false} className="mb-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+        <Reveal
+          delay={0.05}
+          inView={false}
+          className="mb-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4"
+        >
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
               Sort
@@ -384,9 +551,7 @@ export function CatalogPage({
                 <ContentCard
                   content={item}
                   className="w-full min-w-0"
-                  rank={
-                    sort === "popularity" && page === 1 ? i + 1 : undefined
-                  }
+                  rank={sort === "popularity" && page === 1 ? i + 1 : undefined}
                 />
               </motion.div>
             ))}
@@ -433,7 +598,9 @@ export function CatalogPage({
           <EmptyState
             title="No titles in this collection yet"
             description="Try clearing the Watch Now filter or pick a different sort."
-            actions={[{ href: "/discover", label: "Discover", variant: "secondary" }]}
+            actions={[
+              { href: "/discover", label: "Discover", variant: "secondary" },
+            ]}
           />
         )}
       </div>
@@ -541,9 +708,7 @@ function CatalogListRow({
             {item.runtime != null && item.runtime > 0 && (
               <span>{formatRuntime(item.runtime)}</span>
             )}
-            {item.episodeCount != null && (
-              <span>{item.episodeCount} eps</span>
-            )}
+            {item.episodeCount != null && <span>{item.episodeCount} eps</span>}
             {item.seasonCount != null && item.seasonCount > 0 && (
               <span>
                 {item.seasonCount} season{item.seasonCount > 1 ? "s" : ""}
@@ -574,7 +739,11 @@ function CatalogListRow({
 
           <div className="mt-3 flex flex-wrap gap-2">
             <Link href={watchHref} className="watch-now-cta">
-              <Button size="sm" variant="gold" className="watch-now-cta !text-black">
+              <Button
+                size="sm"
+                variant="gold"
+                className="watch-now-cta !text-black"
+              >
                 <Play className="h-3.5 w-3.5 !text-black" />
                 Watch Now
               </Button>

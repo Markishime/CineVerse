@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05060A",
+  themeColor: "#08090B",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -43,10 +43,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className="dark"
-    >
+    <html lang="en" className="dark">
       <body className="min-h-dvh bg-[var(--background)] font-sans antialiased">
         <AppProviders>
           <AppChrome>{children}</AppChrome>

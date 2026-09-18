@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   const region = (
     request.nextUrl.searchParams.get("region") ?? "US"
   ).toUpperCase();
+  const genre = request.nextUrl.searchParams.get("genre") ?? undefined;
   return json(
     await catalog.byType(
       "kdrama",
@@ -26,6 +27,9 @@ export async function GET(request: NextRequest) {
       includeMature,
       playableOnly,
       region,
+      undefined,
+      undefined,
+      genre,
     ),
   );
 }

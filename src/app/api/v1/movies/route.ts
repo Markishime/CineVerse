@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("region") ?? "US"
   ).toUpperCase();
   const country = request.nextUrl.searchParams.get("country") ?? undefined;
+  const genre = request.nextUrl.searchParams.get("genre") ?? undefined;
   return json(
     await catalog.byType(
       "movie",
@@ -28,6 +29,8 @@ export async function GET(request: NextRequest) {
       playableOnly,
       region,
       country,
+      undefined,
+      genre,
     ),
   );
 }

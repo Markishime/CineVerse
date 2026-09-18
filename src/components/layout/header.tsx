@@ -56,7 +56,19 @@ const baseNav: NavItem[] = [
       { href: "/movies/filipino", label: "Filipino Movies" },
     ],
   },
-  { href: "/series", label: "Series", icon: Tv },
+  {
+    href: "/series",
+    label: "Series",
+    icon: Tv,
+    children: [
+      { href: "/series", label: "All Series" },
+      { href: "/series/korean", label: "Korean Series" },
+      { href: "/series/japanese", label: "Japanese Series" },
+      { href: "/series/chinese", label: "Chinese Series" },
+      { href: "/series/thai", label: "Thai Series" },
+      { href: "/series/filipino", label: "Filipino Series" },
+    ],
+  },
   {
     href: "/anime",
     label: "Anime",
@@ -80,7 +92,34 @@ const baseNav: NavItem[] = [
       { href: "/series/filipino", label: "Filipino Drama" },
     ],
   },
-  { href: "/discover", label: "Discover", icon: Compass },
+  {
+    href: "/discover",
+    label: "Genres",
+    icon: Compass,
+    children: [
+      "Action",
+      "Adventure",
+      "Animation",
+      "Comedy",
+      "Crime",
+      "Documentary",
+      "Drama",
+      "Family",
+      "Fantasy",
+      "History",
+      "Horror",
+      "Music",
+      "Mystery",
+      "Romance",
+      "Science Fiction",
+      "Thriller",
+      "War",
+      "Western",
+    ].map((label) => ({
+      label,
+      href: `/discover?genre=${encodeURIComponent(label)}`,
+    })),
+  },
   { href: "/search", label: "Search", icon: Search },
   { href: "/watchlist", label: "My List", icon: ListVideo },
 ];
@@ -119,8 +158,12 @@ function NavDropdown({
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
       onFocus={handleEnter}
-      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) onLeave(); }}
-      onKeyDown={(event) => { if (event.key === "Escape") onLeave(); }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onLeave();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onLeave();
+      }}
     >
       <Link
         href={item.href}
@@ -147,9 +190,17 @@ function NavDropdown({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-[0_16px_48px_rgba(0,0,0,0.5)]"
+            className={cn(
+              "absolute left-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-[0_16px_48px_rgba(0,0,0,0.5)]",
+              item.children.length > 8 ? "w-[34rem]" : "min-w-[190px]",
+            )}
           >
-            <div className="py-1">
+            <div
+              className={cn(
+                "py-1",
+                item.children.length > 8 && "grid grid-cols-3 p-2",
+              )}
+            >
               {item.children.map((child) => {
                 return (
                   <Link
@@ -240,7 +291,14 @@ export function Header() {
               className="h-7 w-7 sm:h-8 sm:w-8"
               aria-hidden
             >
-              <circle cx="16" cy="16" r="15" stroke="var(--primary-light)" strokeWidth="1.5" opacity="0.6" />
+              <circle
+                cx="16"
+                cy="16"
+                r="15"
+                stroke="var(--primary-light)"
+                strokeWidth="1.5"
+                opacity="0.6"
+              />
               <circle cx="16" cy="16" r="5" fill="var(--primary-light)" />
               <path
                 d="M11 16a5 5 0 0 1 10 0"
@@ -256,16 +314,43 @@ export function Header() {
                 strokeLinecap="round"
                 opacity="0.45"
               />
-              <circle cx="16" cy="6.5" r="1.5" fill="var(--primary-light)" opacity="0.5" />
-              <circle cx="16" cy="25.5" r="1.5" fill="var(--primary-light)" opacity="0.5" />
-              <circle cx="6.5" cy="16" r="1.5" fill="var(--primary-light)" opacity="0.5" />
-              <circle cx="25.5" cy="16" r="1.5" fill="var(--primary-light)" opacity="0.5" />
+              <circle
+                cx="16"
+                cy="6.5"
+                r="1.5"
+                fill="var(--primary-light)"
+                opacity="0.5"
+              />
+              <circle
+                cx="16"
+                cy="25.5"
+                r="1.5"
+                fill="var(--primary-light)"
+                opacity="0.5"
+              />
+              <circle
+                cx="6.5"
+                cy="16"
+                r="1.5"
+                fill="var(--primary-light)"
+                opacity="0.5"
+              />
+              <circle
+                cx="25.5"
+                cy="16"
+                r="1.5"
+                fill="var(--primary-light)"
+                opacity="0.5"
+              />
             </svg>
             <span className="font-display text-lg font-bold tracking-tight text-[var(--primary-light)] transition-colors hover:text-white sm:text-xl">
               CineVerse
             </span>
           </Link>
-          <nav className="hidden items-center gap-0.5 lg:flex" aria-label="Main">
+          <nav
+            className="hidden items-center gap-0.5 lg:flex"
+            aria-label="Main"
+          >
             {nav.map((item) => {
               const active =
                 item.href === "/"
