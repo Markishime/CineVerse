@@ -5,7 +5,9 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  Clapperboard,
   Loader2,
+  Minimize2,
   MonitorPlay,
   RefreshCw,
   Server,
@@ -30,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
+import { CinemaModeShell } from "./cinema-mode-shell";
 
 interface VideoPlayerProps {
   tmdbId?: number;
@@ -160,6 +163,7 @@ export function VideoPlayer({
   const [activeIndex, setActiveIndex] = useState(0);
   const [status, setStatus] = useState<PlayerStatus>("loading");
   const [showMenu, setShowMenu] = useState(false);
+  const [cinemaMode, setCinemaMode] = useState(false);
   const [triedProviders, setTriedProviders] = useState<EmbedProviderId[]>([]);
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const loadTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -618,195 +622,221 @@ export function VideoPlayer({
   const iframeSrc = embedUrl;
 
   return (
-    <div
-      className={cn("relative isolate", showMenu && "z-50", className)}
-      data-cineverse-player
+    <CinemaModeShell
+      active={cinemaMode}
+      title={title}
+      onClose={() => setCinemaMode(false)}
+      className={cn(showMenu && "z-50", className)}
     >
-      {/* Player frame — overflow clips any embed chrome that tries to spill out */}
-      <div className="relative z-0 aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
-        {status === "loading" && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90 px-4">
-            <Loader2 className="h-10 w-10 animate-spin text-[var(--primary)]" />
-            <p className="text-sm text-white">
-              Loading from{" "}
-              <span className="font-semibold text-[var(--primary-light)]">
-                {activeProvider?.name}
-              </span>
-              ...
-            </p>
-            <p className="text-xs text-[var(--text-muted)]">
-              Provider {activeIndex + 1} of {availableProviders.length}
-              {isAnime ? " · anime sources" : ""}
-            </p>
-          </div>
-        )}
-
-        {status === "all_failed" && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-black/95 to-[var(--surface)]/90 p-6 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--danger)]/15">
-              <AlertTriangle className="h-8 w-8 text-[var(--danger)]" />
-            </div>
-            <div>
-              <p className="font-display text-lg font-semibold text-white">
-                No playable source found
+      <div className="relative isolate" data-cineverse-player>
+        {/* Player frame — overflow clips any embed chrome that tries to spill out */}
+        <div
+          className={cn(
+            "relative z-0 aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl",
+            cinemaMode && "cinema-player-frame border-white/15",
+          )}
+        >
+          {status === "loading" && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90 px-4">
+              <Loader2 className="h-10 w-10 animate-spin text-[var(--primary)]" />
+              <p className="text-sm text-white">
+                Loading from{" "}
+                <span className="font-semibold text-[var(--primary-light)]">
+                  {activeProvider?.name}
+                </span>
+                ...
               </p>
-              <p className="mt-1 max-w-sm text-sm text-[var(--text-secondary)]">
-                We tried every streaming provider and none had a working stream
-                for this title right now. This can happen with newer or regional
-                releases. Try again later, or pick a server below to retry
-                manually.
+              <p className="text-xs text-[var(--text-muted)]">
+                Provider {activeIndex + 1} of {availableProviders.length}
+                {isAnime ? " · anime sources" : ""}
               </p>
             </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button onClick={retryAll}>
-                <RefreshCw className="h-4 w-4" />
-                Try all servers
-              </Button>
-              <Button variant="secondary" onClick={retry}>
-                Retry current
-              </Button>
+          )}
+
+          {status === "all_failed" && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-black/95 to-[var(--surface)]/90 p-6 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--danger)]/15">
+                <AlertTriangle className="h-8 w-8 text-[var(--danger)]" />
+              </div>
+              <div>
+                <p className="font-display text-lg font-semibold text-white">
+                  No playable source found
+                </p>
+                <p className="mt-1 max-w-sm text-sm text-[var(--text-secondary)]">
+                  We tried every streaming provider and none had a working
+                  stream for this title right now. This can happen with newer or
+                  regional releases. Try again later, or pick a server below to
+                  retry manually.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button onClick={retryAll}>
+                  <RefreshCw className="h-4 w-4" />
+                  Try all servers
+                </Button>
+                <Button variant="secondary" onClick={retry}>
+                  Retry current
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {iframeSrc && (
-          <iframe
-            ref={iframeRef}
-            key={`${activeProvider?.id}-${tmdbId}-${anilistId}-${season}-${episode}-${iframeSrc}`}
-            title={title}
-            src={iframeSrc}
-            className="absolute inset-0 h-full w-full border-0"
-            allow={EMBED_ALLOW}
-            allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"
-            loading="eager"
-            onLoad={handleIframeLoad}
-            onError={handleIframeError}
-            style={{
-              opacity: status === "loading" ? 0 : 1,
-              WebkitOverflowScrolling: "touch",
-              // Keep iframe from eating the Servers controls outside this box
-              pointerEvents: status === "all_failed" ? "none" : "auto",
-            }}
-          />
-        )}
-      </div>
-
-      <p className="mt-2 text-xs text-[var(--text-muted)]">
-        Subtitles are available in the player’s CC menu when supplied by the
-        source. External players may show ads. If playback does not start,
-        choose another server.
-      </p>
-
-      {/* Controls always above the iframe stacking context */}
-      <div className="relative z-30 mt-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          {status === "loaded" && activeProvider && (
-            <Badge tone="primary">
-              {confirmedPlaying ? (
-                <Check className="mr-1 h-3 w-3" />
-              ) : (
-                <MonitorPlay className="mr-1 h-3 w-3" />
-              )}
-              {activeProvider.name}
-            </Badge>
+          {iframeSrc && (
+            <iframe
+              ref={iframeRef}
+              key={`${activeProvider?.id}-${tmdbId}-${anilistId}-${season}-${episode}-${iframeSrc}`}
+              title={title}
+              src={iframeSrc}
+              className="absolute inset-0 h-full w-full border-0"
+              allow={EMBED_ALLOW}
+              allowFullScreen
+              referrerPolicy="strict-origin-when-cross-origin"
+              loading="eager"
+              onLoad={handleIframeLoad}
+              onError={handleIframeError}
+              style={{
+                opacity: status === "loading" ? 0 : 1,
+                WebkitOverflowScrolling: "touch",
+                // Keep iframe from eating the Servers controls outside this box
+                pointerEvents: status === "all_failed" ? "none" : "auto",
+              }}
+            />
           )}
-          {status === "loading" && activeProvider && (
-            <Badge tone="muted">
-              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-              {activeProvider.name}
-            </Badge>
-          )}
-          {status === "error" && (
-            <Badge tone="accent">
-              <X className="mr-1 h-3 w-3" />
-              Switching server…
-            </Badge>
-          )}
-          {isAnime && (
-            <Badge tone="muted">
-              {animeFormat === "MOVIE" ? "Anime film" : "Anime"}
-            </Badge>
-          )}
-          <Badge tone="muted">
-            Audio {effectiveLanguage.toUpperCase()}
-            {isFilipino && originLanguage !== effectiveLanguage ? ` · PH` : ""}
-          </Badge>
         </div>
 
-        <div className="relative" ref={menuRef}>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="relative z-40"
-            onClick={() => setShowMenu((v) => !v)}
-            aria-expanded={showMenu}
-          >
-            <Server className="h-4 w-4" />
-            Servers
-            <ChevronDown className="h-3.5 w-3.5" />
-          </Button>
-          {showMenu && (
-            <div
-              className="scroll-contain absolute right-0 z-50 mt-1 max-h-72 min-w-[14rem] rounded-xl border border-white/10 bg-[var(--surface)] py-1 shadow-2xl"
-              data-lenis-prevent
-              data-lenis-prevent-wheel
+        <p className="mt-2 text-xs text-[var(--text-muted)]">
+          Subtitles are available in the player’s CC menu when supplied by the
+          source. External players may show ads. If playback does not start,
+          choose another server.
+        </p>
+
+        {/* Controls always above the iframe stacking context */}
+        <div className="relative z-30 mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {status === "loaded" && activeProvider && (
+              <Badge tone="primary">
+                {confirmedPlaying ? (
+                  <Check className="mr-1 h-3 w-3" />
+                ) : (
+                  <MonitorPlay className="mr-1 h-3 w-3" />
+                )}
+                {activeProvider.name}
+              </Badge>
+            )}
+            {status === "loading" && activeProvider && (
+              <Badge tone="muted">
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                {activeProvider.name}
+              </Badge>
+            )}
+            {status === "error" && (
+              <Badge tone="accent">
+                <X className="mr-1 h-3 w-3" />
+                Switching server…
+              </Badge>
+            )}
+            {isAnime && (
+              <Badge tone="muted">
+                {animeFormat === "MOVIE" ? "Anime film" : "Anime"}
+              </Badge>
+            )}
+            <Badge tone="muted">
+              Audio {effectiveLanguage.toUpperCase()}
+              {isFilipino && originLanguage !== effectiveLanguage
+                ? ` · PH`
+                : ""}
+            </Badge>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setCinemaMode((value) => !value)}
+              aria-pressed={cinemaMode}
             >
-              {availableProviders.map((p, i) => {
-                const tried = triedProviders.includes(p.id);
-                const active = i === activeIndex;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors",
-                      active
-                        ? "bg-[var(--primary)]/20 text-white"
-                        : "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
-                    )}
-                    onClick={() => switchTo(i)}
-                  >
-                    {active ? (
-                      <Check className="h-3.5 w-3.5 text-[var(--primary-light)]" />
-                    ) : tried ? (
-                      <X className="h-3.5 w-3.5 text-[var(--text-muted)]" />
-                    ) : (
-                      <span className="w-3.5" />
-                    )}
-                    {p.name}
-                    {p.animeOnly && (
-                      <span className="ml-auto text-[10px] text-[var(--text-muted)]">
-                        anime
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              {cinemaMode ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Clapperboard className="h-4 w-4" />
+              )}
+              {cinemaMode ? "Exit movie mode" : "Movie mode"}
+            </Button>
+            <div className="relative" ref={menuRef}>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="relative z-40"
+                onClick={() => setShowMenu((v) => !v)}
+                aria-expanded={showMenu}
+              >
+                <Server className="h-4 w-4" />
+                Servers
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+              {showMenu && (
+                <div
+                  className="scroll-contain absolute right-0 z-50 mt-1 max-h-72 min-w-[14rem] rounded-xl border border-white/10 bg-[var(--surface)] py-1 shadow-2xl"
+                  data-lenis-prevent
+                  data-lenis-prevent-wheel
+                >
+                  {availableProviders.map((p, i) => {
+                    const tried = triedProviders.includes(p.id);
+                    const active = i === activeIndex;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={cn(
+                          "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors",
+                          active
+                            ? "bg-[var(--primary)]/20 text-white"
+                            : "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
+                        )}
+                        onClick={() => switchTo(i)}
+                      >
+                        {active ? (
+                          <Check className="h-3.5 w-3.5 text-[var(--primary-light)]" />
+                        ) : tried ? (
+                          <X className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                        ) : (
+                          <span className="w-3.5" />
+                        )}
+                        {p.name}
+                        {p.animeOnly && (
+                          <span className="ml-auto text-[10px] text-[var(--text-muted)]">
+                            anime
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
-      </div>
 
-      <div
-        role="note"
-        className="mt-3 flex gap-2.5 rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-left"
-      >
-        <AlertTriangle
-          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--text-muted)]"
-          aria-hidden
-        />
-        <div className="min-w-0 space-y-0.5">
-          <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-            Playback tip
-          </p>
-          <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-            If the current server does not work, switch with{" "}
-            <span className="text-white/80">Servers</span>. Parent popups from
-            this page are blocked — stay on this tab to watch.
-          </p>
+        <div
+          role="note"
+          className="mt-3 flex gap-2.5 rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-left"
+        >
+          <AlertTriangle
+            className="mt-0.5 h-4 w-4 shrink-0 text-[var(--text-muted)]"
+            aria-hidden
+          />
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
+              Playback tip
+            </p>
+            <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+              If the current server does not work, switch with{" "}
+              <span className="text-white/80">Servers</span>. Parent popups from
+              this page are blocked — stay on this tab to watch.
+            </p>
+          </div>
         </div>
       </div>
-    </div>
+    </CinemaModeShell>
   );
 }

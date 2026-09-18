@@ -1,5 +1,6 @@
 import { catalog, type CatalogSort } from "@/lib/content/catalog-service";
 import { json } from "@/lib/server/http";
+import { canIncludeMature } from "@/lib/server/mature-access";
 import { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -7,9 +8,7 @@ export async function GET(request: NextRequest) {
   const pageSize = Number(request.nextUrl.searchParams.get("pageSize") ?? "60");
   const sort = (request.nextUrl.searchParams.get("sort") ??
     "popularity") as CatalogSort;
-  const includeMature =
-    request.nextUrl.searchParams.get("mature") === "1" ||
-    request.nextUrl.searchParams.get("mature") === "true";
+  const includeMature = await canIncludeMature(request);
   const playableOnly =
     request.nextUrl.searchParams.get("playable") === "1" ||
     request.nextUrl.searchParams.get("playable") === "true" ||

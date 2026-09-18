@@ -26,10 +26,18 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
   const [username, setUsername] = useState(profile?.username ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
-  const [animePref, setAnimePref] = useState<AnimeTitlePreference>(settings?.animeTitlePreference ?? "english");
-  const [animeAudioLang, setAnimeAudioLang] = useState(settings?.animeAudioLanguage ?? "ja");
-  const [kdramaAudioLang, setKdramaAudioLang] = useState(settings?.kdramaAudioLanguage ?? "ko");
-  const [generalAudioLang, setGeneralAudioLang] = useState(settings?.generalAudioLanguage ?? "en");
+  const [animePref, setAnimePref] = useState<AnimeTitlePreference>(
+    settings?.animeTitlePreference ?? "english",
+  );
+  const [animeAudioLang, setAnimeAudioLang] = useState(
+    settings?.animeAudioLanguage ?? "ja",
+  );
+  const [kdramaAudioLang, setKdramaAudioLang] = useState(
+    settings?.kdramaAudioLanguage ?? "ko",
+  );
+  const [generalAudioLang, setGeneralAudioLang] = useState(
+    settings?.generalAudioLanguage ?? "en",
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -60,8 +68,8 @@ export default function SettingsPage() {
           Settings
         </h1>
         <p className="mt-2 text-[var(--text-secondary)]">
-          Sign in free to manage profile, region, and preferences.
-          CineVerse is unlimited for every member.
+          Sign in free to manage profile, region, and preferences. CineVerse is
+          unlimited for every member.
         </p>
         <div className="mt-6 flex gap-3">
           <Link href="/login">
@@ -177,7 +185,7 @@ export default function SettingsPage() {
         queryKey: ["playback"],
         refetchType: "all",
       });
-      setMessage("Saved. Catalog stays United States · live home will refresh.");
+      setMessage("Saved. Catalog stays United States · home will refresh.");
     } catch {
       // Always keep preferences on this device so the UI does not hard-fail
       setProfile(localProfile);
@@ -240,7 +248,9 @@ export default function SettingsPage() {
             className="mt-1.5 h-11"
             value={username}
             onChange={(e) =>
-              setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24))
+              setUsername(
+                e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24),
+              )
             }
           />
         </label>
@@ -419,7 +429,10 @@ export default function SettingsPage() {
       </div>
 
       <section className="mt-8 flex flex-wrap gap-4 text-sm">
-        <Link href="/notifications" className="text-[var(--primary-light)] underline">
+        <Link
+          href="/notifications"
+          className="text-[var(--primary-light)] underline"
+        >
           Notifications
         </Link>
         <Link href="/privacy" className="text-[var(--primary-light)] underline">
@@ -428,7 +441,10 @@ export default function SettingsPage() {
         <Link href="/legal" className="text-[var(--primary-light)] underline">
           Legal
         </Link>
-        <Link href="/copyright" className="text-[var(--primary-light)] underline">
+        <Link
+          href="/copyright"
+          className="text-[var(--primary-light)] underline"
+        >
           Copyright
         </Link>
       </section>

@@ -25,15 +25,16 @@ export function ReviewsSection({ contentId }: { contentId: string }) {
   const [hasSpoilers, setHasSpoilers] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [live, setLive] = useState(false);
+  const [synced, setSynced] = useState(false);
 
   useEffect(() => {
-    return subscribeReviews(contentId, (items) => { setReviews(items); setLive(true); });
+    return subscribeReviews(contentId, (items) => {
+      setReviews(items);
+      setSynced(true);
+    });
   }, [contentId]);
 
-  const myReview = user
-    ? reviews.find((r) => r.uid === user.uid)
-    : undefined;
+  const myReview = user ? reviews.find((r) => r.uid === user.uid) : undefined;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,10 +76,11 @@ export function ReviewsSection({ contentId }: { contentId: string }) {
             Reviews
           </h2>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-            {live ? (
+            {synced ? (
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--success)]" />
-                Live · {reviews.length} review{reviews.length === 1 ? "" : "s"}
+                Updated · {reviews.length} review
+                {reviews.length === 1 ? "" : "s"}
               </span>
             ) : (
               "Loading…"
@@ -156,7 +158,10 @@ export function ReviewsSection({ contentId }: { contentId: string }) {
         </form>
       ) : (
         <p className="mb-6 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-[var(--text-secondary)]">
-          <Link href="/login" className="font-medium text-[var(--primary-light)]">
+          <Link
+            href="/login"
+            className="font-medium text-[var(--primary-light)]"
+          >
             Sign in
           </Link>{" "}
           to write a review. Spoiler protection is on by default for readers.
@@ -196,9 +201,7 @@ export function ReviewsSection({ contentId }: { contentId: string }) {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {r.hasSpoilers && (
-                    <Badge tone="accent">Spoilers</Badge>
-                  )}
+                  {r.hasSpoilers && <Badge tone="accent">Spoilers</Badge>}
                   {user?.uid === r.uid && (
                     <button
                       type="button"

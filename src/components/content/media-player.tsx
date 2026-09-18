@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, Film, Maximize2, Play } from "lucide-react";
+import {
+  Clapperboard,
+  ExternalLink,
+  Film,
+  Maximize2,
+  Minimize2,
+  Play,
+} from "lucide-react";
 import type { Trailer, WatchProvider } from "@/types/content";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +18,7 @@ import { HlsPlayer } from "./hls-player";
 import { VimeoPlayer } from "./vimeo-player";
 import { StreamPlayer } from "./stream-player";
 import { DownloadButton } from "./download-button";
+import { CinemaModeShell } from "./cinema-mode-shell";
 
 export type WatchAvailability = "watch_now" | "trailer_only" | "unavailable";
 
@@ -139,6 +147,7 @@ function MediaPlayerInner({
     if (canFull) return "full";
     return "idle";
   });
+  const [cinemaMode, setCinemaMode] = useState(false);
 
   const youtubeFullId =
     legalFull?.youtubeVideoId ||
@@ -153,209 +162,249 @@ function MediaPlayerInner({
       : undefined);
 
   return (
-    <div className={cn("space-y-3", className)}>
-      <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[var(--glow-primary)]">
-        {mode === "trailer" && trailerKey ? (
-          <YouTubeMoviePlayer
-            videoId={trailerKey}
-            title={`${title} official trailer`}
-            autoplay
-          />
-        ) : mode === "full" && legalFull ? (
-          legalFull.type === "youtube" && youtubeFullId ? (
+    <CinemaModeShell
+      active={cinemaMode}
+      title={title}
+      onClose={() => setCinemaMode(false)}
+      className={className}
+    >
+      <div className="space-y-3">
+        <div
+          className={cn(
+            "relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[var(--glow-primary)]",
+            cinemaMode && "cinema-player-frame border-white/15",
+          )}
+        >
+          {mode === "trailer" && trailerKey ? (
             <YouTubeMoviePlayer
-              videoId={youtubeFullId}
-              title={`${title} full playback`}
-              autoplay
-              onProgress={onProgress}
-              onComplete={onComplete}
-            />
-          ) : legalFull.type === "vimeo" && vimeoId ? (
-            <VimeoPlayer
-              videoId={vimeoId}
-              onProgress={onProgress}
-              onComplete={onComplete}
-            />
-          ) : legalFull.type === "cloudflare" &&
-            (legalFull.cloudflareVideoUid ||
-              legalFull.embedUrl.includes("cloudflarestream.com")) ? (
-            <StreamPlayer
-              videoUid={
-                legalFull.cloudflareVideoUid ||
-                legalFull.embedUrl.match(
-                  /cloudflarestream\.com\/([a-zA-Z0-9_-]+)/,
-                )?.[1] ||
-                ""
-              }
-              title={`${title} full playback`}
-              customerCode={legalFull.cloudflareCustomerCode}
-              token={legalFull.cloudflareToken}
+              videoId={trailerKey}
+              title={`${title} official trailer`}
               autoplay
             />
-          ) : legalFull.type === "archive" ? (
-            <iframe
-              key={`full-archive-${legalFull.embedUrl}`}
-              title={`${title} full playback`}
-              src={`${legalFull.embedUrl}${legalFull.embedUrl.includes("?") ? "&" : "?"}autoplay=1`}
-              className="absolute inset-0 h-full w-full"
-              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-              allowFullScreen
-              referrerPolicy="strict-origin-when-cross-origin"
-            />
-          ) : legalFull.type === "mp4" || legalFull.type === "hls" ||
-            legalFull.embedUrl.includes(".m3u8") ? (
-            <HlsPlayer
-              src={legalFull.embedUrl}
-              subtitles={legalFull.subtitles}
-              autoPlay
-              onProgress={onProgress}
-              onComplete={onComplete}
-            />
+          ) : mode === "full" && legalFull ? (
+            legalFull.type === "youtube" && youtubeFullId ? (
+              <YouTubeMoviePlayer
+                videoId={youtubeFullId}
+                title={`${title} full playback`}
+                autoplay
+                onProgress={onProgress}
+                onComplete={onComplete}
+              />
+            ) : legalFull.type === "vimeo" && vimeoId ? (
+              <VimeoPlayer
+                videoId={vimeoId}
+                onProgress={onProgress}
+                onComplete={onComplete}
+              />
+            ) : legalFull.type === "cloudflare" &&
+              (legalFull.cloudflareVideoUid ||
+                legalFull.embedUrl.includes("cloudflarestream.com")) ? (
+              <StreamPlayer
+                videoUid={
+                  legalFull.cloudflareVideoUid ||
+                  legalFull.embedUrl.match(
+                    /cloudflarestream\.com\/([a-zA-Z0-9_-]+)/,
+                  )?.[1] ||
+                  ""
+                }
+                title={`${title} full playback`}
+                customerCode={legalFull.cloudflareCustomerCode}
+                token={legalFull.cloudflareToken}
+                autoplay
+              />
+            ) : legalFull.type === "archive" ? (
+              <iframe
+                key={`full-archive-${legalFull.embedUrl}`}
+                title={`${title} full playback`}
+                src={`${legalFull.embedUrl}${legalFull.embedUrl.includes("?") ? "&" : "?"}autoplay=1`}
+                className="absolute inset-0 h-full w-full"
+                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            ) : legalFull.type === "mp4" ||
+              legalFull.type === "hls" ||
+              legalFull.embedUrl.includes(".m3u8") ? (
+              <HlsPlayer
+                src={legalFull.embedUrl}
+                subtitles={legalFull.subtitles}
+                autoPlay
+                onProgress={onProgress}
+                onComplete={onComplete}
+              />
+            ) : (
+              <video
+                key={`full-video-${legalFull.embedUrl}`}
+                className="absolute inset-0 h-full w-full bg-black"
+                controls
+                playsInline
+                autoPlay
+                controlsList="nodownload"
+                src={legalFull.embedUrl}
+                onTimeUpdate={(e) =>
+                  onProgress?.((e.target as HTMLVideoElement).currentTime)
+                }
+                onEnded={() => onComplete?.()}
+              >
+                Your browser does not support in-app video playback.
+              </video>
+            )
           ) : (
-            <video
-              key={`full-video-${legalFull.embedUrl}`}
-              className="absolute inset-0 h-full w-full bg-black"
-              controls
-              playsInline
-              autoPlay
-              controlsList="nodownload"
-              src={legalFull.embedUrl}
-              onTimeUpdate={(e) =>
-                onProgress?.((e.target as HTMLVideoElement).currentTime)
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-gradient-to-br from-[#12121a] via-[var(--background)] to-[#0a0a10] p-6 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary)]/25 text-[var(--primary-light)] ring-1 ring-white/10">
+                <Film className="h-8 w-8" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-display text-xl font-semibold text-white">
+                  {title}
+                </p>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  {availability === "watch_now"
+                    ? "Ready to play in CineVerse"
+                    : availability === "trailer_only"
+                      ? "Official trailer ready"
+                      : "Trailer and free legal links available below"}
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {canFull && (
+                  <Button
+                    variant="gold"
+                    size="lg"
+                    className="watch-now-cta !text-black"
+                    onClick={() => setMode("full")}
+                  >
+                    <Maximize2 className="h-4 w-4 !text-black" />
+                    Watch Now
+                  </Button>
+                )}
+                {hasTrailer && (
+                  <Button size="lg" onClick={() => setMode("trailer")}>
+                    <Play className="h-4 w-4" />
+                    Watch Trailer
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(mode === "trailer" || mode === "full") && (
+            <div className="pointer-events-none absolute left-3 top-3 z-10">
+              <Badge tone={mode === "full" ? "gold" : "primary"}>
+                {mode === "full" ? "Full stream" : "Official trailer"}
+              </Badge>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {canFull && (
+            <Button
+              size="sm"
+              variant={mode === "full" ? "gold" : "secondary"}
+              className={
+                mode === "full" ? "watch-now-cta !text-black" : undefined
               }
-              onEnded={() => onComplete?.()}
+              onClick={() => setMode("full")}
             >
-              Your browser does not support in-app video playback.
-            </video>
-          )
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-gradient-to-br from-[#12121a] via-[var(--background)] to-[#0a0a10] p-6 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary)]/25 text-[var(--primary-light)] ring-1 ring-white/10">
-              <Film className="h-8 w-8" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-display text-xl font-semibold text-white">
-                {title}
-              </p>
-              <p className="text-sm text-[var(--text-secondary)]">
-                {availability === "watch_now"
-                  ? "Ready to play in CineVerse"
-                  : availability === "trailer_only"
-                    ? "Official trailer ready"
-                    : "Trailer and free legal links available below"}
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              {canFull && (
-                <Button
-                  variant="gold"
-                  size="lg"
-                  className="watch-now-cta !text-black"
-                  onClick={() => setMode("full")}
-                >
-                  <Maximize2 className="h-4 w-4 !text-black" />
-                  Watch Now
-                </Button>
-              )}
-              {hasTrailer && (
-                <Button size="lg" onClick={() => setMode("trailer")}>
-                  <Play className="h-4 w-4" />
-                  Watch Trailer
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {(mode === "trailer" || mode === "full") && (
-          <div className="pointer-events-none absolute left-3 top-3 z-10">
-            <Badge tone={mode === "full" ? "gold" : "primary"}>
-              {mode === "full" ? "Full stream" : "Official trailer"}
-            </Badge>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {canFull && (
-          <Button
-            size="sm"
-            variant={mode === "full" ? "gold" : "secondary"}
-            className={mode === "full" ? "watch-now-cta !text-black" : undefined}
-            onClick={() => setMode("full")}
-          >
-            <Play
-              className={cn(
-                "h-3.5 w-3.5",
-                mode === "full" && "!text-black",
-              )}
-            />
-            Watch Now
-          </Button>
-        )}
-        {hasTrailer && (
-          <Button
-            size="sm"
-            variant={mode === "trailer" ? "default" : "secondary"}
-            onClick={() => setMode("trailer")}
-          >
-            <Play className="h-3.5 w-3.5" />
-            Watch Trailer
-          </Button>
-        )}
-        {(mode === "trailer" || mode === "full") && (
-          <Button size="sm" variant="ghost" onClick={() => setMode("idle")}>
-            Close
-          </Button>
-        )}
-        {!keepInApp && trailer?.site === "youtube" && trailer.key && (
-          <a
-            href={`https://www.youtube.com/watch?v=${trailer.key.trim()}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button size="sm" variant="outline">
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open on YouTube
+              <Play
+                className={cn("h-3.5 w-3.5", mode === "full" && "!text-black")}
+              />
+              Watch Now
             </Button>
-          </a>
-        )}
+          )}
+          {hasTrailer && (
+            <Button
+              size="sm"
+              variant={mode === "trailer" ? "default" : "secondary"}
+              onClick={() => setMode("trailer")}
+            >
+              <Play className="h-3.5 w-3.5" />
+              Watch Trailer
+            </Button>
+          )}
+          {(mode === "trailer" || mode === "full") && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setCinemaMode((value) => !value)}
+              aria-pressed={cinemaMode}
+            >
+              {cinemaMode ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Clapperboard className="h-3.5 w-3.5" />
+              )}
+              {cinemaMode ? "Exit movie mode" : "Movie mode"}
+            </Button>
+          )}
+          {(mode === "trailer" || mode === "full") && (
+            <Button size="sm" variant="ghost" onClick={() => setMode("idle")}>
+              Close
+            </Button>
+          )}
+          {!keepInApp && trailer?.site === "youtube" && trailer.key && (
+            <a
+              href={`https://www.youtube.com/watch?v=${trailer.key.trim()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button size="sm" variant="outline">
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open on YouTube
+              </Button>
+            </a>
+          )}
+          {canFull && legalFull?.downloadUrl && (
+            <DownloadButton
+              downloadUrl={legalFull.downloadUrl}
+              downloadLabel={legalFull.downloadLabel}
+            />
+          )}
+        </div>
+
         {canFull && legalFull?.downloadUrl && (
-          <DownloadButton
-            downloadUrl={legalFull.downloadUrl}
-            downloadLabel={legalFull.downloadLabel}
-          />
-        )}
-      </div>
-
-      {canFull && legalFull?.downloadUrl && (
-        <p className="text-xs text-[var(--text-muted)]">
-          Free download available (no ads) — public domain / rights-cleared file
-          only.
-        </p>
-      )}
-
-      {canFull && legalFull?.attributionText && (
-        <p className="text-xs text-[var(--text-muted)]">
-          {legalFull.attributionText}
-        </p>
-      )}
-
-      {!canFull && providers.length > 0 && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-          <p className="mb-2 text-xs font-medium text-[var(--text-muted)]">
-            Also available on
+          <p className="text-xs text-[var(--text-muted)]">
+            Free download available (no ads) — public domain / rights-cleared
+            file only.
           </p>
-          <div className="flex flex-wrap gap-2">
-            {providers.map((p) =>
-              p.link ? (
-                <a
-                  key={`${p.id}-${p.type}`}
-                  href={p.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+        )}
+
+        {canFull && legalFull?.attributionText && (
+          <p className="text-xs text-[var(--text-muted)]">
+            {legalFull.attributionText}
+          </p>
+        )}
+
+        {!canFull && providers.length > 0 && (
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <p className="mb-2 text-xs font-medium text-[var(--text-muted)]">
+              Also available on
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {providers.map((p) =>
+                p.link ? (
+                  <a
+                    key={`${p.id}-${p.type}`}
+                    href={p.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Badge
+                      tone={
+                        p.type === "free"
+                          ? "primary"
+                          : p.type === "flatrate"
+                            ? "cyan"
+                            : "muted"
+                      }
+                    >
+                      {p.name} ↗
+                    </Badge>
+                  </a>
+                ) : (
                   <Badge
+                    key={`${p.id}-${p.type}`}
                     tone={
                       p.type === "free"
                         ? "primary"
@@ -364,27 +413,14 @@ function MediaPlayerInner({
                           : "muted"
                     }
                   >
-                    {p.name} ↗
+                    {p.name}
                   </Badge>
-                </a>
-              ) : (
-                <Badge
-                  key={`${p.id}-${p.type}`}
-                  tone={
-                    p.type === "free"
-                      ? "primary"
-                      : p.type === "flatrate"
-                        ? "cyan"
-                        : "muted"
-                  }
-                >
-                  {p.name}
-                </Badge>
-              ),
-            )}
+                ),
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </CinemaModeShell>
   );
 }

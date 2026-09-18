@@ -111,9 +111,9 @@ export default function ProfilePage({
   const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [livePulse, setLivePulse] = useState(0);
+  const [syncPulse, setSyncPulse] = useState(0);
 
-  // Live clock for relative timestamps
+  // Refresh relative timestamps periodically.
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 15_000);
     return () => window.clearInterval(id);
@@ -128,8 +128,8 @@ export default function ProfilePage({
 
   const isOwnByUsername = Boolean(
     user &&
-      localOwn &&
-      localOwn.username.toLowerCase() === username.toLowerCase(),
+    localOwn &&
+    localOwn.username.toLowerCase() === username.toLowerCase(),
   );
   const isOwnByUid = Boolean(
     user && (username === "me" || username === user.uid),
@@ -154,7 +154,7 @@ export default function ProfilePage({
   });
 
   const libraryQuery = useQuery({
-    queryKey: ["library", user?.uid ?? "guest", livePulse],
+    queryKey: ["library", user?.uid ?? "guest", syncPulse],
     queryFn: async () => {
       if (user) {
         // Merge server + local so UI updates instantly after list changes
@@ -240,7 +240,7 @@ export default function ProfilePage({
   });
 
   const favoritesQuery = useQuery({
-    queryKey: ["favorites", user?.uid ?? "guest", livePulse],
+    queryKey: ["favorites", user?.uid ?? "guest", syncPulse],
     queryFn: async () => {
       if (user) {
         try {
@@ -277,13 +277,13 @@ export default function ProfilePage({
         e.key.includes("favorite") ||
         e.key.includes("profile")
       ) {
-        setLivePulse((n) => n + 1);
+        setSyncPulse((n) => n + 1);
         void queryClient.invalidateQueries({ queryKey: ["library"] });
         void queryClient.invalidateQueries({ queryKey: ["favorites"] });
       }
     };
     const onFocus = () => {
-      setLivePulse((n) => n + 1);
+      setSyncPulse((n) => n + 1);
       void libraryQuery.refetch();
       void favoritesQuery.refetch();
     };
@@ -304,7 +304,7 @@ export default function ProfilePage({
   // Guest list mutations update zustand — re-pulse when lengths change
   useEffect(() => {
     if (user) return;
-    const t = window.setTimeout(() => setLivePulse((n) => n + 1), 0);
+    const t = window.setTimeout(() => setSyncPulse((n) => n + 1), 0);
     return () => window.clearTimeout(t);
   }, [user, guestLibrary.length, guestFavorites.length]);
 
@@ -365,7 +365,7 @@ export default function ProfilePage({
   }, [profile]);
 
   const refreshAll = useCallback(async () => {
-    setLivePulse((n) => n + 1);
+    setSyncPulse((n) => n + 1);
     await Promise.all([
       isOwn ? libraryQuery.refetch() : refetchProfile(),
       isOwn ? favoritesQuery.refetch() : Promise.resolve(),
@@ -383,11 +383,7 @@ export default function ProfilePage({
     ].filter(Boolean);
     if (!times.length) return null;
     return new Date(Math.max(...times)).toISOString();
-  }, [
-    dataUpdatedAt,
-    libraryQuery.dataUpdatedAt,
-    favoritesQuery.dataUpdatedAt,
-  ]);
+  }, [dataUpdatedAt, libraryQuery.dataUpdatedAt, favoritesQuery.dataUpdatedAt]);
 
   if (!isOwn && isLoading) {
     return (
@@ -558,7 +554,7 @@ export default function ProfilePage({
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--success)] opacity-60" />
                     <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
                   </span>
-                  Live
+                  Synced
                 </span>
                 <button
                   type="button"
@@ -701,7 +697,7 @@ export default function ProfilePage({
           </div>
         </motion.section>
 
-        {/* Live stats */}
+        {/* Account stats */}
         <motion.dl
           className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5"
           variants={reduce ? undefined : staggerContainer}
@@ -786,7 +782,7 @@ export default function ProfilePage({
                             Library mix
                           </h2>
                           <span className="text-xs text-[var(--text-muted)]">
-                            {totalLib} titles · live
+                            {totalLib} titles · synced
                           </span>
                         </div>
                         <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-black/40">

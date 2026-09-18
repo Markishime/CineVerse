@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
 import { useDeviceMature } from "@/hooks/use-device-mature";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 import { getDeviceRegion } from "@/lib/user/region";
 import { cn } from "@/lib/utils";
 
@@ -67,7 +68,6 @@ function DiscoverInner() {
   const [genreDraft, setGenreDraft] = useState(genre);
   const [yearDraft, setYearDraft] = useState(year);
 
-
   const filterKey = JSON.stringify([q, genre, year]);
   const [previousFilters, setPreviousFilters] = useState(filterKey);
   if (previousFilters !== filterKey) {
@@ -77,7 +77,9 @@ function DiscoverInner() {
     setYearDraft(year);
   }
 
-  const mature = Boolean(settings?.matureContent) || deviceMature;
+  const mature =
+    isRestrictedContentUser(user?.email) &&
+    (Boolean(settings?.matureContent) || deviceMature);
 
   const update = useCallback(
     (patch: Record<string, string | undefined>) => {
@@ -107,30 +109,24 @@ function DiscoverInner() {
     ? homeQuery.data.genres
     : FALLBACK_GENRES;
 
-  const {
-    data,
-    isLoading,
-    isFetching,
-    isError,
-    dataUpdatedAt,
-    refetch,
-  } = useQuery({
-    queryKey: ["discover", q, type, genre, year, mood, page, mature],
-    queryFn: () =>
-      fetchDiscover({
-        q: q || undefined,
-        type: type || undefined,
-        genre: genre || undefined,
-        year: year ? Number(year) : undefined,
-        mood: mood || undefined,
-        page,
-        mature: mature ? "1" : undefined,
-      }),
-    staleTime: 15_000,
-    refetchInterval: 45_000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-  });
+  const { data, isLoading, isFetching, isError, dataUpdatedAt, refetch } =
+    useQuery({
+      queryKey: ["discover", q, type, genre, year, mood, page, mature],
+      queryFn: () =>
+        fetchDiscover({
+          q: q || undefined,
+          type: type || undefined,
+          genre: genre || undefined,
+          year: year ? Number(year) : undefined,
+          mood: mood || undefined,
+          page,
+          mature: mature ? "1" : undefined,
+        }),
+      staleTime: 15_000,
+      refetchInterval: 45_000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    });
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -142,7 +138,7 @@ function DiscoverInner() {
   const items = data?.items ?? [];
   const totalPages = data?.totalPages ?? 1;
 
-  const liveLabel = useMemo(() => {
+  const resultLabel = useMemo(() => {
     if (!dataUpdatedAt) return null;
     return new Date(dataUpdatedAt).toLocaleTimeString();
   }, [dataUpdatedAt]);
@@ -150,7 +146,7 @@ function DiscoverInner() {
   return (
     <div className="page-shell">
       <PageHeader
-        eyebrow="Live catalog"
+        eyebrow="Browse the catalog"
         title="Discover"
         description="Browse movies, series, anime, and K-dramas. Filters stay in the URL so you can share or refresh anytime."
         actions={
@@ -166,9 +162,9 @@ function DiscoverInner() {
               />
               {isFetching
                 ? "Updating…"
-                : liveLabel
-                  ? `Live · ${liveLabel}`
-                  : "Live"}
+                : resultLabel
+                  ? resultLabel
+                  : "Browse all titles"}
             </span>
             <Button
               size="sm"
@@ -327,7 +323,7 @@ function DiscoverInner() {
       {isError && (
         <div className="rounded-2xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-8 text-center">
           <p className="text-sm text-[var(--text-secondary)]">
-            Could not load the live catalog. Try again.
+            Could not load the catalog. Try again.
           </p>
           <Button className="mt-4" onClick={() => void refetch()}>
             Retry
@@ -384,7 +380,9 @@ function DiscoverInner() {
         <EmptyState
           title="No matches"
           description="Broaden filters or try a different mood."
-          actions={[{ href: "/movies", label: "Browse movies", variant: "secondary" }]}
+          actions={[
+            { href: "/movies", label: "Browse movies", variant: "secondary" },
+          ]}
         />
       )}
 

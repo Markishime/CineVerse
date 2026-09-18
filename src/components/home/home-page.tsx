@@ -75,7 +75,7 @@ export function HomePage() {
         <div className="hero-vignette relative z-10">
           <HeroCarousel
             items={carouselItems}
-            liveLabel={
+            eyebrow={
               home.catalogStatus === "live"
                 ? "Popular & new right now"
                 : "Discover your next watch"
@@ -102,7 +102,7 @@ export function HomePage() {
         {(isError || home.catalogStatus === "fallback") && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--gold)]/25 bg-[var(--gold)]/10 px-4 py-3">
             <p className="text-sm text-[var(--text-secondary)]">
-              Showing saved picks. Live availability may be limited.{" "}
+              Showing saved picks. Current availability may be limited.{" "}
               {isFetching ? "Refreshing…" : null}
             </p>
             <button
@@ -111,7 +111,7 @@ export function HomePage() {
               onClick={() => void refetch()}
               className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white hover:bg-white/15"
             >
-              Retry live
+              Refresh catalog
             </button>
           </div>
         )}

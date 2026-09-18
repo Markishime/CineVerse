@@ -12,8 +12,8 @@
 
   /* High-contrast text on dark backgrounds */
   --text-primary: #ffffff;
-  --text-secondary: #d7d9df;
-  --text-muted: #a8abb4;
+  --text-secondary: #e2e4e9;
+  --text-muted: #bec1c9;
 
   --primary: #e50914;
   --primary-light: #ff5a63;
@@ -25,7 +25,7 @@
   --warning: #ffc766;
   --danger: #ff7b86;
 
-  --border: rgba(255, 255, 255, 0.12);
+  --border: rgba(255, 255, 255, 0.16);
   --ring: rgba(229, 9, 20, 0.62);
 
   --font-display:
@@ -140,6 +140,27 @@ html.lenis body {
 html,
 body {
   overflow-x: clip;
+}
+
+.cinema-player-frame {
+  margin-inline: auto;
+  width: min(100%, calc((100dvh - 11.5rem) * 16 / 9));
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 28px 90px rgba(0, 0, 0, 0.78),
+    0 0 90px rgba(229, 9, 20, 0.09);
+}
+
+/* The app header is a sibling stacking context; Movie Mode owns the viewport. */
+body.cineverse-cinema-mode header {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .cinema-player-frame {
+    width: 100%;
+  }
 }
 
 /* Hero Ken Burns — subtle push on active poster/backdrop */

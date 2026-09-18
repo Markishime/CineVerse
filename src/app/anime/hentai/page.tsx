@@ -93,7 +93,8 @@ export default function AnimeHentaiPage() {
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-[var(--text-secondary)]">
           Full adult anime library — AniList isAdult, Jikan Rx, and partner
-          catalogs. Thousands of titles, paginated live. Restricted access.
+          catalogs. Thousands of titles with paginated browsing. Restricted
+          access.
         </p>
       </div>
 

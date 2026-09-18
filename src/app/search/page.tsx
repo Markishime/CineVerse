@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
 import { useDeviceMature } from "@/hooks/use-device-mature";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 
 const TYPE_FILTERS = [
   { id: "", label: "All" },
@@ -35,14 +36,15 @@ function SearchInner() {
   const user = useAuthStore((s) => s.user);
   const deviceMature = useDeviceMature(user?.uid);
 
-
   const [previousQuery, setPreviousQuery] = useState(initial);
   if (previousQuery !== initial) {
     setPreviousQuery(initial);
     setQ(initial);
   }
 
-  const mature = Boolean(settings?.matureContent) || deviceMature;
+  const mature =
+    isRestrictedContentUser(user?.email) &&
+    (Boolean(settings?.matureContent) || deviceMature);
 
   const { data, isFetching, isFetched } = useQuery({
     queryKey: ["search", initial, type, mature],
@@ -97,7 +99,11 @@ function SearchInner() {
         </Button>
       </form>
 
-      <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Type filter">
+      <div
+        className="mt-4 flex flex-wrap gap-2"
+        role="group"
+        aria-label="Type filter"
+      >
         {TYPE_FILTERS.map((t) => (
           <Chip
             key={t.id || "all"}
@@ -153,8 +159,14 @@ function SearchInner() {
           className="mt-10"
           icon={SearchIcon}
           title="Start typing to search"
-          description="Find movies, series, anime, and K-dramas across the live catalog."
-          actions={[{ href: "/discover", label: "Browse Discover", variant: "secondary" }]}
+          description="Find movies, series, anime, and dramas across the full catalog."
+          actions={[
+            {
+              href: "/discover",
+              label: "Browse Discover",
+              variant: "secondary",
+            },
+          ]}
         />
       )}
     </div>

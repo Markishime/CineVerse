@@ -7,7 +7,12 @@ import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import YouTube, { type YouTubeEvent, type YouTubeProps } from "react-youtube";
-import { AnimatePresence, motion, useReducedMotion, useMotionValue } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  useMotionValue,
+} from "framer-motion";
 import {
   Bookmark,
   ChevronDown,
@@ -30,10 +35,7 @@ import {
   hasOfficialTrailer,
 } from "@/lib/content/watch-href";
 import { heroCopyContainer, heroCopyItem } from "@/lib/motion";
-import {
-  cinematicBackdropUrl,
-  normalizeImageUrl,
-} from "@/lib/content/posters";
+import { cinematicBackdropUrl, normalizeImageUrl } from "@/lib/content/posters";
 import { pickHeroTrailer } from "@/lib/content/trailers";
 import {
   ensureKnownTrailers,
@@ -332,13 +334,13 @@ function HeroTrailerBg({
 
 function HeroCopy({
   item,
-  liveLabel,
+  eyebrow,
   soundOn,
   isActive,
   animated,
 }: {
   item: Content;
-  liveLabel?: string;
+  eyebrow?: string;
   soundOn: boolean;
   isActive: boolean;
   animated: boolean;
@@ -379,7 +381,7 @@ function HeroCopy({
         {...itemProps}
       >
         <Sparkles className="h-3.5 w-3.5" />
-        {liveLabel || "Popular & trending today"}
+        {eyebrow || "Popular & trending today"}
       </P>
 
       <Item className="mb-3 flex flex-wrap gap-2" {...itemProps}>
@@ -397,9 +399,7 @@ function HeroCopy({
           {item.contentType}
         </Badge>
         {item.year && <Badge tone="muted">{item.year}</Badge>}
-        {score != null && (
-          <Badge tone="gold">★ {formatScore(score)}</Badge>
-        )}
+        {score != null && <Badge tone="gold">★ {formatScore(score)}</Badge>}
         {trailerKey && (
           <Badge tone="primary">
             {soundOn && isActive ? "Trailer · audio" : "Trailer"}
@@ -463,10 +463,10 @@ function HeroCopy({
 
 export function HeroCarousel({
   items,
-  liveLabel,
+  eyebrow,
 }: {
   items: Content[];
-  liveLabel?: string;
+  eyebrow?: string;
 }) {
   const reduceMotion = useReducedMotion() ?? false;
   const effective = usePerformanceStore((s) => s.effective);
@@ -582,7 +582,8 @@ export function HeroCarousel({
   const sectionRef = useRef<HTMLElement | null>(null);
   const activePlayerRef = useRef<YtPlayer | null>(null);
 
-  const playbackAllowed = heroInView && docVisible && !reduceMotion && effective === "cinematic";
+  const playbackAllowed =
+    heroInView && docVisible && !reduceMotion && effective === "cinematic";
 
   // Pause / mute when hero leaves the viewport (scroll down)
   useEffect(() => {
@@ -722,7 +723,14 @@ export function HeroCarousel({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [index, autoplayDelay, reduceMotion, slides.length, playbackAllowed, progress]);
+  }, [
+    index,
+    autoplayDelay,
+    reduceMotion,
+    slides.length,
+    playbackAllowed,
+    progress,
+  ]);
 
   const registerActivePlayer = useCallback((player: YtPlayer | null) => {
     activePlayerRef.current = player;
@@ -773,7 +781,7 @@ export function HeroCarousel({
 
   const activeHasTrailer = Boolean(
     slides[index]?.trailer?.site === "youtube" &&
-      isPlayableTrailerKey(slides[index]?.trailer?.key),
+    isPlayableTrailerKey(slides[index]?.trailer?.key),
   );
 
   if (!slides.length) {
@@ -799,7 +807,9 @@ export function HeroCarousel({
               (item.trailer?.site === "youtube" &&
               isPlayableTrailerKey(item.trailer.key)
                 ? item.trailer.key.trim()
-                : null) || knownKeys[0] || null;
+                : null) ||
+              knownKeys[0] ||
+              null;
             // Known alts + API alts (skip primary)
             const altKeys = [
               ...knownKeys.slice(trailerKey === knownKeys[0] ? 1 : 0),
@@ -835,7 +845,7 @@ export function HeroCarousel({
                     reduceMotion ? (
                       <HeroCopy
                         item={item}
-                        liveLabel={liveLabel}
+                        eyebrow={eyebrow}
                         soundOn={soundOn}
                         isActive
                         animated={false}
@@ -845,7 +855,7 @@ export function HeroCarousel({
                         <HeroCopy
                           key={item.id}
                           item={item}
-                          liveLabel={liveLabel}
+                          eyebrow={eyebrow}
                           soundOn={soundOn}
                           isActive
                           animated={false}
@@ -856,7 +866,7 @@ export function HeroCarousel({
                     <div className="pointer-events-none opacity-0" aria-hidden>
                       <HeroCopy
                         item={item}
-                        liveLabel={liveLabel}
+                        eyebrow={eyebrow}
                         soundOn={false}
                         isActive={false}
                         animated={false}

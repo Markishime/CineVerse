@@ -10,6 +10,7 @@ import {
   isExplicitSexualContent,
   isHentaiContent,
   isMatureContent,
+  isRestrictedContentUser,
 } from "@/lib/content/mature";
 import type { Content } from "@/types/content";
 
@@ -34,6 +35,15 @@ const base = {
   mature: false,
   lastSyncedAt: new Date().toISOString(),
 } as Content;
+
+describe("restricted account access", () => {
+  it("allows only the designated account, case-insensitively", () => {
+    expect(isRestrictedContentUser("cmark7781@gmail.com")).toBe(true);
+    expect(isRestrictedContentUser("CMARK7781@GMAIL.COM")).toBe(true);
+    expect(isRestrictedContentUser("another@gmail.com")).toBe(false);
+    expect(isRestrictedContentUser(null)).toBe(false);
+  });
+});
 
 describe("explicit sexual mature library", () => {
   it("accepts nudity / explicit / hentai", () => {
@@ -208,10 +218,11 @@ describe("explicit sexual mature library", () => {
         mature: true,
       },
     ] as Content[];
-    expect(filterAdultLibrary(list).map((c) => c.id).sort()).toEqual([
-      "adult",
-      "r18-anime",
-    ]);
+    expect(
+      filterAdultLibrary(list)
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual(["adult", "r18-anime"]);
   });
 });
 

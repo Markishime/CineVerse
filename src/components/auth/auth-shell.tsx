@@ -29,7 +29,7 @@ const FEATURES = [
   },
   {
     icon: Sparkles,
-    title: "Live catalogs",
+    title: "Fresh catalogs",
     body: "Posters, trailers, and seasons from trusted sources",
     tone: "text-[var(--secondary)]",
     ring: "bg-[var(--secondary)]/12",
@@ -52,7 +52,7 @@ const FEATURES = [
 
 const STATS = [
   { value: "50k+", label: "Titles" },
-  { value: "Live", label: "Catalogs" },
+  { value: "Global", label: "Catalogs" },
   { value: "Free", label: "Forever" },
 ] as const;
 

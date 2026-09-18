@@ -57,9 +57,7 @@ export function ContentDetail({ slug }: { slug: string }) {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const guest = useGuestLibraryStore();
-  const [activeTrailerKey, setActiveTrailerKey] = useState<string | null>(
-    null,
-  );
+  const [activeTrailerKey, setActiveTrailerKey] = useState<string | null>(null);
   const [matureUnlocked, setMatureUnlocked] = useState(false);
   const [pinGateOpen, setPinGateOpen] = useState(false);
   const matureOn = isRestrictedContentUser(user?.email);
@@ -78,7 +76,11 @@ export function ContentDetail({ slug }: { slug: string }) {
     return () => window.clearTimeout(t);
   }, [user?.uid, user?.email]);
 
-  const { data: content, isLoading, isError } = useQuery({
+  const {
+    data: content,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ["content", slug],
     queryFn: () => fetchContentBySlug(slug),
   });
@@ -125,11 +127,8 @@ export function ContentDetail({ slug }: { slug: string }) {
     mutationFn: async () => {
       if (!content) return;
       const { snapshotFromContent } = await import("@/lib/user/my-list");
-      const {
-        isInMyList,
-        removeLocalLibrary,
-        upsertLocalLibrary,
-      } = await import("@/lib/user/local-library");
+      const { isInMyList, removeLocalLibrary, upsertLocalLibrary } =
+        await import("@/lib/user/local-library");
       const uid = user?.uid ?? null;
       const snap = snapshotFromContent(content);
       if (isInMyList(uid, content.id)) {
@@ -222,7 +221,7 @@ export function ContentDetail({ slug }: { slug: string }) {
       <div className="mx-auto max-w-lg px-4 pt-32 text-center">
         <h1 className="font-display text-2xl">Title not found</h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">
-          This title may have left the live catalog, or the link was incomplete.
+          This title may have left the catalog, or the link was incomplete.
           Adult titles are only available in the restricted Hentai library.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
@@ -253,21 +252,24 @@ export function ContentDetail({ slug }: { slug: string }) {
   const score = primaryScore(content);
   // Official trailers only — never clips, featurettes, teasers, BTS
   const allTrailers = (() => {
-    const raw =
-      trailers?.trailers?.length
-        ? trailers.trailers
-        : content.trailer
-          ? [content.trailer]
-          : playback?.trailer
-            ? [playback.trailer]
-            : [];
+    const raw = trailers?.trailers?.length
+      ? trailers.trailers
+      : content.trailer
+        ? [content.trailer]
+        : playback?.trailer
+          ? [playback.trailer]
+          : [];
     return raw.filter((t) => {
       if (!t?.key || t.site !== "youtube") return false;
       const type = (t.type ?? "").toLowerCase();
       if (type && type !== "trailer") return false;
       if (!type && !/\btrailer\b/i.test(t.name ?? "")) return false;
-      if (/\b(teaser|clip|featurette|behind the scenes|bloopers)\b/i.test(t.name ?? "") &&
-          !/\btrailer\b/i.test(t.name ?? "")) {
+      if (
+        /\b(teaser|clip|featurette|behind the scenes|bloopers)\b/i.test(
+          t.name ?? "",
+        ) &&
+        !/\btrailer\b/i.test(t.name ?? "")
+      ) {
         return false;
       }
       return true;
@@ -390,7 +392,17 @@ export function ContentDetail({ slug }: { slug: string }) {
   }
 
   return (
-    <article data-theme={content.contentType === "movie" ? "movies" : content.contentType === "series" ? "series" : content.contentType === "anime" ? "anime" : "kdrama"}>
+    <article
+      data-theme={
+        content.contentType === "movie"
+          ? "movies"
+          : content.contentType === "series"
+            ? "series"
+            : content.contentType === "anime"
+              ? "anime"
+              : "kdrama"
+      }
+    >
       <div className="relative min-h-[48vh] pt-16 sm:min-h-[52vh]">
         <Image
           src={
@@ -409,7 +421,10 @@ export function ContentDetail({ slug }: { slug: string }) {
       </div>
 
       <div className="relative z-10 mx-auto -mt-36 max-w-7xl px-4 pb-24 sm:-mt-40 sm:px-6">
-        <Reveal inView={false} className="flex flex-col gap-8 md:flex-row md:items-start">
+        <Reveal
+          inView={false}
+          className="flex flex-col gap-8 md:flex-row md:items-start"
+        >
           <div className="relative mx-auto h-[320px] w-[210px] shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.75)] sm:mx-0">
             <Image
               src={
@@ -453,7 +468,11 @@ export function ContentDetail({ slug }: { slug: string }) {
               content.romajiTitle ||
               content.nativeTitle) && (
               <p className="font-editorial text-lg text-[var(--text-secondary)]">
-                {[content.originalTitle, content.romajiTitle, content.nativeTitle]
+                {[
+                  content.originalTitle,
+                  content.romajiTitle,
+                  content.nativeTitle,
+                ]
                   .filter(Boolean)
                   .filter((t, i, a) => a.indexOf(t) === i && t !== title)
                   .join(" · ")}
@@ -472,9 +491,13 @@ export function ContentDetail({ slug }: { slug: string }) {
                 </span>
               )}
               {content.status && (
-                <span className="capitalize">{content.status.replace(/_/g, " ")}</span>
+                <span className="capitalize">
+                  {content.status.replace(/_/g, " ")}
+                </span>
               )}
-              {content.language && <span>{content.language.toUpperCase()}</span>}
+              {content.language && (
+                <span>{content.language.toUpperCase()}</span>
+              )}
               {content.countries?.length > 0 && (
                 <span>{content.countries.join(", ")}</span>
               )}
@@ -579,7 +602,8 @@ export function ContentDetail({ slug }: { slug: string }) {
               </h2>
               {playback?.eligible ? (
                 <p className="mt-2 text-sm text-[var(--success)]">
-                  Verified rights allow full playback in your region after sign-in.
+                  Verified rights allow full playback in your region after
+                  sign-in.
                 </p>
               ) : (
                 <p className="mt-2 text-sm text-[var(--text-muted)]">
@@ -689,7 +713,9 @@ export function ContentDetail({ slug }: { slug: string }) {
             legalFull={playback?.legalFull}
             eligible={Boolean(user && playback?.eligible)}
             autoOpenTrailer={playTrailer && !playFull}
-            autoOpenFull={(playFull || Boolean(playback?.eligible)) && Boolean(user)}
+            autoOpenFull={
+              (playFull || Boolean(playback?.eligible)) && Boolean(user)
+            }
             providers={providers?.providers ?? content.watchProviders}
             keepInApp
           />
@@ -890,7 +916,7 @@ export function ContentDetail({ slug }: { slug: string }) {
               </div>
             ) : (
               <p className="text-sm text-[var(--text-muted)]">
-                Season list will appear when live episode data is available.
+                Season list will appear when episode data is available.
               </p>
             )}
           </section>
