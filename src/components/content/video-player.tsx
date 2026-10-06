@@ -58,6 +58,19 @@ interface VideoPlayerProps {
 
 type PlayerStatus = "loading" | "loaded" | "error" | "all_failed";
 
+// A host that stays silent on two different titles is blocked or down for this viewer (e.g. a Cloudflare block page).
+const sessionBadProviders = new Set<EmbedProviderId>();
+const silentFailures = new Map<EmbedProviderId, number>();
+const SILENT_TIMEOUT_MS: Partial<Record<EmbedProviderId, number>> = {
+  vixsrc: 10_000,
+};
+
+function recordSilentFailure(id: EmbedProviderId) {
+  const n = (silentFailures.get(id) ?? 0) + 1;
+  silentFailures.set(id, n);
+  if (n >= 2) sessionBadProviders.add(id);
+}
+
 /**
  * Smart video player with multi-provider fallback.
  * Default chain (all types): VidFast → AutoEmbed → VidSrc → …
@@ -130,35 +143,41 @@ export function VideoPlayer({
   const embedMediaType: "movie" | "tv" =
     isAnime && animeFormat !== "MOVIE" ? "tv" : mediaType;
 
-  const availableProviders = useMemo(
-    () =>
-      getProvidersForContentType(
-        resolvedContentType,
-        embedMediaType,
-        {
-          tmdb: tmdbId,
-          anilist: anilistId,
-          mal: malId,
-          animeFormat,
-          countries,
-          originalLanguage,
-        },
-        Math.max(1, season ?? 1),
-        Math.max(1, episode ?? 1),
-      ),
-    [
+  const [frozenBad, setFrozenBad] = useState<EmbedProviderId[]>(() => [
+    ...sessionBadProviders,
+  ]);
+  const availableProviders = useMemo(() => {
+    const list = getProvidersForContentType(
       resolvedContentType,
       embedMediaType,
-      tmdbId,
-      anilistId,
-      malId,
-      animeFormat,
-      countries,
-      originalLanguage,
-      season,
-      episode,
-    ],
-  );
+      {
+        tmdb: tmdbId,
+        anilist: anilistId,
+        mal: malId,
+        animeFormat,
+        countries,
+        originalLanguage,
+      },
+      Math.max(1, season ?? 1),
+      Math.max(1, episode ?? 1),
+    );
+    return [
+      ...list.filter((p) => !frozenBad.includes(p.id)),
+      ...list.filter((p) => frozenBad.includes(p.id)),
+    ];
+  }, [
+    resolvedContentType,
+    embedMediaType,
+    tmdbId,
+    anilistId,
+    malId,
+    animeFormat,
+    countries,
+    originalLanguage,
+    season,
+    episode,
+    frozenBad,
+  ]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [status, setStatus] = useState<PlayerStatus>("loading");
@@ -192,6 +211,7 @@ export function VideoPlayer({
   const [prevIdentityKey, setPrevIdentityKey] = useState(identityKey);
   if (prevIdentityKey !== identityKey) {
     setPrevIdentityKey(identityKey);
+    setFrozenBad([...sessionBadProviders]);
     setActiveIndex(0);
     setStatus("loading");
     setTriedProviders([]);
@@ -534,6 +554,7 @@ export function VideoPlayer({
         msg === "player_title" ||
         (nestedEvent && !nestedEvent.toLowerCase().includes("error"))
       ) {
+        silentFailures.delete(activeProvider.id);
         confirmedRef.current = true;
         setConfirmedPlaying(true);
         clearTimers();
@@ -609,9 +630,10 @@ export function VideoPlayer({
     if (confirmedPlaying || userPickedRef.current) return;
     verifyTimerRef.current = setTimeout(() => {
       if (!confirmedRef.current && !userPickedRef.current) {
+        recordSilentFailure(activeProvider.id);
         advanceToNextProvider();
       }
-    }, 20_000);
+    }, SILENT_TIMEOUT_MS[activeProvider.id] ?? 15_000);
     return () => {
       if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
     };
@@ -783,6 +805,20 @@ export function VideoPlayer({
           </div>
 
           <div className="flex items-center gap-2">
+            {activeIndex + 1 < availableProviders.length && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  recordSilentFailure(activeProvider.id);
+                  switchTo(activeIndex + 1);
+                }}
+                title="Blocked, black screen or not found? Try the next server"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Next server
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"

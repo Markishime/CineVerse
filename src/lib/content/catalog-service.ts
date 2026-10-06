@@ -1145,8 +1145,7 @@ export class CatalogService {
           }
         }
 
-        if (genre) items = items.filter((c) => contentHasGenre(c, genre));
-
+        // Genre is already applied at the provider (TMDB/AniList); a name re-check drops keyword matches.
         if (items.length > 0) {
           return {
             items,

@@ -267,9 +267,21 @@ describe("isGeneralSeriesOnly", () => {
     expect(
       isGeneralSeriesOnly({
         ...base,
+        language: "ja",
+        countries: ["JP"],
         genres: [{ id: "16", name: "Animation" }],
       }),
     ).toBe(false);
+  });
+
+  it("keeps Western cartoons", () => {
+    expect(
+      isGeneralSeriesOnly({
+        ...base,
+        genres: [{ id: "16", name: "Animation" }],
+        tags: ["cartoon", "animation"],
+      }),
+    ).toBe(true);
   });
 });
 

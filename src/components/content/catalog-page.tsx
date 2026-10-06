@@ -67,6 +67,20 @@ const SORT_OPTIONS: Array<{
   { id: "runtime", label: "Longest", icon: Clock },
 ];
 
+const DRAMA_GENRES = [
+  "Action & Adventure",
+  "Comedy",
+  "Crime",
+  "Drama",
+  "Family",
+  "Mystery",
+  "Romance",
+  "Sci-Fi & Fantasy",
+  "Soap",
+  "Thriller",
+  "War & Politics",
+];
+
 const GENRE_OPTIONS: Record<ContentType, string[]> = {
   movie: [
     "Action",
@@ -85,12 +99,12 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "Romance",
     "Science Fiction",
     "Thriller",
+    "TV Movie",
     "War",
     "Western",
   ],
   series: [
-    "Action",
-    "Adventure",
+    "Action & Adventure",
     "Animation",
     "Comedy",
     "Crime",
@@ -99,10 +113,14 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "Family",
     "Kids",
     "Mystery",
+    "News",
     "Reality",
     "Romance",
-    "Science Fiction",
-    "War",
+    "Sci-Fi & Fantasy",
+    "Soap",
+    "Talk",
+    "Thriller",
+    "War & Politics",
     "Western",
   ],
   anime: [
@@ -112,53 +130,22 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "Drama",
     "Fantasy",
     "Horror",
+    "Mahou Shoujo",
+    "Mecha",
+    "Music",
     "Mystery",
+    "Psychological",
     "Romance",
     "Sci-Fi",
     "Slice of Life",
     "Sports",
     "Supernatural",
-  ],
-  kdrama: [
-    "Action",
-    "Comedy",
-    "Crime",
-    "Drama",
-    "Family",
-    "Mystery",
-    "Romance",
     "Thriller",
   ],
-  cdrama: [
-    "Action",
-    "Comedy",
-    "Crime",
-    "Drama",
-    "Family",
-    "Mystery",
-    "Romance",
-    "Fantasy",
-  ],
-  jdrama: [
-    "Action",
-    "Comedy",
-    "Crime",
-    "Drama",
-    "Family",
-    "Mystery",
-    "Romance",
-    "Thriller",
-  ],
-  thaidrama: [
-    "Action",
-    "Comedy",
-    "Crime",
-    "Drama",
-    "Family",
-    "Mystery",
-    "Romance",
-    "Fantasy",
-  ],
+  kdrama: DRAMA_GENRES,
+  cdrama: DRAMA_GENRES,
+  jdrama: DRAMA_GENRES,
+  thaidrama: DRAMA_GENRES,
 };
 
 const meta: Record<
@@ -416,7 +403,7 @@ export function CatalogPage({
             )}
           </div>
           <div
-            className="no-scrollbar flex gap-2 overflow-x-auto pb-1"
+            className="flex flex-wrap gap-2"
             role="group"
             aria-label="Filter by genre"
           >

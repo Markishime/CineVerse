@@ -313,10 +313,6 @@ export function isGeneralSeriesOnly(
 ): boolean {
   if (c.contentType !== "series") return false;
   if (c.animeFormat) return false;
-  if (c.genres?.some((g) => /anim/i.test(g.name) || g.id === "16")) {
-    return false;
-  }
-  if (c.tags?.some((t) => /anime|animation/i.test(t))) return false;
 
   // Asian drama origins live under Dramas tabs, not Series.
   const dramaCountries = new Set(["KR", "JP", "CN", "TW", "HK", "TH"]);

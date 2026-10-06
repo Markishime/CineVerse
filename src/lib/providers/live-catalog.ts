@@ -82,6 +82,7 @@ const TMDB_MOVIE_GENRE_IDS: Record<string, number> = {
   "science fiction": 878,
   "sci-fi": 878,
   thriller: 53,
+  "tv movie": 10770,
   war: 10752,
   western: 37,
 };
@@ -96,6 +97,7 @@ const TMDB_TV_GENRE_IDS: Record<string, number> = {
   documentary: 99,
   drama: 18,
   family: 10751,
+  fantasy: 10765,
   kids: 10762,
   mystery: 9648,
   news: 10763,
@@ -115,6 +117,23 @@ function tmdbGenreId(genre: string | undefined, media: "movie" | "tv") {
   return (media === "movie" ? TMDB_MOVIE_GENRE_IDS : TMDB_TV_GENRE_IDS)[
     genre.trim().toLowerCase()
   ];
+}
+
+// TMDB TV has no Romance/Thriller genre, so those use keyword ids instead.
+const TMDB_TV_GENRE_KEYWORDS: Record<string, string> = {
+  romance: "9840|9799",
+  thriller: "288394|316362|10714",
+};
+
+function applyTvGenre(base: Record<string, string>, genre?: string) {
+  if (!genre) return;
+  const genreId = tmdbGenreId(genre, "tv");
+  if (genreId) {
+    base.with_genres = String(genreId);
+    return;
+  }
+  const keywords = TMDB_TV_GENRE_KEYWORDS[genre.trim().toLowerCase()];
+  if (keywords) base.with_keywords = keywords;
 }
 
 /** Map a TMDB genre id to a real name (falls back to a readable "Genre N"). */
@@ -2677,6 +2696,9 @@ export async function fetchWorldSeriesPage(
   if (!hasTmdbAccess()) {
     return { items: [], page: 1, totalPages: 1, total: 0 };
   }
+  const genreKey = (genre ?? "").trim().toLowerCase();
+  // Cartoons (Animation/Kids/Family) are series too; CJK anime is dropped by mapTmdbTv below.
+  const allowAnimation = ["animation", "kids", "family"].includes(genreKey);
   const base: Record<string, string> = {
     ...(sort === "newest"
       ? { "first_air_date.lte": new Date().toISOString().slice(0, 10) }
@@ -2686,14 +2708,13 @@ export async function fetchWorldSeriesPage(
     include_adult: includeMature ? "true" : "false",
     include_null_first_air_dates: "false",
     // Drop Animation (16) at discover so anime never enters the Series tab.
-    without_genres: "16",
+    ...(allowAnimation ? {} : { without_genres: "16" }),
   };
   // Country-specific catalog: filter at TMDB discover level
   if (country) {
     base.with_origin_country = country.toUpperCase();
   }
-  const genreId = tmdbGenreId(genre, "tv");
-  if (genreId) base.with_genres = String(genreId);
+  applyTvGenre(base, genre);
   if (sort === "rating") {
     base["vote_count.gte"] = "40";
   }
@@ -2705,18 +2726,21 @@ export async function fetchWorldSeriesPage(
     page,
     pageSize, // Keep page offsets stable; filtering must not discard the next window.
     map: (r) => {
-      // Hard-drop Animation genre before mapping
+      // Hard-drop Animation genre before mapping (unless browsing cartoons)
       const genreIds = Array.isArray(r.genre_ids)
         ? (r.genre_ids as number[])
         : [];
-      if (genreIds.includes(16)) return null;
+      if (genreIds.includes(16) && !allowAnimation) return null;
       const c = mapTmdbTv(r, false);
       if (!c) return null;
       // Series tab only accepts contentType=series (no anime / kdrama / …)
       if (c.contentType !== "series") return null;
       if (country) {
         if (c.animeFormat) return null;
-        if (c.genres.some((g) => /anim/i.test(g.name) || g.id === "16")) {
+        if (
+          !allowAnimation &&
+          c.genres.some((g) => /anim/i.test(g.name) || g.id === "16")
+        ) {
           return null;
         }
         return c;
@@ -2766,8 +2790,7 @@ export async function fetchWorldDramaPage(
   if (sort === "rating") {
     base["vote_count.gte"] = "20";
   }
-  const genreId = tmdbGenreId(genre, "tv");
-  if (genreId) base.with_genres = String(genreId);
+  applyTvGenre(base, genre);
   return fetchTmdbDiscoverWindow({
     path: "/discover/tv",
     baseParams: base,
