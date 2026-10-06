@@ -137,6 +137,15 @@ function contentHasGenre(content: Content, genre: string): boolean {
  */
 export class CatalogService {
   private liveCache: { at: number; items: Content[] } | null = null;
+  /**
+   * Titles discovered through a live search are not necessarily part of the
+   * browse catalog. Keep their provider identity long enough for the detail,
+   * cast, and season requests that immediately follow a search result click.
+   */
+  private transientContent = new Map<
+    string,
+    { at: number; content: Content }
+  >();
   private detailCache = new Map<
     string,
     {
@@ -159,6 +168,78 @@ export class CatalogService {
   /** Single-flight: concurrent loadLive calls share one in-flight promise */
   private liveInflight: Promise<Content[]> | null = null;
   private matureInflight: Promise<Content[]> | null = null;
+
+  private getTransient(identity: string): Content | null {
+    const key = decodeURIComponent(identity).trim();
+    const hit = this.transientContent.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.at >= this.DETAIL_TTL) {
+      this.transientContent.delete(key);
+      return null;
+    }
+    return hit.content;
+  }
+
+  private rememberTransient(content: Content, ...aliases: string[]): Content {
+    const entry = { at: Date.now(), content };
+    for (const key of new Set([content.id, content.slug, ...aliases])) {
+      if (key) this.transientContent.set(key, entry);
+    }
+    return content;
+  }
+
+  /** Resolve a provider-backed canonical id without requiring a warm catalog. */
+  private async resolveExternalIdentity(identity: string): Promise<Content | null> {
+    const key = decodeURIComponent(identity).trim();
+    const cached = this.getTransient(key);
+    if (cached) return cached;
+
+    const tmdb = key.match(/^tmdb_(movie|tv|kdrama|cdrama|jdrama|thaidrama|anime)_(\d+)$/);
+    if (tmdb) {
+      const mediaType = tmdb[1] === "movie" ? "movie" : "tv";
+      const content = await fetchTmdbDetail(
+        mediaType,
+        Number(tmdb[2]),
+        tmdb[1] === "kdrama",
+      );
+      return content ? this.rememberTransient(content, key) : null;
+    }
+
+    const anilist = key.match(/^anilist_(\d+)$/);
+    if (anilist) {
+      const result = await fetchAnilistById(Number(anilist[1]));
+      return result.content
+        ? this.rememberTransient(result.content, key)
+        : null;
+    }
+
+    const tvmaze = key.match(/^tvmaze_(\d+)$/);
+    if (tvmaze) {
+      const result = await fetchTvMazeById(Number(tvmaze[1]));
+      return result.content
+        ? this.rememberTransient(result.content, key)
+        : null;
+    }
+
+    return null;
+  }
+
+  /** Resolve the stable TMDB slug emitted by live movie and TV searches. */
+  private async resolveTmdbSlug(slug: string): Promise<Content | null> {
+    const key = decodeURIComponent(slug).trim();
+    const idMatch = key.match(/-(\d+)$/);
+    if (!idMatch) return null;
+
+    const id = Number(idMatch[1]);
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+
+    const [movie, tv] = await Promise.all([
+      fetchTmdbDetail("movie", id),
+      fetchTmdbDetail("tv", id),
+    ]);
+    const content = [movie, tv].find((candidate) => candidate?.slug === key);
+    return content ? this.rememberTransient(content, key) : null;
+  }
 
   async loadLive(includeMature = false): Promise<Content[]> {
     const cache = includeMature ? this.matureCache : this.liveCache;
@@ -455,15 +536,18 @@ export class CatalogService {
   }
 
   async byId(id: string): Promise<Content | null> {
+    const decoded = decodeURIComponent(id).trim();
     const known =
       this.detailCache.get(id)?.content ??
+      this.getTransient(id) ??
       this.liveCache?.items.find((c) => c.id === id) ??
       SEED_CONTENT.find((c) => c.id === id);
     if (known) return known;
+    const external = await this.resolveExternalIdentity(decoded);
+    if (external) return external;
     const hydrated = await this.hydrate(id);
     if (hydrated) return hydrated.content;
     const all = await this.loadForDetail();
-    const decoded = decodeURIComponent(id);
     return (
       all.find(
         (c) =>
@@ -477,6 +561,12 @@ export class CatalogService {
 
   async bySlug(slug: string): Promise<Content | null> {
     const decoded = decodeURIComponent(slug).trim();
+    const transient = this.getTransient(decoded);
+    if (transient) {
+      return this.detailCache.get(transient.id)?.content ?? transient;
+    }
+    const external = await this.resolveExternalIdentity(decoded);
+    if (external) return external;
     const known = [...(this.liveCache?.items ?? []), ...SEED_CONTENT].find(
       (c) => c.slug === decoded || c.id === decoded,
     );
@@ -495,8 +585,8 @@ export class CatalogService {
       // Last resort for partial / drifted links only — must stay EXACT so a
       // query never resolves to a different title (that plays the wrong movie).
       const soft = softMatchByIdentity(all, decoded);
-      if (!soft) return null;
-      return soft;
+      if (soft) return soft;
+      return this.resolveTmdbSlug(decoded);
     }
     return this.detailCache.get(hit.id)?.content ?? hit;
   }
@@ -531,7 +621,14 @@ export class CatalogService {
     trailers: Trailer[];
   } | null> {
     const decoded = decodeURIComponent(idOrSlug).trim();
-    const available = [...(this.liveCache?.items ?? []), ...SEED_CONTENT];
+    const transient =
+      this.getTransient(decoded) ??
+      (await this.resolveExternalIdentity(decoded));
+    const available = [
+      ...(transient ? [transient] : []),
+      ...(this.liveCache?.items ?? []),
+      ...SEED_CONTENT,
+    ];
     const all = available.some((c) => c.id === decoded || c.slug === decoded)
       ? available
       : await this.loadForDetail();

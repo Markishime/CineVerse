@@ -106,6 +106,15 @@ export function getTrailerHref(
 }
 
 export function getDetailsHref(c: Pick<Content, "slug" | "id">): string {
+  // Live provider search results may not be present in a later browse-catalog
+  // refresh. Their canonical id is enough for the detail resolver to fetch the
+  // same title again, whereas a display slug alone is not.
+  if (
+    /^tmdb_[a-z]+_\d+$/.test(c.id) ||
+    /^(anilist|tvmaze)_\d+$/.test(c.id)
+  ) {
+    return `/content/${encodeURIComponent(c.id)}`;
+  }
   return `/content/${contentPathKey(c)}`;
 }
 

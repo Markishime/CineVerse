@@ -5,28 +5,28 @@
   --font-inter: "Segoe UI";
   --font-sora: "Segoe UI";
   --font-instrument: Georgia;
-  --background: #08090b;
-  --background-secondary: #0e0f12;
-  --surface: #17191e;
-  --surface-elevated: #23262d;
+  --background: #050b18;
+  --background-secondary: #091426;
+  --surface: #0d1c31;
+  --surface-elevated: #132842;
 
   /* High-contrast text on dark backgrounds */
   --text-primary: #ffffff;
   --text-secondary: #e2e4e9;
   --text-muted: #bec1c9;
 
-  --primary: #e50914;
-  --primary-light: #ff5a63;
-  --secondary: #8eb4c5;
-  --accent: #d990a9;
-  --gold: #f1cf7a;
+  --primary: #22d3ee;
+  --primary-light: #a5f3fc;
+  --secondary: #67e8f9;
+  --accent: #22d3ee;
+  --gold: #67e8f9;
 
   --success: #52e5ad;
   --warning: #ffc766;
   --danger: #ff7b86;
 
   --border: rgba(255, 255, 255, 0.16);
-  --ring: rgba(229, 9, 20, 0.62);
+  --ring: rgba(34, 211, 238, 0.62);
 
   --font-display:
     var(--font-sora), "Sora", ui-sans-serif, system-ui, sans-serif;
@@ -43,8 +43,8 @@
   --radius-lg: 1rem;
   --radius-xl: 1.25rem;
 
-  --glow-primary: 0 0 42px rgba(229, 9, 20, 0.22);
-  --glow-secondary: 0 0 38px rgba(142, 180, 197, 0.16);
+  --glow-primary: 0 0 42px rgba(34, 211, 238, 0.2);
+  --glow-secondary: 0 0 38px rgba(103, 232, 249, 0.14);
 }
 
 @theme inline {
@@ -111,7 +111,7 @@
     ),
     radial-gradient(
       ellipse 40% 30% at 20% 20%,
-      rgba(243, 201, 105, 0.08),
+      rgba(103, 232, 249, 0.08),
       transparent 50%
     );
   --accent-local: var(--gold);
@@ -148,7 +148,7 @@ body {
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08),
     0 28px 90px rgba(0, 0, 0, 0.78),
-    0 0 90px rgba(229, 9, 20, 0.09);
+    0 0 90px rgba(34, 211, 238, 0.09);
 }
 
 /* The app header is a sibling stacking context; Movie Mode owns the viewport. */
@@ -311,7 +311,7 @@ body::before {
     --atmosphere,
     radial-gradient(
       ellipse 100% 80% at 50% -20%,
-      rgba(229, 9, 20, 0.1),
+      rgba(34, 211, 238, 0.1),
       transparent 55%
     )
   );
@@ -359,7 +359,7 @@ body::before {
   transform: translateX(-50%);
   background: linear-gradient(
     180deg,
-    rgba(243, 201, 105, 0.08),
+    rgba(103, 232, 249, 0.08),
     transparent 70%
   );
   pointer-events: none;
@@ -484,7 +484,7 @@ body::before {
   transform: translateX(-50%);
   background: radial-gradient(
     ellipse 100% 100% at 50% 50%,
-    rgba(229, 9, 20, 0.055),
+    rgba(34, 211, 238, 0.055),
     transparent 70%
   );
   pointer-events: none;
@@ -504,7 +504,7 @@ body::before {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(229, 9, 20, 0.45) 50%,
+    rgba(34, 211, 238, 0.45) 50%,
     transparent
   );
 }
