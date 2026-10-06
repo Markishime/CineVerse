@@ -81,6 +81,8 @@ export interface EmbedProvider {
   needsResolve?: boolean;
   /** Host postMessages PLAYER_EVENT/MEDIA_DATA once a real stream resolves, so silence means no content */
   signalsPlayback?: boolean;
+  /** Small public asset; if it fails to load the host is blocking/unreachable for this viewer */
+  probeUrl?: string;
 }
 
 /**
@@ -198,6 +200,7 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     name: "VixSrc",
     supportsTv: true,
     signalsPlayback: true,
+    probeUrl: "https://vixsrc.to/favicon.ico",
     // https://vixsrc.to — clean TMDB embeds, good regional coverage
     movieUrl: (tmdbId) => `https://vixsrc.to/movie/${tmdbId}`,
     tvUrl: (tmdbId, season, episode) =>

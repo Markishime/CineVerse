@@ -276,6 +276,22 @@ button[class*="bg-[var(--gold)]"] span {
 }
 
 /* Readable muted / secondary utilities when used as main copy */
+/* Beat the global `span/p { color: inherit }` + anchor color inside links */
+.c-primary {
+  color: var(--text-primary);
+}
+.c-secondary {
+  color: var(--text-secondary);
+}
+.c-muted {
+  color: var(--text-muted);
+}
+.c-gold {
+  color: var(--gold);
+}
+.c-accent {
+  color: var(--primary-light);
+}
 .text-readable {
   color: var(--text-primary);
   text-shadow: 0 1px 18px rgba(0, 0, 0, 0.55);

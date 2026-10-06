@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, SkipForward } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -114,50 +114,6 @@ export function EpisodeNav({
           )}
         </div>
       </div>
-
-      {/* Episode list for current season */}
-      {currentSeason && (
-        <details className="group rounded-xl border border-white/10 bg-white/[0.03]">
-          <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
-            <span>
-              Episodes &middot; {currentSeason.name || `Season ${season}`}
-            </span>
-            <SkipForward className="h-4 w-4 rotate-90 transition-transform group-open:rotate-270" />
-          </summary>
-          <div
-            className="scroll-contain max-h-64 space-y-0.5 border-t border-white/10 p-2"
-            data-lenis-prevent
-            data-lenis-prevent-wheel
-            data-lenis-prevent-touch
-          >
-            {Array.from({ length: totalEpisodesInSeason }, (_, i) => i + 1).map(
-              (ep) => (
-                <Link
-                  key={ep}
-                  href={`/watch/tv/${tmdbId}/${season}/${ep}`}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                    ep === episode
-                      ? "bg-[var(--primary)]/20 text-white"
-                      : "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
-                  )}
-                >
-                  <span className="w-6 font-mono text-xs text-[var(--text-muted)]">
-                    {String(ep).padStart(2, "0")}
-                  </span>
-                  <span className="flex-1">
-                    {ep === episode ? (
-                      <span className="font-medium">Now playing</span>
-                    ) : (
-                      `Episode ${ep}`
-                    )}
-                  </span>
-                </Link>
-              ),
-            )}
-          </div>
-        </details>
-      )}
     </div>
   );
 }

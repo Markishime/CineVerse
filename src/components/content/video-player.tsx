@@ -71,6 +71,30 @@ function recordSilentFailure(id: EmbedProviderId) {
   if (n >= 2) sessionBadProviders.add(id);
 }
 
+const probeCache = new Map<string, Promise<boolean>>();
+
+// A blocked host (Cloudflare 403) fails to serve its favicon; a slow one resolves true so it is not punished.
+function probeHost(url: string): Promise<boolean> {
+  let hit = probeCache.get(url);
+  if (!hit) {
+    hit = new Promise<boolean>((resolve) => {
+      const img = new Image();
+      const timer = setTimeout(() => resolve(true), 5_000);
+      img.onload = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      img.onerror = () => {
+        clearTimeout(timer);
+        resolve(false);
+      };
+      img.src = url;
+    });
+    probeCache.set(url, hit);
+  }
+  return hit;
+}
+
 /**
  * Smart video player with multi-provider fallback.
  * Default chain (all types): VidFast → AutoEmbed → VidSrc → …
@@ -178,6 +202,31 @@ export function VideoPlayer({
     episode,
     frozenBad,
   ]);
+
+  // Hold the iframe until blocked hosts (e.g. VixSrc behind a Cloudflare block) are demoted.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const probed = availableProviders.filter((p) => p.probeUrl);
+    if (probed.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      probed.map(async (p) => [p.id, await probeHost(p.probeUrl!)] as const),
+    ).then((results) => {
+      if (cancelled) return;
+      let changed = false;
+      for (const [id, ok] of results) {
+        if (!ok && !sessionBadProviders.has(id)) {
+          sessionBadProviders.add(id);
+          changed = true;
+        }
+      }
+      if (changed) setFrozenBad([...sessionBadProviders]);
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [availableProviders]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [status, setStatus] = useState<PlayerStatus>("loading");
@@ -737,7 +786,7 @@ export function VideoPlayer({
             </div>
           )}
 
-          {iframeSrc && (
+          {iframeSrc && (ready || !availableProviders[0]?.probeUrl) && (
             <iframe
               ref={iframeRef}
               key={`${activeProvider?.id}-${tmdbId}-${anilistId}-${season}-${episode}-${iframeSrc}`}

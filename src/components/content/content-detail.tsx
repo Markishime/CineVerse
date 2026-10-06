@@ -25,6 +25,7 @@ import { putFavorite, putLibrary, deleteFavorite } from "@/lib/api/user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ContentRow } from "./content-row";
+import { MoreLikeThis } from "./more-like-this";
 import { MediaPlayer } from "./media-player";
 import { VideoPlayer } from "./video-player";
 import { ReviewsSection } from "./reviews-section";
@@ -894,14 +895,26 @@ export function ContentDetail({ slug }: { slug: string }) {
 
         <ReviewsSection contentId={content.id} />
 
-        {recs && recs.items.length > 0 && (
-          <div className="mt-12">
-            <ContentRow
-              title="Similar & recommended"
-              subtitle={recs.items[0]?.reason}
-              items={recs.items.map((r) => r.content)}
-            />
-          </div>
+        {content.providerIds?.tmdb ? (
+          <MoreLikeThis
+            className="mt-12"
+            tmdbId={content.providerIds.tmdb}
+            mediaType={
+              content.providerIds.tmdbMediaType ??
+              (content.contentType === "movie" ? "movie" : "tv")
+            }
+          />
+        ) : (
+          recs &&
+          recs.items.length > 0 && (
+            <div className="mt-12">
+              <ContentRow
+                title="Similar & recommended"
+                subtitle={recs.items[0]?.reason}
+                items={recs.items.map((r) => r.content)}
+              />
+            </div>
+          )
         )}
       </div>
     </article>

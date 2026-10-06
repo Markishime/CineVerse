@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Share2 } from "lucide-react";
 import { VideoPlayer } from "@/components/content/video-player";
 import { WatchInfo } from "@/components/content/watch-info";
+import { MoreLikeThis } from "@/components/content/more-like-this";
 import { Button } from "@/components/ui/button";
 import { tmdbBackdropUrl } from "@/lib/embed/tmdb-fetcher";
 import type { TmdbMovieDetail } from "@/lib/embed/tmdb-fetcher";
@@ -175,6 +176,8 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
             </Link>
           </aside>
         </div>
+
+        <MoreLikeThis className="mt-12" tmdbId={tmdbId} mediaType="movie" />
       </div>
     </div>
   );

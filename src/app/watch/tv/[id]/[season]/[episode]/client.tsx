@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import { VideoPlayer } from "@/components/content/video-player";
 import { WatchInfo } from "@/components/content/watch-info";
 import { EpisodeNav } from "@/components/content/episode-nav";
+import { EpisodeBrowser } from "@/components/content/episode-browser";
+import { MoreLikeThis } from "@/components/content/more-like-this";
 import { Button } from "@/components/ui/button";
 import { tmdbBackdropUrl } from "@/lib/embed/tmdb-fetcher";
 import {
@@ -301,6 +303,14 @@ export function WatchTvClient({
           />
         </div>
 
+        <EpisodeBrowser
+          className="mt-8"
+          tmdbId={tmdbId}
+          season={season}
+          episode={episodeNum}
+          seasons={tvShow.seasons}
+        />
+
         {/* Show info + episode details */}
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_280px]">
           <WatchInfo
@@ -346,6 +356,8 @@ export function WatchTvClient({
             </Link>
           </aside>
         </div>
+
+        <MoreLikeThis className="mt-12" tmdbId={tmdbId} mediaType="tv" />
       </div>
     </div>
   );
