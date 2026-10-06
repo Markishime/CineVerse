@@ -5,6 +5,10 @@
  */
 import { slugify } from "@/lib/utils";
 import {
+  TMDB_ADULT_COMPANY_IDS,
+  TMDB_ADULT_KEYWORD_IDS,
+} from "@/lib/content/adult-filter";
+import {
   classifyDrama,
   normalizeAnimeFormat,
 } from "@/lib/content/classification";
@@ -2504,6 +2508,11 @@ async function tmdbGet<T>(
   if (!token && !apiKey) return null;
   const url = new URL(`${TMDB}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  if (path.startsWith("/discover/")) {
+    url.searchParams.set("include_adult", "false");
+    url.searchParams.set("without_keywords", TMDB_ADULT_KEYWORD_IDS);
+    url.searchParams.set("without_companies", TMDB_ADULT_COMPANY_IDS);
+  }
   if (!token && apiKey) url.searchParams.set("api_key", apiKey);
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -3153,12 +3162,17 @@ const TMDB_ADULT_OVERVIEW =
 const TMDB_ADULT_TITLE =
   /\b(sex|erotic|erotica|xxx|18\+|r-?18|bold|bare|naked|seduction|lust|desire uncut|uncut|kinky)\b/i;
 
+// Title-only hits strong enough to hide without overview corroboration (Vivamax-style titles often have no overview).
+const TMDB_ADULT_TITLE_STRICT =
+  /\b(creampie|condom|macho dancer|sugar (mommy|daddy|baby)|hayok|vmx|vivamax|sex drive|midnight girls|libog|kalibog|torrid|xxx|erotic|erotica|18\+|r-?18|uncut|kinky)\b/i;
+
 export function tmdbLooksAdult(
   title: string,
   overview: string,
   rawAdult: boolean,
 ): boolean {
   if (rawAdult) return true;
+  if (TMDB_ADULT_TITLE_STRICT.test(title)) return true;
   if (TMDB_ADULT_OVERVIEW.test(overview)) return true;
   // Title signal alone is weaker (false positives like "Sex Education" exist),
   // so require a title hit AND at least a soft overview corroboration.

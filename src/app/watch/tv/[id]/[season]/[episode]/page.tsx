@@ -8,6 +8,8 @@ import {
 } from "@/lib/embed/tmdb-fetcher";
 import { fallbackEpisode, fallbackTvShow } from "@/lib/embed/tmdb-fallbacks";
 import { WatchTvClient } from "./client";
+import { isAdultTmdbTitle } from "@/lib/content/adult-filter";
+import { UnavailableTitle } from "@/components/content/unavailable-title";
 
 interface Props {
   params: Promise<{ id: string; season: string; episode: string }>;
@@ -91,6 +93,8 @@ export default async function WatchTvPage({ params }: Props) {
   const liveShow = await fetchTmdbTvShow(tmdbId);
   const tvShow =
     liveShow ?? fallbackTvShow(tmdbId, seasonNum, episodeNum);
+
+  if (await isAdultTmdbTitle("tv", tmdbId, tvShow)) return <UnavailableTitle />;
 
   // Only redirect season/episode bounds when we have real TMDB data
   if (liveShow) {

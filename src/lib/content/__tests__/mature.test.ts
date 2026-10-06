@@ -37,9 +37,8 @@ const base = {
 } as Content;
 
 describe("restricted account access", () => {
-  it("allows only the designated account, case-insensitively", () => {
-    expect(isRestrictedContentUser("cmark7781@gmail.com")).toBe(true);
-    expect(isRestrictedContentUser("CMARK7781@GMAIL.COM")).toBe(true);
+  it("allows no account to view 18+ content", () => {
+    expect(isRestrictedContentUser("cmark7781@gmail.com")).toBe(false);
     expect(isRestrictedContentUser("another@gmail.com")).toBe(false);
     expect(isRestrictedContentUser(null)).toBe(false);
   });

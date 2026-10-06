@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { fetchTmdbMovie, tmdbBackdropUrl } from "@/lib/embed/tmdb-fetcher";
 import { fallbackMovie } from "@/lib/embed/tmdb-fallbacks";
 import { WatchMovieClient } from "./client";
+import { isAdultTmdbTitle } from "@/lib/content/adult-filter";
+import { UnavailableTitle } from "@/components/content/unavailable-title";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -62,6 +64,8 @@ export default async function WatchMoviePage({ params }: Props) {
   }
 
   const movie = (await fetchTmdbMovie(tmdbId)) ?? fallbackMovie(tmdbId);
+
+  if (await isAdultTmdbTitle("movie", tmdbId, movie)) return <UnavailableTitle />;
 
   return (
     <Suspense

@@ -68,6 +68,8 @@ export function WatchPage({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [embedSeason, setEmbedSeason] = useState<number | null>(null);
   const [embedEpisode, setEmbedEpisode] = useState<number | null>(null);
+  // Season shown in the episode list; separate from what the player is playing.
+  const [browseSeason, setBrowseSeason] = useState<number | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -169,6 +171,7 @@ export function WatchPage({
     [seasonsData?.seasons],
   );
   const activeSeasonNum =
+    browseSeason ??
     seasonParam ??
     seasons[0]?.seasonNumber ??
     1;
@@ -631,11 +634,8 @@ export function WatchPage({
                       <button
                         key={s.id}
                         type="button"
-                        onClick={() => {
-                          setEmbedSeason(s.seasonNumber);
-                          setEmbedEpisode(1);
-                          goEpisode(s.seasonNumber, 1);
-                        }}
+                        onClick={() => setBrowseSeason(s.seasonNumber)}
+                        aria-pressed={s.seasonNumber === activeSeasonNum}
                         className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                           s.seasonNumber === activeSeasonNum
                             ? "bg-[var(--primary)] text-white"
@@ -725,7 +725,8 @@ export function WatchPage({
                       }}
                       className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
                         ep.episodeNumber ===
-                        (embedEpisode ?? activeEpisodeNum)
+                          (embedEpisode ?? activeEpisodeNum) &&
+                        activeSeasonNum === (embedSeason ?? seasonParam ?? 1)
                           ? "bg-[var(--primary)]/20 text-white"
                           : "text-[var(--text-secondary)] hover:bg-white/5"
                       }`}

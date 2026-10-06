@@ -8,6 +8,7 @@ import { tmdbFetch } from "@/lib/providers/tmdb-client";
 
 export interface TmdbMovieDetail {
   id: number;
+  adult?: boolean;
   title: string;
   original_title: string;
   overview: string;

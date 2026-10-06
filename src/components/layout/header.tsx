@@ -74,7 +74,6 @@ const baseNav: NavItem[] = [
       { href: "/anime", label: "All Anime" },
       { href: "/anime/series", label: "Anime Series" },
       { href: "/anime/movies", label: "Anime Movies" },
-      { href: "/anime/hentai", label: "Hentai", restrictedOnly: true },
     ],
   },
   {

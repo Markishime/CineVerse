@@ -19,8 +19,8 @@
 import type { Content, ContentType } from "@/types/content";
 
 // ─── Restricted content email allowlist ─────────────────────────────────────
-// Only these email addresses may view hentai, 18+ mature, and Filipino movies.
-const RESTRICTED_CONTENT_EMAILS = new Set(["cmark7781@gmail.com"]);
+// 18+ content is removed from CineVerse: no account may view it.
+const RESTRICTED_CONTENT_EMAILS = new Set<string>();
 
 /**
  * Returns true when the given email is allowed to view restricted content

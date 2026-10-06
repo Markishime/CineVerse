@@ -1,4 +1,9 @@
 import { tmdbFetch } from "@/lib/providers/tmdb-client";
+import {
+  TMDB_ADULT_COMPANY_IDS,
+  TMDB_ADULT_KEYWORD_IDS,
+  textLooksAdult,
+} from "@/lib/content/adult-filter";
 
 export interface SimilarTitle {
   tmdbId: number;
@@ -15,6 +20,7 @@ interface TmdbRow {
   id?: number;
   title?: string;
   name?: string;
+  overview?: string;
   release_date?: string;
   first_air_date?: string;
   vote_average?: number;
@@ -34,6 +40,7 @@ const LIMIT = 16;
 function toTitle(row: TmdbRow, mediaType: "movie" | "tv"): SimilarTitle | null {
   const title = row.title ?? row.name;
   if (!row.id || !title || row.adult) return null;
+  if (textLooksAdult(title, row.overview ?? "")) return null;
   if (!row.backdrop_path && !row.poster_path) return null;
   const date = row.release_date ?? row.first_air_date ?? "";
   const year = date ? Number(date.slice(0, 4)) : null;
@@ -87,6 +94,8 @@ export async function fetchSimilarTitles(
         with_genres: genreIds.join(","),
         sort_by: "popularity.desc",
         include_adult: "false",
+        without_keywords: TMDB_ADULT_KEYWORD_IDS,
+        without_companies: TMDB_ADULT_COMPANY_IDS,
         "vote_count.gte": "50",
         language: "en-US",
       });

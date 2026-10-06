@@ -164,20 +164,6 @@ export function fetchAnime(params: {
   );
 }
 
-export function fetchMatureLibrary(params: {
-  page?: number;
-  pageSize?: number;
-  type?: string;
-}) {
-  return apiFetch<Paginated<Content>>(
-    `/mature${buildQuery({
-      page: params.page,
-      pageSize: params.pageSize,
-      type: params.type,
-    })}`,
-  );
-}
-
 export function fetchDrama(
   type: "kdrama" | "cdrama" | "jdrama" | "thaidrama",
   params: {

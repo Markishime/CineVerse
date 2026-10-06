@@ -546,10 +546,22 @@ export class CatalogService {
    * resolve to /content/[slug] instead of "Title not found".
    */
   private async loadForDetail(): Promise<Content[]> {
-    return this.loadLive(true);
+    return this.loadLive(false);
+  }
+
+  /** 18+ titles are never served, even by direct link. */
+  private publicOnly(content: Content | null): Content | null {
+    if (!content) return null;
+    return content.mature || isMatureContent(applyMatureFlag(content))
+      ? null
+      : content;
   }
 
   async byId(id: string): Promise<Content | null> {
+    return this.publicOnly(await this.byIdRaw(id));
+  }
+
+  private async byIdRaw(id: string): Promise<Content | null> {
     const decoded = decodeURIComponent(id).trim();
     const known =
       this.detailCache.get(id)?.content ??
@@ -574,7 +586,7 @@ export class CatalogService {
   }
 
   async bySlug(slug: string): Promise<Content | null> {
-    const content = await this.bySlugRaw(slug);
+    const content = this.publicOnly(await this.bySlugRaw(slug));
     return content ? this.withEmbedIds(content) : null;
   }
 
@@ -1989,8 +2001,7 @@ export class CatalogService {
   async discover(
     params: Record<string, string | number | undefined>,
   ): Promise<Paginated<Content>> {
-    const matureRaw = String(params.mature ?? "");
-    const includeMature = matureRaw === "1" || matureRaw === "true";
+    const includeMature = false;
     const mood = params.mood ? String(params.mood) : "";
     // Map mood → genre keywords when no explicit genre is set
     const moodGenres: Record<string, string> = {
