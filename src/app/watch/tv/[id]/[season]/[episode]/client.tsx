@@ -172,7 +172,7 @@ export function WatchTvClient({
         {/* Top bar */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Link href={`/content/${tmdbId}`}>
+            <Link href={`/content/tmdb_tv_${tmdbId}`}>
               <Button variant="secondary" size="sm">
                 <ArrowLeft className="h-4 w-4" />
                 Details
@@ -339,7 +339,7 @@ export function WatchTvClient({
                 />
               </div>
             )}
-            <Link href={`/content/${tmdbId}`}>
+            <Link href={`/content/tmdb_tv_${tmdbId}`}>
               <Button variant="outline" className="w-full">
                 Full details
               </Button>

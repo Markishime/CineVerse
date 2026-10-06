@@ -11,7 +11,7 @@ import {
   fetchSeasons,
 } from "@/lib/api/content";
 import { displayTitle } from "@/lib/content/normalize";
-import { getWatchHref } from "@/lib/content/watch-href";
+import { canonicalPathKey, getDetailsHref, getWatchHref } from "@/lib/content/watch-href";
 import { formatRuntime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +59,7 @@ export default function SeasonPage({
   return (
     <div className="mx-auto max-w-4xl px-4 pb-24 pt-24 sm:px-6">
       <Link
-        href={content ? `/content/${encodeURIComponent(content.slug || content.id)}` : `/content/${slug}`}
+        href={content ? getDetailsHref(content) : `/content/${slug}`}
         className="text-sm text-[var(--primary-light)]"
       >
         ← Back to title
@@ -86,7 +86,7 @@ export default function SeasonPage({
           {seasons!.seasons.map((s) => (
             <Link
               key={s.id}
-              href={`/content/${encodeURIComponent(content.slug || content.id)}/season/${s.seasonNumber}`}
+              href={`/content/${canonicalPathKey(content)}/season/${s.seasonNumber}`}
               className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                 s.seasonNumber === seasonNum
                   ? "bg-[var(--primary)] text-white"

@@ -39,7 +39,7 @@ import {
 } from "@/lib/user/mature-pin";
 import { PinGateModal } from "@/components/content/pin-gate";
 import { pickOfficialTrailer } from "@/lib/content/trailers";
-import { getWatchHref } from "@/lib/content/watch-href";
+import { getDetailsHref, getWatchHref } from "@/lib/content/watch-href";
 import {
   continueFromContent,
   saveContinueWatching,
@@ -206,9 +206,7 @@ export function WatchPage({
   }, [trailersData, content?.trailer, playback?.trailer]);
 
   const isSeries = content && content.contentType !== "movie";
-  const pathBase = content
-    ? encodeURIComponent(content.slug || content.id)
-    : "";
+  const detailsHref = content ? getDetailsHref(content) : "";
 
   const nextEpisode = useMemo(() => {
     if (!activeEpisode || !episodes.length) return null;
@@ -457,7 +455,7 @@ export function WatchPage({
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => router.push(`/content/${pathBase}`)}
+              onClick={() => router.push(detailsHref)}
             >
               <ArrowLeft className="h-4 w-4" />
               Details
@@ -764,7 +762,7 @@ export function WatchPage({
                 />
               </div>
             )}
-            <Link href={`/content/${pathBase}`}>
+            <Link href={detailsHref}>
               <Button variant="outline" className="w-full">
                 <Film className="h-4 w-4" />
                 Full details

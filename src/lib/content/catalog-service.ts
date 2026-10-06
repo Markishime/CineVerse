@@ -12,6 +12,7 @@ import { filterBlocked, isBlockedTitle } from "@/lib/content/blocklist";
 import {
   fetchAdultAnimeCatalog,
   fetchAnilistById,
+  fetchJikanById,
   fetchAnilistAnime,
   fetchJikanCredits,
   fetchJikanTop,
@@ -221,10 +222,20 @@ export class CatalogService {
         : null;
     }
 
+    const jikan = key.match(/^jikan_(\d+)$/);
+    if (jikan) {
+      const content = await fetchJikanById(Number(jikan[1]));
+      return content ? this.rememberTransient(content, key) : null;
+    }
+
     return null;
   }
 
-  /** Resolve the stable TMDB slug emitted by live movie and TV searches. */
+  /**
+   * Resolve `title-{id}` slugs emitted by TMDB, TVMaze, AniList and Jikan when
+   * the browse catalog is cold. The id suffix is ambiguous across providers,
+   * so a candidate only wins when its slug matches the link exactly.
+   */
   private async resolveTmdbSlug(slug: string): Promise<Content | null> {
     const key = decodeURIComponent(slug).trim();
     const idMatch = key.match(/-(\d+)$/);
@@ -233,11 +244,14 @@ export class CatalogService {
     const id = Number(idMatch[1]);
     if (!Number.isSafeInteger(id) || id <= 0) return null;
 
-    const [movie, tv] = await Promise.all([
-      fetchTmdbDetail("movie", id),
-      fetchTmdbDetail("tv", id),
+    const settled = await Promise.all([
+      fetchTmdbDetail("movie", id).catch(() => null),
+      fetchTmdbDetail("tv", id).catch(() => null),
+      this.resolveExternalIdentity(`tvmaze_${id}`).catch(() => null),
+      this.resolveExternalIdentity(`anilist_${id}`).catch(() => null),
+      this.resolveExternalIdentity(`jikan_${id}`).catch(() => null),
     ]);
-    const content = [movie, tv].find((candidate) => candidate?.slug === key);
+    const content = settled.find((candidate) => candidate?.slug === key);
     return content ? this.rememberTransient(content, key) : null;
   }
 
@@ -560,6 +574,24 @@ export class CatalogService {
   }
 
   async bySlug(slug: string): Promise<Content | null> {
+    const content = await this.bySlugRaw(slug);
+    return content ? this.withEmbedIds(content) : null;
+  }
+
+  private embedIdCache = new Map<string, { at: number; content: Content }>();
+
+  /** TVMaze/AniList-only titles need a TMDB id before the embed player can render. */
+  private async withEmbedIds(content: Content): Promise<Content> {
+    const ids = content.providerIds ?? {};
+    if (ids.tmdb || ids.anilist || ids.mal) return content;
+    const hit = this.embedIdCache.get(content.id);
+    if (hit && Date.now() - hit.at < this.DETAIL_TTL) return hit.content;
+    const enriched = await this.ensureTmdbForEmbed(content).catch(() => content);
+    this.embedIdCache.set(content.id, { at: Date.now(), content: enriched });
+    return enriched;
+  }
+
+  private async bySlugRaw(slug: string): Promise<Content | null> {
     const decoded = decodeURIComponent(slug).trim();
     const transient = this.getTransient(decoded);
     if (transient) {
@@ -571,6 +603,9 @@ export class CatalogService {
       (c) => c.slug === decoded || c.id === decoded,
     );
     if (known) return this.detailCache.get(known.id)?.content ?? known;
+    // Cold catalog builds take seconds; a `title-{id}` link can resolve straight from its provider.
+    const direct = await this.resolveTmdbSlug(decoded);
+    if (direct) return direct;
     const all = await this.loadForDetail();
     const hit = all.find(
       (c) =>
@@ -586,9 +621,37 @@ export class CatalogService {
       // query never resolves to a different title (that plays the wrong movie).
       const soft = softMatchByIdentity(all, decoded);
       if (soft) return soft;
-      return this.resolveTmdbSlug(decoded);
+      const tmdb = await this.resolveTmdbSlug(decoded);
+      if (tmdb) return tmdb;
+      return this.resolveProviderSlug(decoded);
     }
     return this.detailCache.get(hit.id)?.content ?? hit;
+  }
+
+  /**
+   * Resolve a provider-built slug (`{title}-{providerId}`, e.g.
+   * `ben-10-ultimate-alien-1263`) after the catalog lookup missed: pull the
+   * title by the id embedded in the slug and require the returned slug to
+   * match exactly — an id from another provider simply fails the check.
+   */
+  private async resolveProviderSlug(slug: string): Promise<Content | null> {
+    const key = decodeURIComponent(slug).trim();
+    const idMatch = key.match(/-(\d+)$/);
+    if (!idMatch) return null;
+
+    const id = Number(idMatch[1]);
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+
+    const [tvmaze, anilist] = await Promise.all([
+      fetchTvMazeById(id).catch(() => null),
+      fetchAnilistById(id).catch(() => null),
+    ]);
+    for (const candidate of [tvmaze?.content, anilist?.content]) {
+      if (candidate && (candidate.slug === key || candidate.id === key)) {
+        return this.rememberTransient(candidate, key);
+      }
+    }
+    return null;
   }
 
   /**

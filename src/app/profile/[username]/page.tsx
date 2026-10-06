@@ -43,6 +43,7 @@ import {
 import { readLocalLibrary } from "@/lib/user/local-library";
 import type { Content, LibraryStatus, UserProfile } from "@/types/content";
 import { displayTitle } from "@/lib/content/normalize";
+import { getDetailsHref } from "@/lib/content/watch-href";
 import { cn } from "@/lib/utils";
 import { staggerContainer, staggerItem, fadeUp } from "@/lib/motion";
 
@@ -967,8 +968,8 @@ export default function ProfilePage({
                           const title = content
                             ? displayTitle(content)
                             : item.contentId;
-                          const href = content?.slug
-                            ? `/content/${encodeURIComponent(content.slug)}`
+                          const href = content
+                            ? getDetailsHref(content)
                             : `/content/${encodeURIComponent(item.contentId)}`;
                           return (
                             <li key={`${item.contentId}-${item.updatedAt}`}>
@@ -1101,8 +1102,8 @@ function PosterCard({
   badge?: string;
 }) {
   const title = content ? displayTitle(content) : contentId;
-  const href = content?.slug
-    ? `/content/${encodeURIComponent(content.slug)}`
+  const href = content
+    ? getDetailsHref(content)
     : `/content/${encodeURIComponent(contentId)}`;
   const src = content?.poster?.url;
 

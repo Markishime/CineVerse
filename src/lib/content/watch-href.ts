@@ -6,11 +6,9 @@
 
 import type { Content } from "@/types/content";
 import { getLastWatchedEpisode } from "./watch-progress";
+import { canonicalPathKey, contentPathKey } from "./path-key";
 
-export function contentPathKey(c: Pick<Content, "slug" | "id">): string {
-  const raw = c.slug && c.slug !== "title" ? c.slug : c.id;
-  return encodeURIComponent(raw || c.id);
-}
+export { canonicalPathKey, contentPathKey };
 
 /** Movie vs TV embed path — prefer explicit TMDb media type over contentType. */
 function isMovieWatch(
@@ -32,8 +30,9 @@ function isMovieWatch(
  * Always requests full playback. Trailers use getTrailerHref only.
  *
  * Correctness rules:
- * - Anime ALWAYS uses the slug path so AniList/MAL identity is preserved and
- *   the player can refuse a mismatched TMDB film (wrong-title bug).
+ * - Anime and un-hydrated titles use the identity path so AniList/MAL/TVMaze
+ *   identity is preserved and the player can refuse a mismatched TMDB film
+ *   (wrong-title bug).
  * - Live-action only routes to /watch/movie|tv/{tmdbId} with trusted TMDB.
  */
 export function getWatchHref(
@@ -49,9 +48,9 @@ export function getWatchHref(
   >,
   opts?: { season?: number; episode?: number },
 ): string {
-  // Anime: always slug — keeps AniList id + forces TV embeds for series
+  // Anime: always identity path — keeps AniList id + forces TV embeds for series
   if (c.contentType === "anime") {
-    const key = contentPathKey(c);
+    const key = canonicalPathKey(c);
     const params = new URLSearchParams();
     params.set("play", "full");
     if (c.animeFormat !== "MOVIE") {
@@ -89,7 +88,7 @@ export function getWatchHref(
     return `/watch/tv/${tmdbId}/${season}/${episode}`;
   }
 
-  const key = contentPathKey(c);
+  const key = canonicalPathKey(c);
   const params = new URLSearchParams();
   params.set("play", "full");
   if (opts?.season != null) params.set("season", String(opts.season));
@@ -97,11 +96,11 @@ export function getWatchHref(
   return `/watch/${key}?${params.toString()}`;
 }
 
-/** Official trailer page (always slug-based legal player). */
+/** Official trailer page (always identity-based legal player). */
 export function getTrailerHref(
   c: Pick<Content, "slug" | "id" | "trailer">,
 ): string {
-  const key = contentPathKey(c);
+  const key = canonicalPathKey(c);
   return `/watch/${key}?play=trailer`;
 }
 
@@ -109,13 +108,7 @@ export function getDetailsHref(c: Pick<Content, "slug" | "id">): string {
   // Live provider search results may not be present in a later browse-catalog
   // refresh. Their canonical id is enough for the detail resolver to fetch the
   // same title again, whereas a display slug alone is not.
-  if (
-    /^tmdb_[a-z]+_\d+$/.test(c.id) ||
-    /^(anilist|tvmaze)_\d+$/.test(c.id)
-  ) {
-    return `/content/${encodeURIComponent(c.id)}`;
-  }
-  return `/content/${contentPathKey(c)}`;
+  return `/content/${canonicalPathKey(c)}`;
 }
 
 export function hasOfficialTrailer(

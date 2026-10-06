@@ -1,8 +1,26 @@
 import type { Metadata, Viewport } from "next";
+import { Inter, Instrument_Serif, Sora } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
 import { AppChrome } from "@/components/layout/app-chrome";
 import { RegisterServiceWorker } from "@/components/pwa/register-sw";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+const sora = Sora({
+  subsets: ["latin"],
+  variable: "--font-sora",
+  display: "swap",
+});
+const instrument = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-instrument",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -43,7 +61,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html
+      lang="en"
+      className={`dark ${inter.variable} ${sora.variable} ${instrument.variable}`}
+    >
       <body className="min-h-dvh bg-[var(--background)] font-sans antialiased">
         <AppProviders>
           <AppChrome>{children}</AppChrome>

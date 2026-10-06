@@ -6,6 +6,7 @@
  */
 
 import type { Content } from "@/types/content";
+import { canonicalPathKey } from "./path-key";
 
 const PROGRESS_PREFIX = "cineverse_watch_";
 const CONTINUE_KEY = "cineverse_continue_watching";
@@ -404,7 +405,7 @@ export function continueFromContent(
       const e = opts?.episode ?? 1;
       href = `/watch/tv/${tmdbId}/${s}/${e}`;
     } else {
-      const key = encodeURIComponent(content.slug || content.id);
+      const key = canonicalPathKey(content);
       const params = new URLSearchParams({ play: "full" });
       if (opts?.season != null) params.set("season", String(opts.season));
       if (opts?.episode != null) params.set("episode", String(opts.episode));

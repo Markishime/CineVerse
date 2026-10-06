@@ -6,6 +6,7 @@ import { Bookmark, Compass, Play } from "lucide-react";
 import type { Content } from "@/types/content";
 import { Button } from "@/components/ui/button";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
+import { canonicalPathKey, getDetailsHref } from "@/lib/content/watch-href";
 import { formatScore } from "@/lib/utils";
 
 export function HeroStatic({ featured }: { featured: Content | null }) {
@@ -66,7 +67,7 @@ export function HeroStatic({ featured }: { featured: Content | null }) {
         <div className="mt-8 flex flex-wrap gap-3">
           {featured?.trailer && (
             <Link
-              href={`/content/${featured.slug}?play=trailer`}
+              href={`/content/${canonicalPathKey(featured)}?play=trailer`}
               className="inline-flex"
             >
               <Button size="lg">
@@ -82,7 +83,7 @@ export function HeroStatic({ featured }: { featured: Content | null }) {
             </Button>
           </Link>
           {featured && (
-            <Link href={`/content/${featured.slug}`}>
+            <Link href={getDetailsHref(featured)}>
               <Button size="lg" variant="outline">
                 <Bookmark className="h-4 w-4" />
                 Details

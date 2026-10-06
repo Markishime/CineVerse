@@ -13,7 +13,7 @@
 
 /** Permissions string for the iframe allow attribute. */
 export const EMBED_ALLOW =
-  "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen; web-share";
+  "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
 
 /**
  * Append anti-ad query flags some hosts honor (ignored if unknown).

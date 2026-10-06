@@ -186,6 +186,7 @@ async function fetchJson<T>(
   // Keep well under undici's default 10s connect timeout so a provider outage
   // fails fast instead of stacking multi-second stalls per request.
   timeoutMs = 5_000,
+  retried = false,
 ): Promise<T | null> {
   const host = hostOf(url);
   if (isCircuitOpen(host)) return null;
@@ -202,6 +203,13 @@ async function fetchJson<T>(
       // catalog cache, so the Next cache layer is unneeded here.
       cache: "no-store",
     });
+    if (res.status === 429 && !retried) {
+      // Rate-limited (AniList/Jikan): wait out the window once instead of failing the lookup.
+      const wait = Math.min(Number(res.headers.get("retry-after")) || 1, 3) * 1000;
+      clearTimeout(timer);
+      await new Promise((r) => setTimeout(r, wait));
+      return fetchJson<T>(url, init, timeoutMs, true);
+    }
     if (!res.ok) {
       // 5xx from the host counts toward the breaker; 4xx is a client miss.
       if (res.status >= 500) recordCircuitFailure(host);
@@ -931,22 +939,6 @@ export async function fetchAnilistById(id: number): Promise<{
   crew: Credit[];
   trailers: Trailer[];
 }> {
-  const data = await fetchJson<{
-    data?: { Page?: { media?: AnilistMedia[] } };
-  }>(ANILIST, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
-      query: ANIME_QUERY,
-      variables: {
-        page: 1,
-        perPage: 1,
-        search: undefined,
-        sort: ["POPULARITY_DESC"],
-      },
-    }),
-  });
-  // Better: Media(id: $id) query
   const detail = await fetchJson<{
     data?: { Media?: AnilistMedia };
   }>(ANILIST, {
@@ -983,7 +975,6 @@ export async function fetchAnilistById(id: number): Promise<{
       variables: { id },
     }),
   });
-  void data;
   const media = detail?.data?.Media;
   if (!media) return { content: null, cast: [], crew: [], trailers: [] };
   const content = mapAnilist(media);
@@ -1819,6 +1810,12 @@ export async function fetchJikanTop(): Promise<Content[]> {
     ...((upcoming?.data ?? []).map(mapJikan).filter(Boolean) as Content[]),
     ...((ova?.data ?? []).map(mapJikan).filter(Boolean) as Content[]),
   ];
+}
+
+/** Resolve a single anime by MAL id (keyless Jikan). */
+export async function fetchJikanById(id: number): Promise<Content | null> {
+  const data = await fetchJson<{ data?: JikanAnime }>(`${JIKAN}/anime/${id}`);
+  return data?.data ? mapJikan(data.data) : null;
 }
 
 /** Resolve MyAnimeList id via Jikan search (keyless). */
@@ -3360,6 +3357,11 @@ function mapTmdbTv(
           .filter(Boolean)
       : [];
   const isAnimation = genreIds.includes(16);
+  // Western cartoons (Cartoon Network, Disney, Nickelodeon) are series, not anime.
+  const isCjkOrigin =
+    ["ja", "zh", "cn", "ko"].includes((lang ?? "").toLowerCase()) ||
+    origin.some((c) => ["JP", "CN", "KR", "TW", "HK"].includes(c.toUpperCase()));
+  const isAnimeTv = isAnimation && isCjkOrigin;
   const genres =
     genreIds.length > 0
       ? genreIds.map((gid) => ({
@@ -3375,7 +3377,7 @@ function mapTmdbTv(
   // Animation TV → anime tab always. Never force into jdrama/cdrama/etc.
   // (fetchTmdbDrama uses without_genres:16, but empty genre_ids or forced
   // dramaType used to leak anime into Popular J-dramas.)
-  if (isAnimation) {
+  if (isAnimeTv) {
     const overview = String(raw.overview ?? "");
     const isAdult = tmdbLooksAdult(title, overview, Boolean(raw.adult));
     return safeParse({
@@ -3469,7 +3471,11 @@ function mapTmdbTv(
     watchProviders: [],
     providerIds: { tmdb: id, tmdbMediaType: "tv" },
     studios: [],
-    tags: isAdult ? ["18+", "mature", "adult"] : [],
+    tags: isAdult
+      ? ["18+", "mature", "adult", ...(isAnimation ? ["cartoon", "animation"] : [])]
+      : isAnimation
+        ? ["cartoon", "animation"]
+        : [],
     alternateTitles: [],
     approved: true,
     mature: isAdult,

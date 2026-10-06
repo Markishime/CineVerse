@@ -79,6 +79,8 @@ export interface EmbedProvider {
   animeUrl?: (ids: AnimeStreamIds) => string | null;
   /** Needs async server resolve before iframe can load (e.g. AnimePahe sessions) */
   needsResolve?: boolean;
+  /** Host postMessages PLAYER_EVENT/MEDIA_DATA once a real stream resolves, so silence means no content */
+  signalsPlayback?: boolean;
 }
 
 /**
@@ -195,6 +197,7 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     id: "vixsrc",
     name: "VixSrc",
     supportsTv: true,
+    signalsPlayback: true,
     // https://vixsrc.to — clean TMDB embeds, good regional coverage
     movieUrl: (tmdbId) => `https://vixsrc.to/movie/${tmdbId}`,
     tvUrl: (tmdbId, season, episode) =>
@@ -228,6 +231,7 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     id: "vidlink",
     name: "VidLink",
     supportsTv: true,
+    signalsPlayback: true,
     movieUrl: (tmdbId, opts) =>
       qs(`https://vidlink.pro/movie/${tmdbId}`, {
         autoplay: opts?.autoplay === false ? "false" : "true",
@@ -571,10 +575,41 @@ export const EMBED_PROVIDERS: EmbedProvider[] = [
   ...DRAMA_EMBED_PROVIDERS,
 ];
 
+/**
+ * General hosts verified broken in the player:
+ * - onetwoonemovies / vidphantom / smashystream: DNS dead or unreachable
+ * - vidsrc: vidsrc.to now redirects to VidFast (duplicate)
+ * - vidcore: redirects to a cookies-disabled error page
+ * - autoembed: Cloudflare challenge page, never reaches a player
+ */
+const DEAD_GENERAL_PROVIDER_IDS = new Set<EmbedProviderId>([
+  "onetwoonemovies",
+  "vidphantom",
+  "smashystream",
+  "vidsrc",
+  "vidcore",
+  "autoembed",
+]);
+
+/**
+ * Verified-working order. VidFast can hang forever on "Fetching" (host 503) and
+ * the iframe gives no failure signal, so it must not lead.
+ */
+const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
+  "vixsrc",
+  "vidlink",
+  "moviesapi",
+  "2embed",
+  "vidfast",
+  "2embedskin",
+];
+
 export function getProvidersForMediaType(
   mediaType: "movie" | "tv",
 ): EmbedProvider[] {
-  const list = GENERAL_EMBED_PROVIDERS;
+  const list = GENERAL_EMBED_PROVIDERS.filter(
+    (p) => !DEAD_GENERAL_PROVIDER_IDS.has(p.id),
+  );
   if (mediaType === "movie") return list;
   return list.filter((p) => p.supportsTv);
 }
@@ -701,13 +736,7 @@ export function getProvidersForContentType(
     );
     const resolveNatives = liveNatives.filter((p) => p.needsResolve);
     chain = [
-      ...preferProviders(generalSafe, [
-        "vidfast",
-        "autoembed",
-        "vidsrc",
-        "vixsrc",
-        "2embed",
-      ]),
+      ...preferProviders(generalSafe, GENERAL_PLAY_ORDER),
       ...instantNatives,
       ...resolveNatives,
     ];
@@ -728,27 +757,12 @@ export function getProvidersForContentType(
     // 525, Frembed=French-geo redirect) are not placed ahead of live ones.
     if (mediaType === "movie") {
       chain = [
-        ...preferProviders(general, [
-          "vidfast",
-          "onetwoonemovies",
-          "autoembed",
-          "vidsrc",
-          "vixsrc",
-          "2embed",
-          "vidlink",
-        ]),
+        ...preferProviders(general, GENERAL_PLAY_ORDER),
         ...preferProviders(liveDrama, ["nontongo"]),
       ];
     } else {
       chain = [
-        ...preferProviders(general, [
-          "vidfast",
-          "onetwoonemovies",
-          "autoembed",
-          "vidsrc",
-          "vixsrc",
-          "2embed",
-        ]),
+        ...preferProviders(general, GENERAL_PLAY_ORDER),
         ...preferProviders(liveDrama, ["nontongo"]),
       ];
     }
@@ -759,27 +773,11 @@ export function getProvidersForContentType(
     // hosts as best-effort. (kissasian.cam's KissKH backend can't be driven by
     // a TMDB id, so it can't lead here — see the kisskh provider.)
     chain = [
-      ...preferProviders(general, [
-        "vidfast",
-        "onetwoonemovies",
-        "vidsrc",
-        "vidcore",
-        "vixsrc",
-        "autoembed",
-        "2embed",
-        "vidlink",
-      ]),
+      ...preferProviders(general, GENERAL_PLAY_ORDER),
       ...preferProviders(liveDrama, ["nontongo"]),
     ];
   } else {
-    chain = preferProviders(general, [
-      "vidfast",
-      "onetwoonemovies",
-      "autoembed",
-      "vidsrc",
-      "vixsrc",
-      "2embed",
-    ]);
+    chain = preferProviders(general, GENERAL_PLAY_ORDER);
   }
 
   // Drop providers that cannot produce a URL for this title

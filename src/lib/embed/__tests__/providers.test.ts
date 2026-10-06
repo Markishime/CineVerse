@@ -17,12 +17,12 @@ describe("embed provider order", () => {
     ["anime", "tv"],
     ["kdrama", "tv"],
     ["cdrama", "tv"],
-  ] as const)("puts VidFast first for %s", (contentType, mediaType) => {
+  ] as const)("puts VixSrc first for %s", (contentType, mediaType) => {
     const providers = getProvidersForContentType(contentType, mediaType, {
       tmdb: 550,
       anilist: 1,
       mal: 1,
     });
-    expect(providers[0]?.id).toBe("vidfast");
+    expect(providers[0]?.id).toBe("vixsrc");
   });
 });

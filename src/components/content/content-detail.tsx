@@ -30,7 +30,11 @@ import { VideoPlayer } from "./video-player";
 import { ReviewsSection } from "./reviews-section";
 import { PinGateModal } from "@/components/content/pin-gate";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
-import { getTrailerHref, getWatchHref } from "@/lib/content/watch-href";
+import {
+  canonicalPathKey,
+  getTrailerHref,
+  getWatchHref,
+} from "@/lib/content/watch-href";
 import {
   cinematicBackdropUrl,
   normalizeImageUrl,
@@ -847,7 +851,7 @@ export function ContentDetail({ slug }: { slug: string }) {
                 {seasons.seasons.map((s) => (
                   <Link
                     key={s.id}
-                    href={`/content/${encodeURIComponent(content.slug || content.id)}/season/${s.seasonNumber}`}
+                    href={`/content/${canonicalPathKey(content)}/season/${s.seasonNumber}`}
                     className="flex gap-3 rounded-xl border border-white/10 bg-[var(--surface)] p-3 transition hover:ring-1 hover:ring-[var(--primary)]/40"
                   >
                     <div className="relative h-24 w-16 shrink-0 overflow-hidden rounded-lg bg-[var(--surface-elevated)]">

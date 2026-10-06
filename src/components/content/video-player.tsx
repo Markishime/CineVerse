@@ -510,6 +510,12 @@ export function VideoPlayer({
       )
         return;
       const data = e.data;
+      const nestedEvent =
+        typeof data?.data?.event === "string"
+          ? data.data.event
+          : typeof data?.event?.event === "string"
+            ? data.event.event
+            : "";
       const raw =
         typeof data === "string"
           ? data
@@ -520,6 +526,20 @@ export function VideoPlayer({
               : "";
       const msg = raw.toLowerCase();
       if (!msg) return;
+
+      // VidLink / VixSrc / AutoEmbed only emit these once the title resolved.
+      if (
+        msg === "player_event" ||
+        msg === "media_data" ||
+        msg === "player_title" ||
+        (nestedEvent && !nestedEvent.toLowerCase().includes("error"))
+      ) {
+        confirmedRef.current = true;
+        setConfirmedPlaying(true);
+        clearTimers();
+        setStatus("loaded");
+        return;
+      }
 
       // Positive evidence the provider actually RESOLVED this title's stream.
       // Verified against live hosts: AutoEmbed emits {"type":"PLAYER_TITLE",...}
@@ -583,6 +603,20 @@ export function VideoPlayer({
     advanceToNextProvider();
   };
 
+  // Hosts that signal playback but stay silent after loading served a "content not found" page.
+  useEffect(() => {
+    if (status !== "loaded" || !activeProvider?.signalsPlayback) return;
+    if (confirmedPlaying || userPickedRef.current) return;
+    verifyTimerRef.current = setTimeout(() => {
+      if (!confirmedRef.current && !userPickedRef.current) {
+        advanceToNextProvider();
+      }
+    }, 20_000);
+    return () => {
+      if (verifyTimerRef.current) clearTimeout(verifyTimerRef.current);
+    };
+  }, [status, activeProvider, confirmedPlaying, advanceToNextProvider]);
+
   const switchTo = (index: number) => {
     if (index === activeIndex) return;
     clearTimers();
@@ -632,12 +666,12 @@ export function VideoPlayer({
         {/* Player frame — overflow clips any embed chrome that tries to spill out */}
         <div
           className={cn(
-            "relative z-0 aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl",
+            "relative z-0 aspect-video w-full overflow-hidden rounded-3xl border border-white/10 bg-black shadow-[0_30px_100px_rgba(0,0,0,0.7),0_0_80px_rgba(34,211,238,0.08)] ring-1 ring-inset ring-white/5",
             cinemaMode && "cinema-player-frame border-white/15",
           )}
         >
           {status === "loading" && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90 px-4">
+            <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-[radial-gradient(ellipse_at_center,rgba(13,28,49,0.92),rgba(5,11,24,0.98))] px-4">
               <Loader2 className="h-10 w-10 animate-spin text-[var(--primary)]" />
               <p className="text-sm text-white">
                 Loading from{" "}
