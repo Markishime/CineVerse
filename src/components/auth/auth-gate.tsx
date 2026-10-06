@@ -53,7 +53,7 @@ export function AuthGate({
           </Link>
         </div>
         <p className="mt-4 text-xs text-[var(--text-muted)]">
-          Free forever · Unlimited browsing · Google or email
+          Free forever · Unlimited browsing · Email
         </p>
       </div>
     );

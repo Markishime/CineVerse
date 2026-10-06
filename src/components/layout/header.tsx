@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  Bell,
   ChevronDown,
   Clapperboard,
   Film,
@@ -21,7 +20,6 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { isRestrictedContentUser } from "@/lib/content/mature";
-import { Button } from "@/components/ui/button";
 
 interface NavChild {
   href: string;
@@ -370,14 +368,7 @@ export function Header() {
           >
             <Search className="h-5 w-5" />
           </Link>
-          <Link
-            href="/notifications"
-            className="hidden h-10 w-10 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:inline-flex"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5" />
-          </Link>
-          {user ? (
+          {user && (
             <Link
               href={
                 profile?.username
@@ -390,10 +381,6 @@ export function Header() {
               <span className="max-w-[100px] truncate">
                 {profile?.displayName ?? "Profile"}
               </span>
-            </Link>
-          ) : (
-            <Link href="/login" className="hidden sm:block">
-              <Button size="sm">Sign in</Button>
             </Link>
           )}
           <button
@@ -502,12 +489,12 @@ export function Header() {
               })}
               <li>
                 <Link
-                  href={user ? "/settings" : "/login"}
+                  href="/settings"
                   onClick={closeMenu}
                   className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-white/5 hover:text-white"
                 >
                   <User className="h-4 w-4" aria-hidden />
-                  {user ? "Settings" : "Sign in"}
+                  Settings
                 </Link>
               </li>
             </ul>

@@ -58,35 +58,67 @@ export default function SettingsPage() {
     }
   }
 
-  if (!user) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 pb-24 pt-24 sm:px-6">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]">
-          Account
-        </p>
-        <h1 className="mt-1 font-display text-3xl font-bold text-white">
-          Settings
-        </h1>
-        <p className="mt-2 text-[var(--text-secondary)]">
-          Sign in free to manage profile, region, and preferences. CineVerse is
-          unlimited for every member.
-        </p>
-        <div className="mt-6 flex gap-3">
-          <Link href="/login">
-            <Button>Sign in</Button>
-          </Link>
-          <Link href="/signup">
-            <Button variant="secondary">Create free account</Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const invalidateAll = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["catalog"],
+      refetchType: "all",
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["home"],
+      refetchType: "all",
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["providers"],
+      refetchType: "all",
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["playback"],
+      refetchType: "all",
+    });
+  };
 
   const save = async () => {
     setSaving(true);
     setMessage(null);
     setError(null);
+
+    const uid = user?.uid ?? "guest";
+
+    const localSettings = {
+      ...(settings ?? {
+        uid,
+        language: "en",
+        preferredProviders: [],
+        preferredContentTypes: [] as ContentType[],
+        performanceMode: "cinematic" as const,
+        notificationPrefs: {
+          airing: true,
+          recommendations: true,
+          social: true,
+          product: false,
+        },
+      }),
+      uid,
+      region: "US",
+      animeTitlePreference: animePref,
+      animeAudioLanguage: animeAudioLang,
+      kdramaAudioLanguage: kdramaAudioLang,
+      generalAudioLanguage: generalAudioLang,
+      matureContent: false,
+      preferredContentTypes: [] as ContentType[],
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (!user) {
+      // Signed out: keep preferences on this device only
+      setSettings(localSettings);
+      writeLocalSettings(uid, localSettings);
+      setDeviceRegion("US");
+      invalidateAll();
+      setMessage("Saved on this device.");
+      setSaving(false);
+      return;
+    }
 
     const localProfile = {
       ...(profile ?? {
@@ -118,31 +150,6 @@ export default function SettingsPage() {
       updatedAt: new Date().toISOString(),
     };
 
-    const localSettings = {
-      ...(settings ?? {
-        uid: user.uid,
-        language: "en",
-        preferredProviders: [],
-        preferredContentTypes: [] as ContentType[],
-        performanceMode: "cinematic" as const,
-        notificationPrefs: {
-          airing: true,
-          recommendations: true,
-          social: true,
-          product: false,
-        },
-      }),
-      uid: user.uid,
-      region: "US",
-      animeTitlePreference: animePref,
-      animeAudioLanguage: animeAudioLang,
-      kdramaAudioLanguage: kdramaAudioLang,
-      generalAudioLanguage: generalAudioLang,
-      matureContent: false,
-      preferredContentTypes: [] as ContentType[],
-      updatedAt: new Date().toISOString(),
-    };
-
     try {
       if (isFirebaseConfigured()) {
         await user.getIdToken(true);
@@ -169,22 +176,7 @@ export default function SettingsPage() {
       writeLocalProfile(user.uid, nextProfile);
       writeLocalSettings(user.uid, nextSettings);
       setDeviceRegion("US");
-      void queryClient.invalidateQueries({
-        queryKey: ["catalog"],
-        refetchType: "all",
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["home"],
-        refetchType: "all",
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["providers"],
-        refetchType: "all",
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["playback"],
-        refetchType: "all",
-      });
+      invalidateAll();
       setMessage("Saved. Catalog stays United States · home will refresh.");
     } catch {
       // Always keep preferences on this device so the UI does not hard-fail
@@ -193,22 +185,7 @@ export default function SettingsPage() {
       writeLocalProfile(user.uid, localProfile);
       writeLocalSettings(user.uid, localSettings);
       setDeviceRegion("US");
-      void queryClient.invalidateQueries({
-        queryKey: ["catalog"],
-        refetchType: "all",
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["home"],
-        refetchType: "all",
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["providers"],
-        refetchType: "all",
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["playback"],
-        refetchType: "all",
-      });
+      invalidateAll();
       setMessage("Saved on this device.");
     } finally {
       setSaving(false);
@@ -224,54 +201,58 @@ export default function SettingsPage() {
         Settings
       </h1>
       <p className="mt-2 text-[var(--text-secondary)]">
-        Free unlimited account. Cinematic presentation is always on.
+        {user
+          ? "Free unlimited account. Cinematic presentation is always on."
+          : "Preferences are saved on this device. Cinematic presentation is always on."}
       </p>
 
-      <section className="mt-8 space-y-4 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
-        <h2 className="font-display text-lg font-semibold text-white">
-          Profile
-        </h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          Signed in as {user.email}
-        </p>
-        <label className="block text-sm text-[var(--text-secondary)]">
-          Display name
-          <Input
-            className="mt-1.5 h-11"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-          />
-        </label>
-        <label className="block text-sm text-[var(--text-secondary)]">
-          Username
-          <Input
-            className="mt-1.5 h-11"
-            value={username}
-            onChange={(e) =>
-              setUsername(
-                e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24),
-              )
-            }
-          />
-        </label>
-        <label className="block text-sm text-[var(--text-secondary)]">
-          Bio
-          <textarea
-            className="field-textarea mt-1.5"
-            rows={3}
-            value={bio}
-            onChange={(e) => setBio(e.target.value.slice(0, 280))}
-          />
-        </label>
-        {profile?.username && (
-          <Link
-            href={`/profile/${profile.username}`}
-            className="inline-block text-sm text-[var(--primary-light)] underline"
-          >
-            View public profile
-          </Link>
-        )}
-      </section>
+      {user && (
+        <section className="mt-8 space-y-4 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
+          <h2 className="font-display text-lg font-semibold text-white">
+            Profile
+          </h2>
+          <p className="text-xs text-[var(--text-muted)]">
+            Signed in as {user.email}
+          </p>
+          <label className="block text-sm text-[var(--text-secondary)]">
+            Display name
+            <Input
+              className="mt-1.5 h-11"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
+          </label>
+          <label className="block text-sm text-[var(--text-secondary)]">
+            Username
+            <Input
+              className="mt-1.5 h-11"
+              value={username}
+              onChange={(e) =>
+                setUsername(
+                  e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24),
+                )
+              }
+            />
+          </label>
+          <label className="block text-sm text-[var(--text-secondary)]">
+            Bio
+            <textarea
+              className="field-textarea mt-1.5"
+              rows={3}
+              value={bio}
+              onChange={(e) => setBio(e.target.value.slice(0, 280))}
+            />
+          </label>
+          {profile?.username && (
+            <Link
+              href={`/profile/${profile.username}`}
+              className="inline-block text-sm text-[var(--primary-light)] underline"
+            >
+              View public profile
+            </Link>
+          )}
+        </section>
+      )}
 
       <section className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
@@ -405,36 +386,32 @@ export default function SettingsPage() {
         <Button onClick={save} disabled={saving || signingOut}>
           {saving ? "Saving…" : "Save settings"}
         </Button>
-        <Button
-          variant="danger"
-          disabled={signingOut}
-          onClick={async () => {
-            setSigningOut(true);
-            setError(null);
-            try {
-              if (isFirebaseConfigured()) {
-                await signOut(getClientAuth());
+        {user && (
+          <Button
+            variant="danger"
+            disabled={signingOut}
+            onClick={async () => {
+              setSigningOut(true);
+              setError(null);
+              try {
+                if (isFirebaseConfigured()) {
+                  await signOut(getClientAuth());
+                }
+              } catch {
+                // Still clear local session and leave
+              } finally {
+                reset();
+                queryClient.clear();
+                router.replace("/login");
               }
-            } catch {
-              // Still clear local session and leave
-            } finally {
-              reset();
-              queryClient.clear();
-              router.replace("/login");
-            }
-          }}
-        >
-          {signingOut ? "Signing out…" : "Sign out"}
-        </Button>
+            }}
+          >
+            {signingOut ? "Signing out…" : "Sign out"}
+          </Button>
+        )}
       </div>
 
       <section className="mt-8 flex flex-wrap gap-4 text-sm">
-        <Link
-          href="/notifications"
-          className="text-[var(--primary-light)] underline"
-        >
-          Notifications
-        </Link>
         <Link href="/privacy" className="text-[var(--primary-light)] underline">
           Privacy
         </Link>

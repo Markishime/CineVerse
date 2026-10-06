@@ -20,7 +20,7 @@ export default function ForgotPasswordPage() {
       side="forgot"
       badge="Account recovery"
       title="Reset password"
-      subtitle="Enter the email for your free CineVerse account. Google accounts should use Continue with Google on the sign-in page instead."
+      subtitle="Enter the email for your CineVerse account and we will send a reset link."
       footer={
         <>
           <Link

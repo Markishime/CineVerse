@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { errorJson, json, resolveAuth } from "@/lib/server/auth";
+import { errorJson, json } from "@/lib/server/auth";
 import { resolvePlayback } from "@/lib/playback/resolve-playback";
 import { PlaybackSessionRequestSchema } from "@/types/playback";
 
@@ -14,7 +14,7 @@ import { PlaybackSessionRequestSchema } from "@/types/playback";
  * Never uses TMDB as a stream.
  */
 export async function POST(request: NextRequest) {
-  const auth = await resolveAuth(request);
+  // auth not required
 
   let body: unknown;
   try {
@@ -48,19 +48,7 @@ export async function POST(request: NextRequest) {
     preferFull: true,
   });
 
-  // Free public-domain / CC / free YouTube embeds: guests may watch without sign-in
-  const freeGuestOk =
-    resolved.playable &&
-    (resolved.sourceType === "public_domain" ||
-      resolved.sourceType === "creative_commons" ||
-      resolved.sourceType === "youtube_embed");
-
-  if (!auth.uid && !freeGuestOk) {
-    return errorJson(
-      "Sign in free to start a playback session for this title",
-      401,
-    );
-  }
+  // Open to all visitors (no auth gate)
 
   if (!resolved.playable) {
     return json(

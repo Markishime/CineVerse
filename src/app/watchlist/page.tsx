@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bookmark, Trash2 } from "lucide-react";
 import { deleteLibrary, fetchLibrary } from "@/lib/api/user";
@@ -13,10 +12,7 @@ import { EmptyState } from "@/components/layout/empty-state";
 import { Chip } from "@/components/ui/chip";
 import { useAuthStore } from "@/stores/auth-store";
 import { Button } from "@/components/ui/button";
-import {
-  contentFromSnapshot,
-  LIST_TABS,
-} from "@/lib/user/my-list";
+import { contentFromSnapshot, LIST_TABS } from "@/lib/user/my-list";
 import {
   getLocalSnapshot,
   localEntriesAsApiItems,
@@ -138,10 +134,9 @@ export default function WatchlistPage() {
 
   // Keep React Query "library" key warm for other screens
   useEffect(() => {
-    queryClient.setQueryData(
-      ["library", uid ?? "guest"],
-      { items: localEntriesAsApiItems(localItems, uid ?? "guest") },
-    );
+    queryClient.setQueryData(["library", uid ?? "guest"], {
+      items: localEntriesAsApiItems(localItems, uid ?? "guest"),
+    });
   }, [localItems, uid, queryClient]);
 
   return (
@@ -152,7 +147,7 @@ export default function WatchlistPage() {
         description={
           user
             ? "Saved on this device and synced when online."
-            : "Saved on this device. Sign in to sync across devices."
+            : "Saved on this device."
         }
         actions={
           <>
@@ -171,11 +166,6 @@ export default function WatchlistPage() {
             >
               Refresh
             </Button>
-            {!user && (
-              <Link href="/login">
-                <Button size="sm">Sign in to sync</Button>
-              </Link>
-            )}
           </>
         }
       />
@@ -197,8 +187,7 @@ export default function WatchlistPage() {
 
       <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {entries.map((e) => {
-          const snap =
-            e.snapshot ?? getLocalSnapshot(uid, e.contentId) ?? null;
+          const snap = e.snapshot ?? getLocalSnapshot(uid, e.contentId) ?? null;
           const content =
             postersQuery.data?.[e.contentId] ??
             (snap ? contentFromSnapshot(snap) : null);
@@ -210,9 +199,7 @@ export default function WatchlistPage() {
                 className="flex aspect-[2/3] flex-col items-center justify-center gap-2 rounded-xl border border-white/10 bg-[var(--surface)] p-3 text-center"
               >
                 <Bookmark className="h-6 w-6 text-[var(--text-muted)]" />
-                <p className="text-xs text-white line-clamp-3">
-                  {e.contentId}
-                </p>
+                <p className="text-xs text-white line-clamp-3">{e.contentId}</p>
                 <Button
                   size="sm"
                   variant="ghost"

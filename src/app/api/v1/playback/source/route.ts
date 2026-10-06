@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { errorJson, json, resolveAuth } from "@/lib/server/auth";
+import { errorJson, json } from "@/lib/server/auth";
 import { resolvePlayback } from "@/lib/playback/resolve-playback";
 import { z } from "zod";
 
@@ -51,15 +51,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Guests: free public sources only
-  const auth = await resolveAuth(request);
-  const freeOk =
-    result.sourceType === "public_domain" ||
-    result.sourceType === "creative_commons" ||
-    result.sourceType === "youtube_embed";
-  if (!auth.uid && !freeOk) {
-    return errorJson("Sign in free to play this licensed title", 401);
-  }
+  // Open to all visitors (no auth gate)
 
   let provider:
     | "cloudflare_stream"

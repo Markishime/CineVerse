@@ -16,7 +16,6 @@ import {
   hasOfficialTrailer,
 } from "@/lib/content/watch-href";
 import { AddToListButton } from "@/components/content/add-to-list-button";
-import { useAuthStore } from "@/stores/auth-store";
 import { cardHover } from "@/lib/motion";
 import {
   posterFallbackLabel,
@@ -72,7 +71,6 @@ export function ContentCard({
   const trailerHref = getTrailerHref(content);
   const detailsHref = getDetailsHref(content);
   const [imgFailed, setImgFailed] = useState(false);
-  const user = useAuthStore((s) => s.user);
   const reduce = useReducedMotion();
   // Always resolve a displayable URL (real art or local SVG — never blank)
   const preferred = resolveCardImageUrl(content, { preferBackdrop: wide });
@@ -170,11 +168,11 @@ export function ContentCard({
         </Link>
         <div className="mt-auto flex flex-col gap-1.5">
           <Link
-            href={user ? watchHref : "/login"}
+            href={watchHref}
             className="watch-now-cta inline-flex min-h-9 items-center justify-center gap-1 rounded-lg bg-[var(--gold)] px-2 py-1.5 text-[11px] font-bold !text-black transition duration-150 hover:brightness-110 active:scale-[0.98]"
           >
             <Play className="h-3 w-3 fill-current !text-black" aria-hidden />
-            {user ? "Watch Now" : "Sign in to Watch"}
+            Watch Now
           </Link>
           <AddToListButton content={content} className="w-full" />
           {trailer && (

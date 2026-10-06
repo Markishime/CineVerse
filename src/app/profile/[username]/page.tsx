@@ -418,8 +418,8 @@ export default function ProfilePage({
             <Button>Open my profile</Button>
           </Link>
         ) : (
-          <Link href="/signup" className="mt-6 inline-block">
-            <Button>Create a free profile</Button>
+          <Link href="/" className="mt-6 inline-block">
+            <Button>Browse titles</Button>
           </Link>
         )}
       </div>
