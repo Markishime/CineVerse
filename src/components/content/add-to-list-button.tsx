@@ -23,11 +23,14 @@ export function AddToListButton({
   className,
   size = "sm",
   showLabel = true,
+  variant = "default",
 }: {
   content: Content;
   className?: string;
   size?: "sm" | "md";
   showLabel?: boolean;
+  /** "icon" = round streaming-style button for poster overlays */
+  variant?: "default" | "icon";
 }) {
   const user = useAuthStore((s) => s.user);
   const guest = useGuestLibraryStore();
@@ -107,6 +110,8 @@ export function AddToListButton({
     }
   };
 
+  const isIcon = variant === "icon";
+
   return (
     <button
       type="button"
@@ -118,12 +123,17 @@ export function AddToListButton({
       disabled={pending}
       title={error ?? (inList ? "Remove from My List" : "Add to My List")}
       className={cn(
-        "inline-flex items-center justify-center gap-1 rounded-lg font-semibold transition",
-        size === "sm" && "px-2 py-1.5 text-[11px]",
-        size === "md" && "px-3 py-2 text-sm",
-        inList
-          ? "bg-[var(--primary)]/25 text-[var(--primary-light)] hover:bg-[var(--primary)]/35"
-          : "bg-white/12 text-white hover:bg-white/20",
+        "inline-flex items-center justify-center gap-1 transition",
+        isIcon
+          ? "h-9 w-9 rounded-full border border-white/40 bg-black/60 text-white backdrop-blur-sm hover:border-white hover:bg-black/80"
+          : "rounded-lg font-semibold",
+        !isIcon && size === "sm" && "px-2 py-1.5 text-[11px]",
+        !isIcon && size === "md" && "px-3 py-2 text-sm",
+        !isIcon &&
+          (inList
+            ? "bg-[var(--primary)]/25 text-[var(--primary-light)] hover:bg-[var(--primary)]/35"
+            : "bg-white/12 text-white hover:bg-white/20"),
+        isIcon && inList && "border-[var(--primary-light)] text-[var(--primary-light)]",
         className,
       )}
       aria-label={inList ? "Remove from My List" : "Add to My List"}
@@ -132,11 +142,11 @@ export function AddToListButton({
       {pending ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
       ) : inList ? (
-        <BookmarkCheck className="h-3.5 w-3.5" />
+        <BookmarkCheck className={isIcon ? "h-4 w-4" : "h-3.5 w-3.5"} />
       ) : (
-        <Bookmark className="h-3.5 w-3.5" />
+        <Bookmark className={isIcon ? "h-4 w-4" : "h-3.5 w-3.5"} />
       )}
-      {showLabel && (inList ? "In My List" : "My List")}
+      {showLabel && !isIcon && (inList ? "In My List" : "My List")}
     </button>
   );
 }

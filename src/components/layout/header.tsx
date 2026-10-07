@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  Bell,
   ChevronDown,
   Clapperboard,
+  Compass,
   Film,
   Home,
   ListVideo,
@@ -55,16 +57,34 @@ const baseNav: NavItem[] = [
   },
   {
     href: "/series",
-    label: "Series",
+    label: "TV Shows",
     icon: Tv,
     children: [
-      { href: "/series", label: "All Series" },
+      { href: "/series", label: "All TV Shows" },
       { href: "/series/korean", label: "Korean Series" },
       { href: "/series/japanese", label: "Japanese Series" },
       { href: "/series/chinese", label: "Chinese Series" },
       { href: "/series/thai", label: "Thai Series" },
       { href: "/series/filipino", label: "Filipino Series" },
     ],
+  },
+  {
+    href: "/discover",
+    label: "Genres",
+    icon: Compass,
+    children: [
+      "Action",
+      "Comedy",
+      "Drama",
+      "Horror",
+      "Romance",
+      "Science Fiction",
+      "Thriller",
+      "Animation",
+    ].map((g) => ({
+      href: `/discover?genre=${encodeURIComponent(g)}`,
+      label: g === "Science Fiction" ? "Sci-Fi" : g,
+    })),
   },
   {
     href: "/anime",
@@ -241,8 +261,8 @@ export function Header() {
       className={cn(
         "fixed inset-x-0 top-0 z-50 pt-safe transition-[background-color,border-color,box-shadow] duration-200",
         solid
-          ? "border-b border-white/10 bg-[var(--background)]/95 shadow-[0_8px_32px_rgba(0,0,0,0.35)]"
-          : "border-b border-transparent bg-transparent",
+          ? "border-b border-white/10 bg-[var(--background)]/95 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-md"
+          : "border-b border-transparent bg-gradient-to-b from-black/70 via-black/30 to-transparent",
       )}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -367,7 +387,14 @@ export function Header() {
           >
             <Search className="h-5 w-5" />
           </Link>
-          {user && (
+          <Link
+            href="/notifications"
+            className="hidden h-10 w-10 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:inline-flex"
+            aria-label="Notifications"
+          >
+            <Bell className="h-5 w-5" />
+          </Link>
+          {user ? (
             <Link
               href={
                 profile?.username
@@ -380,6 +407,13 @@ export function Header() {
               <span className="max-w-[100px] truncate">
                 {profile?.displayName ?? "Profile"}
               </span>
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="hidden rounded-full bg-[var(--primary)] px-4 py-1.5 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:inline-flex"
+            >
+              Sign in
             </Link>
           )}
           <button
@@ -488,12 +522,12 @@ export function Header() {
               })}
               <li>
                 <Link
-                  href="/settings"
+                  href={user ? "/settings" : "/login"}
                   onClick={closeMenu}
                   className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-white/5 hover:text-white"
                 >
                   <User className="h-4 w-4" aria-hidden />
-                  Settings
+                  {user ? "Settings" : "Sign in"}
                 </Link>
               </li>
             </ul>

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { errorJson, json } from "@/lib/server/auth";
+import { errorJson, json, resolveAuth } from "@/lib/server/auth";
 import { resolvePlayback } from "@/lib/playback/resolve-playback";
 import { z } from "zod";
 
@@ -25,10 +25,25 @@ const BodySchema = z.object({
   preferFull: z.boolean().optional(),
 });
 
-
+/**
+ * Resolve in-app legal playback for a title/episode.
+ * Requires authentication. Never returns scraped or TMDB stream URLs.
+ * Each episode is resolved individually — never a shared generic URL.
+ */
+function guestAllowed(result: {
+  playable: boolean;
+  sourceType?: string;
+}): boolean {
+  if (!result.playable) return true; // allow reading "not playable" without auth
+  return (
+    result.sourceType === "public_domain" ||
+    result.sourceType === "creative_commons" ||
+    result.sourceType === "youtube_embed"
+  );
+}
 
 export async function GET(request: NextRequest) {
-  // auth not required
+  const auth = await resolveAuth(request);
 
   const sp = request.nextUrl.searchParams;
   const parsed = QuerySchema.safeParse({
@@ -53,7 +68,9 @@ export async function GET(request: NextRequest) {
     preferFull: parsed.data.preferFull,
   });
 
-  // Open to all visitors (no auth gate)
+  if (!auth.uid && result.playable && !guestAllowed(result)) {
+    return errorJson("Sign in free to play this title", 401);
+  }
 
   return json({
     ...result,
@@ -66,7 +83,7 @@ export async function GET(request: NextRequest) {
 
 /** POST variant for episode resolve (preferred for series). */
 export async function POST(request: NextRequest) {
-  // auth not required
+  const auth = await resolveAuth(request);
 
   let body: unknown;
   try {
@@ -90,7 +107,9 @@ export async function POST(request: NextRequest) {
     preferFull: parsed.data.preferFull !== false,
   });
 
-  // Open to all visitors (no auth gate)
+  if (!auth.uid && result.playable && !guestAllowed(result)) {
+    return errorJson("Sign in free to play this title", 401);
+  }
 
   return json({
     ...result,

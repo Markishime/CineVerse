@@ -7,11 +7,20 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   sendEmailVerification,
+  signInWithPopup,
   updateProfile,
 } from "firebase/auth";
 import { useMemo, useState } from "react";
-import { Eye, EyeOff, Loader2, Lock, Mail, UserRound } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Mail,
+  UserRound,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AuthShell } from "@/components/auth/auth-shell";
@@ -20,10 +29,7 @@ import { cn } from "@/lib/utils";
 
 const schema = z
   .object({
-    displayName: z
-      .string()
-      .min(2, "Name must be at least 2 characters")
-      .max(40),
+    displayName: z.string().min(2, "Name must be at least 2 characters").max(40),
     email: z.string().email("Enter a valid email"),
     password: z.string().min(8, "Use at least 8 characters"),
     confirm: z.string(),
@@ -34,6 +40,29 @@ const schema = z
   });
 
 type Form = z.infer<typeof schema>;
+
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden>
+      <path
+        fill="#EA4335"
+        d="M12 10.2v3.9h5.5c-.2 1.3-1.6 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.1.8 3.9 1.5l2.6-2.5C16.8 3.3 14.6 2.3 12 2.3 6.9 2.3 2.8 6.4 2.8 11.5S6.9 20.7 12 20.7c5.5 0 9.1-3.9 9.1-9.3 0-.6-.1-1.1-.2-1.6H12z"
+      />
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+      />
+    </svg>
+  );
+}
 
 function passwordStrength(pw: string): {
   score: number;
@@ -47,8 +76,10 @@ function passwordStrength(pw: string): {
   if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score += 1;
   if (/\d/.test(pw)) score += 1;
   if (/[^A-Za-z0-9]/.test(pw)) score += 1;
-  if (score <= 2) return { score, label: "Weak", color: "bg-[var(--danger)]" };
-  if (score <= 3) return { score, label: "Okay", color: "bg-[var(--warning)]" };
+  if (score <= 2)
+    return { score, label: "Weak", color: "bg-[var(--danger)]" };
+  if (score <= 3)
+    return { score, label: "Okay", color: "bg-[var(--warning)]" };
   if (score <= 4)
     return { score, label: "Strong", color: "bg-[var(--secondary)]" };
   return { score, label: "Excellent", color: "bg-[var(--success)]" };
@@ -58,6 +89,7 @@ export default function SignupPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [showPw, setShowPw] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const {
     register,
     handleSubmit,
@@ -73,11 +105,7 @@ export default function SignupPage() {
     },
   });
 
-  const passwordValue = useWatch({
-    control,
-    name: "password",
-    defaultValue: "",
-  });
+  const passwordValue = useWatch({ control, name: "password", defaultValue: "" });
   const strength = useMemo(
     () => passwordStrength(passwordValue ?? ""),
     [passwordValue],
@@ -105,7 +133,27 @@ export default function SignupPage() {
     }
   };
 
-  const busy = isSubmitting;
+  const google = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    if (!isFirebaseConfigured()) {
+      setError("Firebase is not configured.");
+      setGoogleLoading(false);
+      return;
+    }
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      await signInWithPopup(getClientAuth(), provider);
+      router.push("/");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Google sign-up failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const busy = isSubmitting || googleLoading;
 
   return (
     <AuthShell
@@ -125,6 +173,27 @@ export default function SignupPage() {
         </>
       }
     >
+      <Button
+        type="button"
+        variant="secondary"
+        className="h-12 w-full gap-2.5 border-white/12 bg-white/[0.06] text-[15px] shadow-none transition-all duration-200 hover:scale-[1.01] hover:border-white/20 hover:bg-white/[0.09] active:scale-[0.99]"
+        onClick={google}
+        disabled={busy}
+      >
+        {googleLoading ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : (
+          <GoogleIcon className="h-5 w-5 shrink-0" />
+        )}
+        Sign up with Google
+      </Button>
+
+      <div className="my-6 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/14 to-transparent" />
+        or email
+        <div className="h-px flex-1 bg-gradient-to-l from-transparent via-white/14 to-transparent" />
+      </div>
+
       <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
         <div>
           <label

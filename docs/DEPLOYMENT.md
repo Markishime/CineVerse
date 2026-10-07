@@ -47,6 +47,7 @@ Framework preset: **Next.js**. No `output: "export"` — API routes are required
 - [ ] Auth sign-in works (Firebase client env)
 - [ ] Mobile: hard-refresh or “Update now” if an old service worker cached a 404
 - [ ] Privacy / terms pages live
+- [ ] Vixsrc (first server) loads on the production URL. vixsrc.to's Cloudflare WAF returns "Sorry, you have been blocked" for iframes embedded from free-host domains (`*.vercel.app`, `*.web.app`, `*.netlify.app`, `*.github.io`, `*.onrender.com`) and for iframes with no Referer. Attach a **custom domain** to the Vercel project; until then the player detects the block and falls back to MoviesAPI → AutoEmbed.
 
 ## Firebase (optional backend only)
 

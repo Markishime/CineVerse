@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Clapperboard,
   Loader2,
+  Maximize2,
   Minimize2,
   MonitorPlay,
   RefreshCw,
@@ -79,6 +80,8 @@ function probeHost(url: string): Promise<boolean> {
   if (!hit) {
     hit = new Promise<boolean>((resolve) => {
       const img = new Image();
+      // Same default referrer the iframe sends, so the probe sees the same
+      // WAF verdict (vixsrc.to 403s free-host referrers such as *.vercel.app).
       const timer = setTimeout(() => resolve(true), 5_000);
       img.onload = () => {
         clearTimeout(timer);
@@ -97,7 +100,7 @@ function probeHost(url: string): Promise<boolean> {
 
 /**
  * Smart video player with multi-provider fallback.
- * Default chain (all types): VidFast → AutoEmbed → VidSrc → …
+ * Default chain: VixSrc → MoviesAPI → AutoEmbed → remaining hosts.
  */
 export function VideoPlayer({
   tmdbId,
@@ -170,6 +173,13 @@ export function VideoPlayer({
   const [frozenBad, setFrozenBad] = useState<EmbedProviderId[]>(() => [
     ...sessionBadProviders,
   ]);
+  // Why a server was skipped; shown in the Servers menu and the all-failed panel.
+  const [issues, setIssues] = useState<
+    Partial<Record<EmbedProviderId, string>>
+  >({});
+  const markIssue = useCallback((id: EmbedProviderId, reason: string) => {
+    setIssues((prev) => (prev[id] === reason ? prev : { ...prev, [id]: reason }));
+  }, []);
   const availableProviders = useMemo(() => {
     const list = getProvidersForContentType(
       resolvedContentType,
@@ -215,7 +225,9 @@ export function VideoPlayer({
       if (cancelled) return;
       let changed = false;
       for (const [id, ok] of results) {
-        if (!ok && !sessionBadProviders.has(id)) {
+        if (ok) continue;
+        markIssue(id, "Blocked by host for this domain or network");
+        if (!sessionBadProviders.has(id)) {
           sessionBadProviders.add(id);
           changed = true;
         }
@@ -226,8 +238,9 @@ export function VideoPlayer({
     return () => {
       cancelled = true;
     };
-  }, [availableProviders]);
+  }, [availableProviders, markIssue]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [status, setStatus] = useState<PlayerStatus>("loading");
   const [showMenu, setShowMenu] = useState(false);
@@ -261,6 +274,7 @@ export function VideoPlayer({
   if (prevIdentityKey !== identityKey) {
     setPrevIdentityKey(identityKey);
     setFrozenBad([...sessionBadProviders]);
+    setIssues({});
     setActiveIndex(0);
     setStatus("loading");
     setTriedProviders([]);
@@ -492,6 +506,7 @@ export function VideoPlayer({
     if (status !== "loading" || !embedUrl || !activeProvider) return;
 
     loadTimerRef.current = setTimeout(() => {
+      markIssue(activeProvider.id, "Did not respond in time");
       setTriedProviders((prev) =>
         prev.includes(activeProvider.id) ? prev : [...prev, activeProvider.id],
       );
@@ -516,6 +531,7 @@ export function VideoPlayer({
     activeProvider,
     availableProviders.length,
     onAllFailed,
+    markIssue,
   ]);
 
   useEffect(() => {
@@ -541,28 +557,32 @@ export function VideoPlayer({
   }, []);
 
   /** Advance to the next provider, or land on the no-source terminal state. */
-  const advanceToNextProvider = useCallback(() => {
-    clearTimers();
-    // Each new provider must re-prove itself with a fresh stream signal.
-    confirmedRef.current = false;
-    setConfirmedPlaying(false);
-    const current = availableProviders[activeIndex];
-    if (current) {
-      setTriedProviders((prev) =>
-        prev.includes(current.id) ? prev : [...prev, current.id],
-      );
-    }
-    setActiveIndex((prev) => {
-      const next = prev + 1;
-      if (next >= availableProviders.length) {
-        onAllFailed?.();
-        setStatus("all_failed");
-        return prev;
+  const advanceToNextProvider = useCallback(
+    (reason = "Unavailable") => {
+      clearTimers();
+      // Each new provider must re-prove itself with a fresh stream signal.
+      confirmedRef.current = false;
+      setConfirmedPlaying(false);
+      const current = availableProviders[activeIndex];
+      if (current) {
+        markIssue(current.id, reason);
+        setTriedProviders((prev) =>
+          prev.includes(current.id) ? prev : [...prev, current.id],
+        );
       }
-      setStatus("loading");
-      return next;
-    });
-  }, [activeIndex, availableProviders, onAllFailed, clearTimers]);
+      setActiveIndex((prev) => {
+        const next = prev + 1;
+        if (next >= availableProviders.length) {
+          onAllFailed?.();
+          setStatus("all_failed");
+          return prev;
+        }
+        setStatus("loading");
+        return next;
+      });
+    },
+    [activeIndex, availableProviders, onAllFailed, clearTimers, markIssue],
+  );
 
   // Listen for postMessages from provider iframes:
   //  - POSITIVE playback signals confirm a real stream (cancels auto-advance).
@@ -596,7 +616,7 @@ export function VideoPlayer({
       const msg = raw.toLowerCase();
       if (!msg) return;
 
-      // VidLink / VixSrc / AutoEmbed only emit these once the title resolved.
+      // VixSrc / AutoEmbed only emit these once the title resolved.
       if (
         msg === "player_event" ||
         msg === "media_data" ||
@@ -641,7 +661,7 @@ export function VideoPlayer({
         msg.includes("mediaerror") ||
         msg.includes("fatal")
       ) {
-        advanceToNextProvider();
+        advanceToNextProvider("Title not found on this server");
       }
     }
     window.addEventListener("message", handleMessage);
@@ -670,7 +690,7 @@ export function VideoPlayer({
   }, [activeProvider, onProviderLoad]);
 
   const handleIframeError = () => {
-    advanceToNextProvider();
+    advanceToNextProvider("Failed to load");
   };
 
   // Hosts that signal playback but stay silent after loading served a "content not found" page.
@@ -680,7 +700,7 @@ export function VideoPlayer({
     verifyTimerRef.current = setTimeout(() => {
       if (!confirmedRef.current && !userPickedRef.current) {
         recordSilentFailure(activeProvider.id);
-        advanceToNextProvider();
+        advanceToNextProvider("No stream — blocked or title unavailable");
       }
     }, SILENT_TIMEOUT_MS[activeProvider.id] ?? 15_000);
     return () => {
@@ -726,6 +746,18 @@ export function VideoPlayer({
   // autoPlay=true (camelCase) and junk params break Filipino / regional loads.
   const iframeSrc = embedUrl;
 
+  const enterFullscreen = () => {
+    const el = frameRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      return;
+    }
+    void el.requestFullscreen?.().catch(() => {
+      /* iOS Safari: fall back to the embed's own fullscreen control */
+    });
+  };
+
   return (
     <CinemaModeShell
       active={cinemaMode}
@@ -736,6 +768,7 @@ export function VideoPlayer({
       <div className="relative isolate" data-cineverse-player>
         {/* Player frame — overflow clips any embed chrome that tries to spill out */}
         <div
+          ref={frameRef}
           className={cn(
             "relative z-0 aspect-video w-full overflow-hidden rounded-3xl border border-white/10 bg-black shadow-[0_30px_100px_rgba(0,0,0,0.7),0_0_80px_rgba(34,211,238,0.08)] ring-1 ring-inset ring-white/5",
             cinemaMode && "cinema-player-frame border-white/15",
@@ -752,7 +785,7 @@ export function VideoPlayer({
                 ...
               </p>
               <p className="text-xs text-[var(--text-muted)]">
-                Provider {activeIndex + 1} of {availableProviders.length}
+                Server {activeIndex + 1} of {availableProviders.length}
                 {isAnime ? " · anime sources" : ""}
               </p>
             </div>
@@ -768,11 +801,20 @@ export function VideoPlayer({
                   No playable source found
                 </p>
                 <p className="mt-1 max-w-sm text-sm text-[var(--text-secondary)]">
-                  We tried every streaming provider and none had a working
-                  stream for this title right now. This can happen with newer or
-                  regional releases. Try again later, or pick a server below to
-                  retry manually.
+                  None of the servers could start this title right now. This
+                  can happen with newer or regional releases, or when a host is
+                  blocked on your network.
                 </p>
+                <ul className="mx-auto mt-3 max-w-sm space-y-1 text-left text-xs text-[var(--text-muted)]">
+                  {availableProviders.slice(0, 4).map((p) => (
+                    <li key={p.id} className="flex justify-between gap-3">
+                      <span className="font-medium text-white/80">{p.name}</span>
+                      <span className="truncate">
+                        {issues[p.id] ?? "Not tried"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 <Button onClick={retryAll}>
@@ -858,16 +900,22 @@ export function VideoPlayer({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => {
-                  recordSilentFailure(activeProvider.id);
-                  switchTo(activeIndex + 1);
-                }}
+                onClick={() => switchTo(activeIndex + 1)}
                 title="Blocked, black screen or not found? Try the next server"
               >
                 <RefreshCw className="h-4 w-4" />
                 Next server
               </Button>
             )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={enterFullscreen}
+              aria-label="Toggle fullscreen"
+            >
+              <Maximize2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Fullscreen</span>
+            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -922,6 +970,16 @@ export function VideoPlayer({
                           <span className="w-3.5" />
                         )}
                         {p.name}
+                        {i === 0 && !tried && (
+                          <span className="ml-auto text-[10px] text-[var(--text-muted)]">
+                            default
+                          </span>
+                        )}
+                        {issues[p.id] && !active && (
+                          <span className="ml-auto max-w-[8rem] truncate text-[10px] text-[var(--danger)]">
+                            {issues[p.id]}
+                          </span>
+                        )}
                         {p.animeOnly && (
                           <span className="ml-auto text-[10px] text-[var(--text-muted)]">
                             anime

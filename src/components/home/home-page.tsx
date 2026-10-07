@@ -3,9 +3,9 @@
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { fetchHome } from "@/lib/api/content";
+import { fetchHome, fetchRecommendations } from "@/lib/api/content";
 import { seedHomePayload } from "@/lib/api/home-fallback";
 import { ContentRow } from "@/components/content/content-row";
 import { ContinueWatchingRow } from "@/components/content/continue-watching-row";
@@ -18,11 +18,59 @@ import { getDeviceRegion } from "@/lib/user/region";
 import { landingSection } from "@/lib/motion";
 import { filterPublicCatalog } from "@/lib/content/mature";
 import { isRestrictedContentUser } from "@/lib/content/mature";
+import { listContinueWatching } from "@/lib/content/watch-progress";
+import { buildCatalogPool, pickGenreRows } from "@/lib/content/home-rows";
 
 const HeroOrbits = dynamic(
   () => import("./hero-orbits").then((m) => m.HeroOrbits),
   { ssr: false, loading: () => null },
 );
+
+/** One recommendations request, seeded by the title the viewer watched last. */
+function BecauseYouWatchedRow() {
+  const uid = useAuthStore((s) => s.user?.uid ?? null);
+  const [seed, setSeed] = useState<{ id: string; title: string } | null>(null);
+
+  useEffect(() => {
+    const read = () => {
+      const last = listContinueWatching(uid)[0];
+      setSeed((prev) =>
+        last
+          ? prev?.id === last.contentId
+            ? prev
+            : { id: last.contentId, title: last.title }
+          : null,
+      );
+    };
+    const t = window.setTimeout(read, 0);
+    window.addEventListener("cineverse:continue-watching", read);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("cineverse:continue-watching", read);
+    };
+  }, [uid]);
+
+  const { data } = useQuery({
+    queryKey: ["because-you-watched", seed?.id],
+    queryFn: () => fetchRecommendations(seed!.id),
+    enabled: Boolean(seed),
+    staleTime: 30 * 60_000,
+    retry: 0,
+  });
+
+  const items = useMemo(
+    () => (data?.items ?? []).map((r) => r.content),
+    [data],
+  );
+  if (!seed || items.length === 0) return null;
+  return (
+    <ContentRow
+      title={`Because you watched ${seed.title}`}
+      subtitle="More in the same vein"
+      items={items}
+    />
+  );
+}
 
 export function HomePage() {
   const effective = usePerformanceStore((s) => s.effective);
@@ -31,6 +79,16 @@ export function HomePage() {
 
   const mature = isRestrictedContentUser(user?.email);
   const region = getDeviceRegion("*");
+  const regionName = useMemo(() => {
+    if (!region || region === "*" || region.toUpperCase() === "AUTO") return null;
+    try {
+      return new Intl.DisplayNames(["en"], { type: "region" }).of(
+        region.toUpperCase(),
+      ) ?? null;
+    } catch {
+      return null;
+    }
+  }, [region]);
 
   // Instant seed so the homepage NEVER sits on a full-screen skeleton while
   // /api/v1/home hangs on Cloud Functions cold starts or provider outages.
@@ -39,12 +97,12 @@ export function HomePage() {
   const { data, isError, refetch, isFetching } = useQuery({
     queryKey: ["home", mature, region],
     queryFn: () => fetchHome(region, mature),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
     // Seed is already on screen — one soft retry is enough.
     retry: 1,
     retryDelay: 600,
-    refetchInterval: 5 * 60_000,
-    refetchOnWindowFocus: true,
+    refetchInterval: 10 * 60_000,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchIntervalInBackground: false,
     placeholderData: fallback,
@@ -52,6 +110,35 @@ export function HomePage() {
 
   // Always have something to render (live or seed).
   const home = data ?? fallback;
+
+  // Genre rows are derived from titles already loaded — zero extra requests.
+  const genreRows = useMemo(
+    () =>
+      pickGenreRows(
+        buildCatalogPool([
+          home.popularMovies,
+          home.popularSeries,
+          home.topRated,
+          home.trending,
+          home.englishMovies,
+          home.englishSeries,
+          home.allMovies,
+          home.allSeries,
+          home.newReleases,
+        ]),
+      ),
+    [home],
+  );
+  const recentlyAdded = useMemo(
+    () =>
+      buildCatalogPool([
+        home.latestMovies,
+        home.latestSeries,
+        home.latestAnime,
+        home.latestDramas,
+      ]),
+    [home],
+  );
 
   const carouselItems = useMemo(() => {
     // Server order already blends popular and genuinely new titles from every
@@ -119,11 +206,14 @@ export function HomePage() {
         <ContinueWatchingRow />
 
         <ContentRow
-          title="Trending today"
+          title="Top 10 today"
           subtitle="Movies · series · anime · dramas"
-          items={home.trending}
+          items={(home.trending ?? []).slice(0, 10)}
           showRank
+          eager
         />
+
+        <BecauseYouWatchedRow />
 
         <nav
           aria-label="Browse catalogs"
@@ -152,16 +242,25 @@ export function HomePage() {
             </Link>
           ))}
         </nav>
+        {(home.becauseYouWatched?.length ?? 0) > 0 && (
+          <ContentRow
+            title="Recommended for you"
+            subtitle="Picked from your taste"
+            items={(home.becauseYouWatched ?? []).map((r) => r.content)}
+            eager
+          />
+        )}
         <ContentRow
-          title="Latest movies"
-          subtitle="Newest released films in the catalog"
-          items={home.latestMovies ?? []}
+          title="Now playing"
+          subtitle="Fresh in theaters and on air"
+          items={home.newReleases ?? []}
           wide
+          eager
         />
         <ContentRow
-          title="Latest series"
-          subtitle="Recently premiered series"
-          items={home.latestSeries ?? []}
+          title="Recently added"
+          subtitle="Newest movies, series, anime and dramas"
+          items={recentlyAdded}
         />
         <ContentRow
           title="Latest anime"
@@ -177,14 +276,22 @@ export function HomePage() {
         {/* Popularity is separate from release date. */}
         <ContentRow
           title="Popular movies today"
-          subtitle="Trending & popular right now"
+          subtitle={
+            regionName ? `Popular in ${regionName}` : "Trending & popular right now"
+          }
           items={home.popularMovies}
           wide
         />
         <ContentRow
           title="Popular series today"
-          subtitle="Top TV this moment"
+          subtitle={regionName ? `Popular in ${regionName}` : "Top TV this moment"}
           items={home.popularSeries}
+        />
+        <ContentRow
+          title="Top rated"
+          subtitle="Highest scores across the catalog"
+          items={home.topRated}
+          wide
         />
         <ContentRow
           title="Popular anime today"
@@ -196,6 +303,15 @@ export function HomePage() {
           subtitle="K · J · C · Thai · Filipino"
           items={home.popularDramas ?? []}
         />
+
+        {genreRows.map((row) => (
+          <ContentRow
+            key={row.id}
+            title={row.title}
+            subtitle={row.subtitle}
+            items={row.items}
+          />
+        ))}
 
         <div className="cinematic-divider" />
         <ContentRow
@@ -266,15 +382,10 @@ export function HomePage() {
         </div>
 
         {/* ── More picks ── */}
-        <ContentRow
-          title="Top rated"
-          subtitle="Highest scores across the catalog"
-          items={home.topRated}
-        />
         {(home.comingSoon?.length ?? 0) > 0 && (
           <ContentRow
-            title="Coming soon"
-            subtitle="Upcoming titles"
+            title="Upcoming"
+            subtitle="Coming soon to the catalog"
             items={home.comingSoon ?? []}
           />
         )}

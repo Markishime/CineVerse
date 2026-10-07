@@ -1,7 +1,7 @@
 /**
  * Lightweight player shell helpers.
  *
- * IMPORTANT: Do NOT put `sandbox` on embed iframes. Free hosts (VidLink, VidSrc,
+ * IMPORTANT: Do NOT put `sandbox` on embed iframes. Free hosts (VixSrc, VidSrc,
  * AutoEmbed, Cinezo, DramaPlay, …) need full iframe capabilities; sandbox breaks
  * video init, DRM-less players, and postMessage bridges.
  *

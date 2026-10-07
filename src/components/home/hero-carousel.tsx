@@ -14,10 +14,10 @@ import {
   useMotionValue,
 } from "framer-motion";
 import {
-  Bookmark,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Info,
   Play,
   Sparkles,
   Volume2,
@@ -26,16 +26,16 @@ import {
 import type { Content } from "@/types/content";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AddToListButton } from "@/components/content/add-to-list-button";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
-import { formatScore, cn } from "@/lib/utils";
-import {
-  getDetailsHref,
-  getTrailerHref,
-  getWatchHref,
-  hasOfficialTrailer,
-} from "@/lib/content/watch-href";
+import { formatRuntime, formatScore, cn } from "@/lib/utils";
+import { getDetailsHref, getWatchHref } from "@/lib/content/watch-href";
 import { heroCopyContainer, heroCopyItem } from "@/lib/motion";
-import { cinematicBackdropUrl, normalizeImageUrl } from "@/lib/content/posters";
+import {
+  cinematicBackdropUrl,
+  normalizeImageUrl,
+  resizeTmdbImage,
+} from "@/lib/content/posters";
 import { pickHeroTrailer } from "@/lib/content/trailers";
 import {
   ensureKnownTrailers,
@@ -332,6 +332,17 @@ function HeroTrailerBg({
   );
 }
 
+function runtimeOrSeasons(
+  runtime?: number | null,
+  seasonCount?: number | null,
+): string | null {
+  if (runtime && runtime > 0) return formatRuntime(runtime);
+  if (seasonCount && seasonCount > 0) {
+    return `${seasonCount} season${seasonCount === 1 ? "" : "s"}`;
+  }
+  return null;
+}
+
 function HeroCopy({
   item,
   eyebrow,
@@ -352,9 +363,9 @@ function HeroCopy({
       ? item.trailer.key.trim()
       : null;
   const watchHref = getWatchHref(item);
-  const trailerHref = getTrailerHref(item);
   const detailsHref = getDetailsHref(item);
-  const showTrailer = hasOfficialTrailer(item) || Boolean(trailerKey);
+  const genreNames = (item.genres ?? []).slice(0, 3).map((g) => g.name);
+  const runtimeLabel = runtimeOrSeasons(item.runtime, item.seasonCount);
 
   const Wrap = animated ? motion.div : "div";
   const Item = animated ? motion.div : "div";
@@ -384,7 +395,7 @@ function HeroCopy({
         {eyebrow || "Popular & trending today"}
       </P>
 
-      <Item className="mb-3 flex flex-wrap gap-2" {...itemProps}>
+      <Item className="mb-3 flex flex-wrap items-center gap-2" {...itemProps}>
         <Badge
           tone={
             item.contentType === "movie"
@@ -398,8 +409,9 @@ function HeroCopy({
         >
           {item.contentType}
         </Badge>
-        {item.year && <Badge tone="muted">{item.year}</Badge>}
         {score != null && <Badge tone="gold">★ {formatScore(score)}</Badge>}
+        {item.year && <Badge tone="muted">{item.year}</Badge>}
+        {runtimeLabel && <Badge tone="muted">{runtimeLabel}</Badge>}
         {trailerKey && (
           <Badge tone="primary">
             {soundOn && isActive ? "Trailer · audio" : "Trailer"}
@@ -414,9 +426,18 @@ function HeroCopy({
         {title}
       </Title>
 
+      {genreNames.length > 0 && (
+        <P
+          className="mt-3 text-sm font-medium text-white/80"
+          {...itemProps}
+        >
+          {genreNames.join(" · ")}
+        </P>
+      )}
+
       {item.overview && (
         <P
-          className="mt-4 line-clamp-3 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base"
+          className="mt-3 line-clamp-3 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base"
           {...itemProps}
         >
           {item.overview}
@@ -430,32 +451,25 @@ function HeroCopy({
             variant="gold"
             className="watch-now-cta !text-black shadow-lg shadow-[var(--gold)]/25 transition-transform duration-300 hover:scale-[1.03] active:scale-[0.98]"
           >
-            <Play className="h-4 w-4 !text-black" />
-            Watch Now
+            <Play className="h-4 w-4 fill-current !text-black" />
+            Play
           </Button>
         </Link>
-        {showTrailer && (
-          <Link href={trailerHref}>
-            <Button
-              size="lg"
-              variant="secondary"
-              className="transition-transform duration-300 hover:scale-[1.03] active:scale-[0.98]"
-            >
-              <Play className="h-4 w-4" />
-              Watch Trailer
-            </Button>
-          </Link>
-        )}
         <Link href={detailsHref}>
           <Button
             size="lg"
             variant="secondary"
             className="transition-transform duration-300 hover:scale-[1.03] active:scale-[0.98]"
           >
-            <Bookmark className="h-4 w-4" />
-            Details
+            <Info className="h-4 w-4" />
+            More Info
           </Button>
         </Link>
+        <AddToListButton
+          content={item}
+          variant="icon"
+          className="!h-12 !w-12"
+        />
       </Item>
     </Wrap>
   );
@@ -479,13 +493,25 @@ export function HeroCarousel({
     Record<string, string[]>
   >({});
 
+  const [index, setIndex] = useState(0);
+  const requestedRef = useRef(new Set<string>());
+  const mountedRef = useRef(true);
   useEffect(() => {
-    // Hydrate every featured slide (missing keys + alternates for recovery)
-    const targets = items.filter((c) => c?.id).slice(0, 12);
-    if (!targets.length) return;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-    let cancelled = false;
-    const ctrl = new AbortController();
+  useEffect(() => {
+    // Trailers only matter in cinematic mode, and only for the visible slide
+    // plus the next one — never fan out one request per featured title.
+    if (effective !== "cinematic" || reduceMotion || !items.length) return;
+    const targets = [items[index], items[(index + 1) % items.length]].filter(
+      (c): c is Content => Boolean(c?.id) && !requestedRef.current.has(c.id),
+    );
+    if (!targets.length) return;
+    for (const c of targets) requestedRef.current.add(c.id);
 
     void (async () => {
       const trailerUpdates: Record<string, Content["trailer"]> = {};
@@ -496,7 +522,6 @@ export function HeroCarousel({
           try {
             const res = await fetch(
               `/api/v1/content/${encodeURIComponent(c.id)}/trailers`,
-              { signal: ctrl.signal, cache: "no-store" },
             );
             if (!res.ok) return;
             const data = (await res.json()) as {
@@ -535,7 +560,7 @@ export function HeroCarousel({
         }),
       );
 
-      if (cancelled) return;
+      if (!mountedRef.current) return;
       if (Object.keys(trailerUpdates).length) {
         setHydratedTrailers((prev) => ({ ...prev, ...trailerUpdates }));
       }
@@ -543,12 +568,7 @@ export function HeroCarousel({
         setAlternateKeysById((prev) => ({ ...prev, ...altUpdates }));
       }
     })();
-
-    return () => {
-      cancelled = true;
-      ctrl.abort();
-    };
-  }, [items]);
+  }, [items, index, effective, reduceMotion]);
 
   // Preserve server order. Always pin curated keys client-side so a bad
   // TMDB/seed id never blocks JJK / Last of Us / Stranger Things / etc.
@@ -649,7 +669,6 @@ export function HeroCarousel({
     },
     [autoplayPlugin],
   );
-  const [index, setIndex] = useState(0);
   const indexRef = useRef(0);
 
   const onSelect = useCallback(() => {
@@ -786,8 +805,20 @@ export function HeroCarousel({
 
   if (!slides.length) {
     return (
-      <section className="relative flex min-h-[100dvh] items-center justify-center bg-[var(--background)] pt-20">
-        <p className="text-[var(--text-secondary)]">Loading featured titles…</p>
+      <section
+        className="relative flex min-h-[70dvh] items-end bg-[var(--background)] px-4 pb-24 pt-28 sm:px-6"
+        aria-busy="true"
+        aria-label="Loading featured titles"
+      >
+        <div className="mx-auto w-full max-w-7xl space-y-4">
+          <div className="h-6 w-32 skeleton rounded-full" />
+          <div className="h-12 w-3/4 max-w-xl skeleton rounded-lg" />
+          <div className="h-16 w-full max-w-xl skeleton rounded-lg" />
+          <div className="flex gap-3">
+            <div className="h-12 w-32 skeleton rounded-xl" />
+            <div className="h-12 w-36 skeleton rounded-xl" />
+          </div>
+        </div>
       </section>
     );
   }
@@ -815,10 +846,16 @@ export function HeroCarousel({
               ...knownKeys.slice(trailerKey === knownKeys[0] ? 1 : 0),
               ...(alternateKeysById[item.id] ?? []),
             ].filter((k) => k !== trailerKey && isPlayableTrailerKey(k));
-            const poster =
-              normalizeImageUrl(item.backdrop?.url) ||
-              normalizeImageUrl(item.poster?.url) ||
-              cinematicBackdropUrl(item.id, title);
+            const backdropUrl = normalizeImageUrl(item.backdrop?.url);
+            const posterUrl = normalizeImageUrl(item.poster?.url);
+            const poster = backdropUrl
+              ? resizeTmdbImage(backdropUrl, "w1280")
+              : posterUrl
+                ? resizeTmdbImage(posterUrl, "w780")
+                : cinematicBackdropUrl(item.id, title);
+            const posterThumb = posterUrl
+              ? resizeTmdbImage(posterUrl, "w500")
+              : null;
 
             return (
               <div
@@ -840,7 +877,7 @@ export function HeroCarousel({
                 <div className="absolute inset-0 z-[3] bg-gradient-to-t from-[var(--background)] via-[var(--background)]/65 to-black/30" />
                 <div className="absolute inset-y-0 left-0 z-[3] w-full bg-gradient-to-r from-[var(--background)] via-[var(--background)]/80 to-transparent md:w-[70%]" />
 
-                <div className="relative z-10 mx-auto flex h-full max-w-7xl items-end px-4 pb-32 pt-28 sm:items-center sm:px-6 sm:pb-28">
+                <div className="relative z-10 mx-auto flex h-full max-w-7xl items-end justify-between gap-10 px-4 pb-32 pt-28 sm:items-center sm:px-6 sm:pb-28">
                   {isActive ? (
                     reduceMotion ? (
                       <HeroCopy
@@ -870,6 +907,21 @@ export function HeroCarousel({
                         soundOn={false}
                         isActive={false}
                         animated={false}
+                      />
+                    </div>
+                  )}
+                  {isActive && posterThumb && (
+                    <div
+                      className="relative hidden aspect-[2/3] w-52 shrink-0 overflow-hidden rounded-xl shadow-2xl ring-1 ring-white/20 lg:block xl:w-64"
+                      aria-hidden
+                    >
+                      <Image
+                        src={posterThumb}
+                        alt=""
+                        fill
+                        sizes="256px"
+                        className="object-cover"
+                        unoptimized
                       />
                     </div>
                   )}

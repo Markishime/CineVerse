@@ -127,6 +127,17 @@ export function isValidImageUrl(url?: string | null): boolean {
   return Boolean(normalizeImageUrl(url));
 }
 
+/** Request a smaller/larger TMDB width bucket; leaves non-TMDB URLs untouched. */
+export function resizeTmdbImage(
+  url: string,
+  size: "w185" | "w342" | "w500" | "w780" | "w1280",
+): string {
+  return url.replace(
+    /(image\.tmdb\.org\/t\/p\/)(?:w\d+|h\d+|original)\//,
+    `$1${size}/`,
+  );
+}
+
 /** True for real remote art (not local SVG / data-URI placeholders). */
 function isRemoteArtUrl(url?: string | null): boolean {
   if (!url) return false;

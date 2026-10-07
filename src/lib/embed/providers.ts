@@ -13,7 +13,6 @@ export type EmbedProviderId =
   // General — movies / series
   | "vidfast"
   | "onetwoonemovies"
-  | "vidlink"
   | "autoembed"
   | "vidsrc"
   | "vidcore"
@@ -147,7 +146,7 @@ function embedLangParam(language?: string): string | undefined {
  * General TMDB providers — researched endpoint formats (2025–2026).
  *
  * Priority (most reliable first):
- * VidFast (vidfast.vc) → AutoEmbed (autoembed.co) → VidSrc → VixSrc → 2Embed → …
+ * VixSrc → MoviesAPI → AutoEmbed (see GENERAL_PLAY_ORDER), then the remaining hosts.
  *
  * Filipino movies: use TMDB numeric id + no Tagalog lang flag (see embedLangParam).
  */
@@ -201,6 +200,12 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     supportsTv: true,
     signalsPlayback: true,
     probeUrl: "https://vixsrc.to/favicon.ico",
+    // vixsrc.to's Cloudflare WAF rejects iframe loads that have no Referer or a
+    // free-host one (*.vercel.app, *.web.app, *.netlify.app, *.github.io,
+    // *.onrender.com) — hence "works on localhost, blocked once deployed".
+    // Custom domains are accepted, so serve the app from one. Never strip the
+    // referrer for this host; the probe above detects the block and the player
+    // falls back to the next server.
     // https://vixsrc.to — clean TMDB embeds, good regional coverage
     movieUrl: (tmdbId) => `https://vixsrc.to/movie/${tmdbId}`,
     tvUrl: (tmdbId, season, episode) =>
@@ -229,20 +234,6 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId) => `https://www.2embed.online/embed/movie/${tmdbId}`,
     tvUrl: (tmdbId, season, episode) =>
       `https://www.2embed.online/embed/tv/${tmdbId}/${season}/${episode}`,
-  },
-  {
-    id: "vidlink",
-    name: "VidLink",
-    supportsTv: true,
-    signalsPlayback: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://vidlink.pro/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay === false ? "false" : "true",
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay === false ? "false" : "true",
-      }),
   },
   {
     id: "2embedskin",
@@ -583,7 +574,6 @@ export const EMBED_PROVIDERS: EmbedProvider[] = [
  * - onetwoonemovies / vidphantom / smashystream: DNS dead or unreachable
  * - vidsrc: vidsrc.to now redirects to VidFast (duplicate)
  * - vidcore: redirects to a cookies-disabled error page
- * - autoembed: Cloudflare challenge page, never reaches a player
  */
 const DEAD_GENERAL_PROVIDER_IDS = new Set<EmbedProviderId>([
   "onetwoonemovies",
@@ -591,17 +581,17 @@ const DEAD_GENERAL_PROVIDER_IDS = new Set<EmbedProviderId>([
   "smashystream",
   "vidsrc",
   "vidcore",
-  "autoembed",
 ]);
 
 /**
- * Verified-working order. VidFast can hang forever on "Fetching" (host 503) and
+ * Product-mandated order: VixSrc → MoviesAPI → AutoEmbed. Remaining hosts are
+ * last-resort fallbacks. VidFast can hang forever on "Fetching" (host 503) and
  * the iframe gives no failure signal, so it must not lead.
  */
-const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
+export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
   "vixsrc",
-  "vidlink",
   "moviesapi",
+  "autoembed",
   "2embed",
   "vidfast",
   "2embedskin",
@@ -703,8 +693,9 @@ export function providerCanPlay(
 /**
  * Content-type aware provider chain (user product rules):
  *
- * VidFast is always first when a TMDB id is available. Content-specific hosts
- * remain available as fallbacks for anime and regional dramas.
+ * VixSrc is always first, then MoviesAPI, then AutoEmbed, when a TMDB id is
+ * available. Content-specific hosts remain available as fallbacks for anime
+ * and regional dramas.
  */
 export function getProvidersForContentType(
   contentType: string,
@@ -771,8 +762,7 @@ export function getProvidersForContentType(
     }
   } else if (isFilipinoContent(ids)) {
     // Filipino cinema: no PH-specialist embed host exists, so lead with the
-    // broadest currently-live TMDB aggregators (best odds a PH title resolves
-    // somewhere) — VidFast/VidSrc/VidCore — then VixSrc/AutoEmbed, then drama
+    // standard VixSrc → MoviesAPI → AutoEmbed order, then drama
     // hosts as best-effort. (kissasian.cam's KissKH backend can't be driven by
     // a TMDB id, so it can't lead here — see the kisskh provider.)
     chain = [

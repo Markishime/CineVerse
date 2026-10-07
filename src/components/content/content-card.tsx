@@ -2,23 +2,22 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import { Play, Star } from "lucide-react";
+import { memo, useState } from "react";
+import { Info, Play, Star } from "lucide-react";
 import type { Content } from "@/types/content";
 import { cn, formatScore } from "@/lib/utils";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import { Badge } from "@/components/ui/badge";
 import {
   getDetailsHref,
-  getTrailerHref,
   getWatchHref,
-  hasOfficialTrailer,
 } from "@/lib/content/watch-href";
 import { AddToListButton } from "@/components/content/add-to-list-button";
-import { cardHover } from "@/lib/motion";
+import { useContinueProgress } from "@/hooks/use-continue-progress";
+import { useAuthStore } from "@/stores/auth-store";
 import {
   posterFallbackLabel,
+  resizeTmdbImage,
   resolveCardImageUrl,
 } from "@/lib/content/posters";
 
@@ -45,147 +44,176 @@ const typeLabel: Record<Content["contentType"], string> = {
   thaidrama: "Thai Drama",
 };
 
-export function ContentCard({
+function ContentCardBase({
   content,
   className,
   wide = false,
   animeTitlePreference = "english",
   rank,
+  priority = false,
 }: {
   content: Content;
   className?: string;
   wide?: boolean;
   animeTitlePreference?: "english" | "romaji" | "native";
   rank?: number;
+  /** Eager-load the image (first visible cards only) */
+  priority?: boolean;
 }) {
   const title = displayTitle(content, animeTitlePreference);
   const score = primaryScore(content);
-  const canWatch = Boolean(
-    content.playable ||
-      content.providerIds?.tmdb ||
-      content.providerIds?.anilist ||
-      content.providerIds?.mal,
-  );
-  const trailer = hasOfficialTrailer(content);
   const watchHref = getWatchHref(content);
-  const trailerHref = getTrailerHref(content);
   const detailsHref = getDetailsHref(content);
+  const progress = useContinueProgress(content.id);
+  const user = useAuthStore((s) => s.user);
   const [imgFailed, setImgFailed] = useState(false);
-  const reduce = useReducedMotion();
   // Always resolve a displayable URL (real art or local SVG — never blank)
   const preferred = resolveCardImageUrl(content, { preferBackdrop: wide });
   const src = imgFailed
     ? posterFallbackLabel(title, content.contentType)
-    : preferred;
+    : resizeTmdbImage(preferred, wide ? "w780" : "w342");
+  const meta = [
+    content.year,
+    content.runtime ? `${content.runtime}m` : null,
+    content.seasonCount && content.contentType !== "movie"
+      ? `${content.seasonCount} season${content.seasonCount === 1 ? "" : "s"}`
+      : null,
+  ].filter(Boolean);
+  // Grid callers pass w-full; carousel rows use fixed widths.
+  const fluid = Boolean(className?.includes("w-full"));
 
   return (
-    <motion.article
-      initial="rest"
-      whileHover={reduce ? undefined : "hover"}
-      animate="rest"
-      variants={reduce ? undefined : cardHover}
+    <article
       className={cn(
-        // GPU-only hover (transform): keeps homepage rows at 60fps.
-        "group relative flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)]",
-        "hover:border-white/18 hover:shadow-[0_14px_40px_-18px_rgba(0,0,0,0.8)]",
-        "focus-within:border-[var(--primary)]/40 focus-within:ring-2 focus-within:ring-[var(--ring)]",
-        wide ? "min-w-[220px] sm:min-w-[280px]" : "min-w-[140px] w-[140px] sm:w-[160px]",
-        canWatch && "ring-1 ring-[var(--gold)]/40",
+        "group relative flex-none",
+        !fluid &&
+          (wide
+            ? "w-[220px] min-w-[220px] sm:w-[280px] sm:min-w-[280px]"
+            : "w-[140px] min-w-[140px] sm:w-[160px] sm:min-w-[160px]"),
         className,
       )}
     >
-      <Link
-        prefetch={false}
-        href={watchHref}
+      <div
         className={cn(
-          "relative w-full overflow-hidden bg-[var(--background-secondary)] focus-visible:outline-none",
-          wide ? "aspect-[16/9]" : "aspect-[2/3]",
+          "relative overflow-hidden rounded-lg bg-[var(--surface)] ring-1 ring-white/10",
+          "transition-[transform,box-shadow] duration-300 ease-out",
+          // hover: only applies on hover-capable devices (Tailwind v4)
+          "group-hover:z-10 group-hover:scale-[1.06] group-hover:shadow-[0_18px_44px_-14px_rgba(0,0,0,0.9)] group-hover:ring-white/30",
+          "group-focus-within:ring-2 group-focus-within:ring-[var(--ring)]",
+          wide ? "aspect-video" : "aspect-[2/3]",
         )}
-        aria-label={`Watch Now: ${title}`}
       >
-        {src ? (
-          <Image
-            src={src}
-            alt={title}
-            fill
-            sizes={wide ? "(max-width:768px) 80vw, 280px" : "160px"}
-            className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
-            unoptimized
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-[var(--surface-elevated)] p-2 text-center text-xs font-semibold text-white">
-            {title}
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-black/20" />
+        <Link
+          prefetch={false}
+          href={watchHref}
+          className="absolute inset-0 block focus-visible:outline-none"
+          aria-label={`Play ${title}`}
+        >
+          {src ? (
+            <Image
+              src={src}
+              alt={title}
+              fill
+              sizes={wide ? "(max-width:768px) 220px, 280px" : "160px"}
+              className="object-cover"
+              loading={priority ? "eager" : "lazy"}
+              unoptimized
+              onError={() => setImgFailed(true)}
+            />
+          ) : (
+            <span className="absolute inset-0 flex items-center justify-center bg-[var(--surface-elevated)] p-2 text-center text-xs font-semibold text-white">
+              {title}
+            </span>
+          )}
+        </Link>
 
-        {/* Play affordance: pure CSS opacity fade on hover / keyboard focus. */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--gold)] text-black shadow-xl">
-            <Play className="h-4 w-4 fill-current" aria-hidden />
-          </span>
-        </div>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
 
-        {rank != null && (
-          <span className="absolute left-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-[var(--gold)] px-1.5 text-xs font-bold text-black shadow">
+        {rank != null ? (
+          <span className="pointer-events-none absolute left-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-md bg-[var(--gold)] px-1.5 text-xs font-bold text-black shadow">
             {rank}
           </span>
+        ) : (
+          <Badge
+            tone={typeTone[content.contentType]}
+            className="pointer-events-none absolute left-2 top-2 !px-1.5 !py-0.5 !text-[10px]"
+          >
+            {typeLabel[content.contentType]}
+          </Badge>
         )}
 
         {content.mature && (
-          <span className="absolute right-2 top-2 rounded-md bg-[var(--danger)] px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
+          <span className="pointer-events-none absolute right-2 top-2 rounded-md bg-[var(--danger)] px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
             18+
           </span>
         )}
 
-        <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between gap-1">
-          <Badge tone={typeTone[content.contentType]}>
-            {typeLabel[content.contentType]}
-          </Badge>
+        {/* Quick actions: hover/focus on desktop, always visible on touch */}
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-1.5 p-2 transition-opacity duration-200",
+            "opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+            progress != null && "pb-3",
+          )}
+        >
+          <Link
+            prefetch={false}
+            href={user ? watchHref : "/login"}
+            aria-label={user ? `Play ${title}` : `Sign in to watch ${title}`}
+            className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105 hover:bg-white/90 active:scale-95"
+          >
+            <Play className="h-4 w-4 fill-current" aria-hidden />
+          </Link>
+          <AddToListButton
+            content={content}
+            variant="icon"
+            className="pointer-events-auto"
+          />
+          <Link
+            href={detailsHref}
+            aria-label={`More info about ${title}`}
+            className="pointer-events-auto ml-auto inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/40 bg-black/60 text-white backdrop-blur-sm transition hover:border-white hover:bg-black/80 active:scale-95"
+          >
+            <Info className="h-4 w-4" aria-hidden />
+          </Link>
+        </div>
+
+        {progress != null && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-white/25"
+            role="progressbar"
+            aria-label="Watch progress"
+            aria-valuenow={Math.round(progress)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full bg-[var(--primary)]"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        )}
+      </div>
+
+      <Link
+        href={detailsHref}
+        className="mt-2 block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      >
+        <h3 className="line-clamp-1 font-display text-sm font-semibold leading-snug text-white transition-colors group-hover:text-[var(--primary-light)]">
+          {title}
+        </h3>
+        <p className="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
           {score != null && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-black/80 px-1.5 py-0.5 text-[11px] font-semibold text-[var(--gold)]">
+            <span className="inline-flex items-center gap-0.5 font-semibold text-[var(--gold)]">
               <Star className="h-3 w-3 fill-current" aria-hidden />
               {formatScore(score)}
             </span>
           )}
-        </div>
+          <span className="truncate">{meta.join(" · ")}</span>
+        </p>
       </Link>
-
-      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
-        <Link
-          href={detailsHref}
-          className="min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-        >
-          <h3 className="line-clamp-2 font-display text-sm font-semibold leading-snug text-white transition-colors hover:text-[var(--primary-light)]">
-            {title}
-          </h3>
-          <p className="text-xs text-[var(--text-muted)]">
-            {[content.year, content.runtime ? `${content.runtime}m` : null]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        </Link>
-        <div className="mt-auto flex flex-col gap-1.5">
-          <Link
-            href={watchHref}
-            className="watch-now-cta inline-flex min-h-9 items-center justify-center gap-1 rounded-lg bg-[var(--gold)] px-2 py-1.5 text-[11px] font-bold !text-black transition duration-150 hover:brightness-110 active:scale-[0.98]"
-          >
-            <Play className="h-3 w-3 fill-current !text-black" aria-hidden />
-            Watch Now
-          </Link>
-          <AddToListButton content={content} className="w-full" />
-          {trailer && (
-            <Link
-              href={trailerHref}
-              className="inline-flex min-h-8 items-center justify-center gap-1 rounded-lg border border-white/10 bg-transparent px-2 py-1.5 text-[11px] font-semibold text-white transition duration-150 hover:bg-white/8"
-            >
-              <Play className="h-3 w-3" aria-hidden />
-              Trailer
-            </Link>
-          )}
-        </div>
-      </div>
-    </motion.article>
+    </article>
   );
 }
+
+export const ContentCard = memo(ContentCardBase);

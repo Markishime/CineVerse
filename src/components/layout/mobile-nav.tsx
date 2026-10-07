@@ -31,7 +31,9 @@ export function MobileNav() {
             item.href === "/profile"
               ? user && profile?.username
                 ? `/profile/${profile.username}`
-                : "/settings"
+                : user
+                  ? "/settings"
+                  : "/login"
               : item.href;
           const active =
             item.href === "/"
