@@ -2163,6 +2163,23 @@ export class CatalogService {
       const live = await fetchTmdbSeasons(tmdbId, c.id).catch(
         () => [] as Season[],
       );
+      if (c.contentType === "anime") {
+        const episodeCount = live
+          .filter((s) => s.seasonNumber > 0)
+          .reduce((total, s) => total + (s.episodeCount ?? 0), 0);
+        if (episodeCount > 0) {
+          return [{
+            id: `${c.id}_s1`,
+            contentId: c.id,
+            seasonNumber: 1,
+            name: "Season 1",
+            overview: "",
+            poster: c.poster ?? null,
+            airDate: c.releaseDate ?? null,
+            episodeCount,
+          }];
+        }
+      }
       // Keep every regular season + specials with episodes (full, updated list)
       const usable = live
         .filter((s) => s.seasonNumber >= 0)
@@ -2284,6 +2301,35 @@ export class CatalogService {
     // 2) TMDB season episodes — series, anime fallback, kdrama
     const tmdbId = c.providerIds.tmdb;
     if (tmdbId) {
+      if (c.contentType === "anime" && seasonNumber === 1) {
+        const seasons = await fetchTmdbSeasons(tmdbId, c.id).catch(
+          () => [] as Season[],
+        );
+        const ordered = seasons
+          .filter((s) => s.seasonNumber > 0)
+          .sort((a, b) => a.seasonNumber - b.seasonNumber);
+        const flattened: Episode[] = [];
+        for (const season of ordered) {
+          const seasonEpisodes = await fetchTmdbSeasonEpisodes(
+            tmdbId,
+            season.seasonNumber,
+            c.id,
+          ).catch(() => [] as Episode[]);
+          const offset = flattened.length;
+          flattened.push(
+            ...seasonEpisodes.map((episode, index) => ({
+              ...episode,
+              id: `${c.id}_s1_e${offset + index + 1}`,
+              seasonId: `${c.id}_s1`,
+              seasonNumber: 1,
+              episodeNumber: offset + index + 1,
+            })),
+          );
+        }
+        if (flattened.length) {
+          return flattened.map((e) => ({ ...e, playable: false }));
+        }
+      }
       const live = await fetchTmdbSeasonEpisodes(
         tmdbId,
         seasonNumber,
