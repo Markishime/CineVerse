@@ -41,7 +41,6 @@ import {
   fetchWorldSeriesPage,
   fetchWorldDramaPage,
   fetchWorldAnimePage,
-  fetchWorldHentaiPage,
   hasTmdbAccess,
   LEGAL_FULL_PLAYBACK,
 } from "@/lib/providers/live-catalog";
@@ -62,7 +61,6 @@ import {
   applyMatureFlag,
   filterAdultLibrary,
   filterByMatureFlag,
-  filterHentaiLibrary,
   filterPublicCatalog,
   isAccurateAdultAnime,
   isHentaiContent,
@@ -1096,6 +1094,12 @@ export class CatalogService {
     const regionCode = (region || "*").toUpperCase();
     const { isTitlePlayable } = await import("@/lib/playback/playback-store");
     const size = Math.min(Math.max(pageSize, 1), 100);
+    const matureGenre = genre?.trim().toLowerCase() === "mature";
+
+    if (matureGenre) {
+      if (!includeMature) return paginate([], page, size);
+      return this.matureLibrary(page, size, type);
+    }
 
     // Watch Now / free-only still uses the local playable catalog (not the full world index)
     if (!playableOnly) {
@@ -1859,36 +1863,6 @@ export class CatalogService {
   ): Promise<Paginated<Content>> {
     const size = Math.min(pageSize, 100);
 
-    // Hentai tab: live paginated adult anime (not limited to warm-cache size)
-    if (type === "anime") {
-      try {
-        const world = await fetchWorldHentaiPage(page, size, "popularity");
-        const items = world.items
-          .map((c) => applyMatureFlag(c))
-          .filter((c) => isHentaiContent(c))
-          .filter(isAtLeastMinYear)
-          .map((c) =>
-            sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))),
-          );
-        if (items.length > 0) {
-          return {
-            items,
-            page: world.page,
-            totalPages: Math.max(world.totalPages, 1),
-            total: world.total || items.length,
-          };
-        }
-      } catch {
-        // fall through to warm mature catalog
-      }
-      const all = (await this.loadLive(true)).map((c) => applyMatureFlag(c));
-      const items = sortContent(
-        filterHentaiLibrary(all).filter(isAtLeastMinYear),
-        "popularity",
-      );
-      return paginate(items, page, size);
-    }
-
     const all = (await this.loadLive(true)).map((c) => applyMatureFlag(c));
     let items = filterAdultLibrary(all).filter(isAtLeastMinYear);
     if (type && type !== "all") {
@@ -2000,7 +1974,13 @@ export class CatalogService {
 
   async discover(
     params: Record<string, string | number | undefined>,
+    allowMature = false,
   ): Promise<Paginated<Content>> {
+    if (String(params.genre ?? "").trim().toLowerCase() === "mature") {
+      if (!allowMature) return paginate([], 1, 60);
+      const type = params.type ? (String(params.type) as ContentType) : "all";
+      return this.matureLibrary(params.page ? Number(params.page) : 1, 60, type);
+    }
     const includeMature = false;
     const mood = params.mood ? String(params.mood) : "";
     // Map mood → genre keywords when no explicit genre is set

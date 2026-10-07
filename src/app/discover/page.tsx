@@ -12,7 +12,6 @@ import { Chip } from "@/components/ui/chip";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
-import { useDeviceMature } from "@/hooks/use-device-mature";
 import { isRestrictedContentUser } from "@/lib/content/mature";
 import { getDeviceRegion } from "@/lib/user/region";
 import { cn } from "@/lib/utils";
@@ -61,9 +60,7 @@ function DiscoverInner() {
   const year = sp.get("year") ?? "";
   const mood = sp.get("mood") ?? "";
   const page = Math.max(1, Number(sp.get("page") ?? "1") || 1);
-  const settings = useAuthStore((s) => s.settings);
   const user = useAuthStore((s) => s.user);
-  const deviceMature = useDeviceMature(user?.uid);
   const [searchDraft, setSearchDraft] = useState(q);
   const [genreDraft, setGenreDraft] = useState(genre);
   const [yearDraft, setYearDraft] = useState(year);
@@ -78,8 +75,7 @@ function DiscoverInner() {
   }
 
   const mature =
-    isRestrictedContentUser(user?.email) &&
-    (Boolean(settings?.matureContent) || deviceMature);
+    isRestrictedContentUser(user?.email);
 
   const update = useCallback(
     (patch: Record<string, string | undefined>) => {
@@ -105,9 +101,12 @@ function DiscoverInner() {
   const moods = homeQuery.data?.moods?.length
     ? homeQuery.data.moods
     : FALLBACK_MOODS;
-  const genres = homeQuery.data?.genres?.length
+  const baseGenres = homeQuery.data?.genres?.length
     ? homeQuery.data.genres
     : FALLBACK_GENRES;
+  const genres = mature
+    ? [...baseGenres, { id: "mature", name: "Mature" }]
+    : baseGenres;
 
   const { data, isLoading, isFetching, isError, dataUpdatedAt, refetch } =
     useQuery({

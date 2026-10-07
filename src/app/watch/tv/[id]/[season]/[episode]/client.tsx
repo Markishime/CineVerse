@@ -214,6 +214,7 @@ export function WatchTvClient({
           contentType={
             isAnime ? "anime" : dramaContentType ?? "series"
           }
+          animeFormat={isAnime ? "TV" : undefined}
           year={
             tvShow.first_air_date
               ? Number(tvShow.first_air_date.slice(0, 4))

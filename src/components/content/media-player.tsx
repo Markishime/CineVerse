@@ -263,7 +263,7 @@ function MediaPlayerInner({
                     ? "Ready to play in CineVerse"
                     : availability === "trailer_only"
                       ? "Official trailer ready"
-                      : "Trailer and free legal links available below"}
+                      : "Playback is not available yet"}
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2">

@@ -347,7 +347,9 @@ export function VideoPlayer({
     countries,
   });
 
-  const preferDub = preferDubForLanguage(effectiveLanguage);
+  // Anime streams default to subtitle tracks so every native backend receives
+  // the same sub preference; non-anime content keeps its language preference.
+  const preferDub = isAnime ? false : preferDubForLanguage(effectiveLanguage);
 
   const animeIds: AnimeStreamIds = {
     title,

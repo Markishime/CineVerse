@@ -13,7 +13,6 @@ import { Chip } from "@/components/ui/chip";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { useAuthStore } from "@/stores/auth-store";
-import { useDeviceMature } from "@/hooks/use-device-mature";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { isRestrictedContentUser } from "@/lib/content/mature";
 import { displayTitle } from "@/lib/content/normalize";
@@ -48,17 +47,14 @@ function SearchInner() {
   const debounced = useDebouncedValue(q.trim(), 300);
   const [submitted, setSubmitted] = useState<string | null>(null);
   const activeQuery = submitted ?? debounced;
-  const settings = useAuthStore((s) => s.settings);
   const user = useAuthStore((s) => s.user);
-  const deviceMature = useDeviceMature(user?.uid);
   const inputRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
 
   const mature =
-    isRestrictedContentUser(user?.email) &&
-    (Boolean(settings?.matureContent) || deviceMature);
+    isRestrictedContentUser(user?.email);
 
   const enabled = activeQuery.length >= MIN_QUERY;
   const { data, isFetching, isError, refetch } = useQuery({

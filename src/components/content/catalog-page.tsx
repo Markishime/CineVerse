@@ -79,6 +79,7 @@ const DRAMA_GENRES = [
   "Soap",
   "Thriller",
   "War & Politics",
+  "Mature",
 ];
 
 const GENRE_OPTIONS: Record<ContentType, string[]> = {
@@ -102,6 +103,7 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "TV Movie",
     "War",
     "Western",
+    "Mature",
   ],
   series: [
     "Action & Adventure",
@@ -122,6 +124,7 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "Thriller",
     "War & Politics",
     "Western",
+    "Mature",
   ],
   anime: [
     "Action",
@@ -141,6 +144,7 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "Sports",
     "Supernatural",
     "Thriller",
+    "Mature",
   ],
   kdrama: DRAMA_GENRES,
   cdrama: DRAMA_GENRES,
@@ -257,7 +261,11 @@ export function CatalogPage({
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<CatalogSort>("popularity");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [genre, setGenre] = useState("");
+  const [genre, setGenre] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("genre") ?? "";
+  });
+  const matureGenreSelected = genre.trim().toLowerCase() === "mature";
   /** Default all popular/trending; free full via Watch Now toggle */
   const [watchNowOnly, setWatchNowOnly] = useState(false);
 
@@ -289,11 +297,11 @@ export function CatalogPage({
     staleTime: 20_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
-    enabled: !(matureOnly && !mature),
+    enabled: !((matureOnly || matureGenreSelected) && !mature),
   });
 
   // 18+-only catalog (country movies): hidden entirely when the toggle is off.
-  if (matureOnly && !mature) {
+  if ((matureOnly || matureGenreSelected) && !mature) {
     return (
       <div data-theme={m.theme} className="min-h-dvh pt-24">
         <div className="mx-auto max-w-lg px-4 pb-24 text-center">
@@ -417,7 +425,9 @@ export function CatalogPage({
             >
               All genres
             </Chip>
-            {GENRE_OPTIONS[type].map((name) => (
+            {GENRE_OPTIONS[type]
+              .filter((name) => name !== "Mature" || mature)
+              .map((name) => (
               <Chip
                 key={name}
                 active={genre === name}
@@ -429,7 +439,7 @@ export function CatalogPage({
               >
                 {name}
               </Chip>
-            ))}
+              ))}
           </div>
         </Reveal>
 

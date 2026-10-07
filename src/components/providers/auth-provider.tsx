@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { useAuthStore } from "@/stores/auth-store";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 import { useGuestLibraryStore } from "@/stores/guest-library-store";
 import { getClientAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 import { fetchMe } from "@/lib/api/user";
@@ -99,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const immediateSettings = mergeSettings(null, localS, user.uid);
         setProfile(immediateProfile);
         setSettings(immediateSettings);
-        setMatureFlagClient(Boolean(immediateSettings.matureContent));
+        setMatureFlagClient(isRestrictedContentUser(user.email));
 
         try {
           const tokenResult = await user.getIdTokenResult();
@@ -113,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setSettings(settings);
             writeLocalProfile(user.uid, profile);
             writeLocalSettings(user.uid, settings);
-            setMatureFlagClient(Boolean(settings.matureContent));
+            setMatureFlagClient(isRestrictedContentUser(user.email));
           } catch {
             // Keep local/immediate profile — do not clear to null
             if (!localP) {

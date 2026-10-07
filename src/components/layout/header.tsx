@@ -53,6 +53,7 @@ const baseNav: NavItem[] = [
       { href: "/movies/chinese", label: "Chinese Movies" },
       { href: "/movies/thai", label: "Thai Movies" },
       { href: "/movies/filipino", label: "Filipino Movies" },
+      { href: "/movies?genre=Mature", label: "Mature / 18+", restrictedOnly: true },
     ],
   },
   {
@@ -66,6 +67,7 @@ const baseNav: NavItem[] = [
       { href: "/series/chinese", label: "Chinese Series" },
       { href: "/series/thai", label: "Thai Series" },
       { href: "/series/filipino", label: "Filipino Series" },
+      { href: "/series?genre=Mature", label: "Mature / 18+", restrictedOnly: true },
     ],
   },
   {
@@ -81,9 +83,11 @@ const baseNav: NavItem[] = [
       "Science Fiction",
       "Thriller",
       "Animation",
+      "Mature",
     ].map((g) => ({
       href: `/discover?genre=${encodeURIComponent(g)}`,
       label: g === "Science Fiction" ? "Sci-Fi" : g,
+      ...(g === "Mature" ? { restrictedOnly: true as const } : {}),
     })),
   },
   {
@@ -94,6 +98,7 @@ const baseNav: NavItem[] = [
       { href: "/anime", label: "All Anime" },
       { href: "/anime/series", label: "Anime Series" },
       { href: "/anime/movies", label: "Anime Movies" },
+      { href: "/anime?genre=Mature", label: "Mature / 18+", restrictedOnly: true },
     ],
   },
   {
@@ -106,6 +111,7 @@ const baseNav: NavItem[] = [
       { href: "/cdrama", label: "C-Drama" },
       { href: "/thaidrama", label: "Thai Drama" },
       { href: "/series/filipino", label: "Filipino Drama" },
+      { href: "/kdrama?genre=Mature", label: "Mature / 18+", restrictedOnly: true },
     ],
   },
   { href: "/search", label: "Search", icon: Search },

@@ -16,6 +16,7 @@ import {
 } from "@/lib/user/local-profile";
 import { setDeviceRegion } from "@/lib/user/region";
 import { useQueryClient } from "@tanstack/react-query";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const matureAccess = isRestrictedContentUser(user?.email);
 
   const [previousData, setPreviousData] = useState({ profile, settings });
   if (previousData.profile !== profile || previousData.settings !== settings) {
@@ -124,6 +126,7 @@ export default function SettingsPage() {
         language: "en",
         preferredProviders: [],
         preferredContentTypes: [] as ContentType[],
+        matureContent: matureAccess,
         performanceMode: "cinematic" as const,
         notificationPrefs: {
           airing: true,
@@ -138,7 +141,6 @@ export default function SettingsPage() {
       animeAudioLanguage: animeAudioLang,
       kdramaAudioLanguage: kdramaAudioLang,
       generalAudioLanguage: generalAudioLang,
-      matureContent: false,
       preferredContentTypes: [] as ContentType[],
       updatedAt: new Date().toISOString(),
     };
@@ -160,7 +162,6 @@ export default function SettingsPage() {
             animeAudioLanguage: animeAudioLang,
             kdramaAudioLanguage: kdramaAudioLang,
             generalAudioLanguage: generalAudioLang,
-            matureContent: false,
             preferredContentTypes: [] as ContentType[],
           }),
         ]);
@@ -301,6 +302,17 @@ export default function SettingsPage() {
             <option value="native">Native</option>
           </select>
         </label>
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
+        <h2 className="font-display text-lg font-semibold text-white">
+          Mature catalog
+        </h2>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          {matureAccess
+            ? "Mature and adult titles are available in the Mature / 18+ genre across Movies, Series, Anime, and Dramas."
+            : "Mature and adult titles are not available for this account."}
+        </p>
       </section>
 
       <section className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
