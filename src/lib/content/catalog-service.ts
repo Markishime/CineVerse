@@ -2126,7 +2126,38 @@ export class CatalogService {
       });
     }
 
-    // 1) TMDB live seasons — series, anime, kdrama (all TV-shaped)
+    // 1) Anime seasons come from MAL/Jikan. TMDB often splits or lags
+    // long-running anime, while the native anime providers use one flat
+    // episode sequence.
+    if (c.contentType === "anime") {
+      const malId =
+        c.providerIds.mal ??
+        (c.id.startsWith("jikan_")
+          ? Number(c.id.replace("jikan_", "")) || null
+          : null) ??
+        (await resolveJikanMalId(
+          c.englishTitle || c.title || c.romajiTitle || "",
+        ).catch(() => null));
+      if (malId) {
+        const episodes = await fetchJikanEpisodes(malId, c.id, 1).catch(
+          () => [] as Episode[],
+        );
+        if (episodes.length) {
+          return [{
+            id: `${c.id}_s1`,
+            contentId: c.id,
+            seasonNumber: 1,
+            name: "Season 1",
+            overview: "",
+            poster: c.poster ?? null,
+            airDate: c.releaseDate ?? null,
+            episodeCount: episodes.length,
+          }];
+        }
+      }
+    }
+
+    // 2) TMDB live seasons — series, anime fallback, kdrama (all TV-shaped)
     const tmdbId = c.providerIds.tmdb;
     if (tmdbId) {
       const live = await fetchTmdbSeasons(tmdbId, c.id).catch(
@@ -2140,7 +2171,7 @@ export class CatalogService {
       if (usable.length) return usable;
     }
 
-    // 2) TVMaze (keyless) — series / kdrama / anime title search
+    // 3) TVMaze (keyless) — series / kdrama / anime title search
     {
       let mazeId = c.providerIds.tvmaze ?? null;
       if (!mazeId) {
@@ -2161,7 +2192,7 @@ export class CatalogService {
       }
     }
 
-    // 3) Anime fallback: Jikan total episodes → Season 1 full list (or multi if seasonCount)
+    // 4) Anime fallback: AniList total episodes → Season 1 full list
     if (c.contentType === "anime") {
       const epCount = c.episodeCount && c.episodeCount > 0 ? c.episodeCount : 0;
       const seasonCount =
@@ -2181,7 +2212,7 @@ export class CatalogService {
       }));
     }
 
-    // 4) Series / kdrama shell from catalog counts
+    // 5) Series / kdrama shell from catalog counts
     const count =
       c.seasonCount && c.seasonCount > 0 ? Math.min(c.seasonCount, 50) : 1;
     return Array.from({ length: count }, (_, i) => ({
@@ -2226,7 +2257,31 @@ export class CatalogService {
         }));
     }
 
-    // 1) TMDB season episodes — series, anime, kdrama
+    // 1) Anime episodes come from the complete MAL/Jikan sequence. This must
+    // run before TMDB so split or stale TMDB seasons cannot truncate a series.
+    if (c.contentType === "anime") {
+      let malId: number | null =
+        c.providerIds.mal ??
+        (c.id.startsWith("jikan_")
+          ? Number(c.id.replace("jikan_", "")) || null
+          : null);
+      if (!malId) {
+        malId =
+          (await resolveJikanMalId(
+            c.englishTitle || c.title || c.romajiTitle || "",
+          ).catch(() => null)) ?? null;
+      }
+      if (malId) {
+        const jikanEps = await fetchJikanEpisodes(
+          malId,
+          c.id,
+          seasonNumber,
+        ).catch(() => [] as Episode[]);
+        if (jikanEps.length) return jikanEps.map((e) => ({ ...e, playable: false }));
+      }
+    }
+
+    // 2) TMDB season episodes — series, anime fallback, kdrama
     const tmdbId = c.providerIds.tmdb;
     if (tmdbId) {
       const live = await fetchTmdbSeasonEpisodes(
@@ -2261,7 +2316,7 @@ export class CatalogService {
       }
     }
 
-    // 2) TVMaze episodes (keyless)
+    // 3) TVMaze episodes (keyless)
     {
       let mazeId = c.providerIds.tvmaze ?? null;
       if (!mazeId) {
@@ -2277,29 +2332,6 @@ export class CatalogService {
           c.id,
         ).catch(() => [] as Episode[]);
         if (mazeEps.length) return mazeEps;
-      }
-    }
-
-    // 3) Jikan episode titles for anime (keyless) — full list for season 1
-    if (c.contentType === "anime") {
-      let malId: number | null =
-        c.providerIds.mal ??
-        (c.id.startsWith("jikan_")
-          ? Number(c.id.replace("jikan_", "")) || null
-          : null);
-      if (!malId) {
-        malId =
-          (await resolveJikanMalId(
-            c.englishTitle || c.title || c.romajiTitle || "",
-          ).catch(() => null)) ?? null;
-      }
-      if (malId) {
-        const jikanEps = await fetchJikanEpisodes(
-          malId,
-          c.id,
-          seasonNumber,
-        ).catch(() => [] as Episode[]);
-        if (jikanEps.length) return jikanEps;
       }
     }
 

@@ -1872,8 +1872,9 @@ export async function fetchJikanEpisodes(
   seasonNumber = 1,
 ): Promise<Episode[]> {
   const all: JikanEpisodeRow[] = [];
-  // Jikan paginates ~100 eps per page
-  for (let page = 1; page <= 8; page++) {
+  // Jikan paginates ~100 episodes per page. Keep following the cursor so
+  // long-running anime such as One Piece are not silently truncated.
+  for (let page = 1; page <= 50; page++) {
     const data = await fetchJson<{
       data?: JikanEpisodeRow[];
       pagination?: { has_next_page?: boolean };
