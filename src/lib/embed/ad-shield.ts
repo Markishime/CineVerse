@@ -1,9 +1,9 @@
 /**
  * Lightweight player shell helpers.
  *
- * IMPORTANT: Do NOT put `sandbox` on embed iframes. Free hosts (VixSrc, VidSrc,
- * AutoEmbed, Cinezo, DramaPlay, …) need full iframe capabilities; sandbox breaks
- * video init, DRM-less players, and postMessage bridges.
+ * IMPORTANT: Do NOT put `sandbox` on embed iframes. Free hosts (AutoEmbed,
+ * VidLink, 2Embed, Cinezo, DramaPlay, …) need full iframe capabilities;
+ * sandbox breaks video init, DRM-less players, and postMessage bridges.
  *
  * Ad mitigation that still works without sandbox:
  * - parent `window.open` blocker (useEmbedAdShield)

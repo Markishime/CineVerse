@@ -14,12 +14,11 @@ export type EmbedProviderId =
   | "vidfast"
   | "onetwoonemovies"
   | "autoembed"
+  | "vidlink"
   | "vidsrc"
   | "vidcore"
-  | "vixsrc"
   | "2embed"
   | "2embedskin"
-  | "moviesapi"
   | "smashystream"
   | "vidphantom"
   | "superembed"
@@ -27,7 +26,6 @@ export type EmbedProviderId =
   | "megaplay"
   | "cinezo"
   | "animepahe"
-  | "screenscape"
   | "dropfile"
   | "ezvidapi"
   | "supaplay"
@@ -146,7 +144,7 @@ function embedLangParam(language?: string): string | undefined {
  * General TMDB providers — researched endpoint formats (2025–2026).
  *
  * Priority (most reliable first):
- * VixSrc → MoviesAPI → AutoEmbed (see GENERAL_PLAY_ORDER), then the remaining hosts.
+ * AutoEmbed → VidLink (see GENERAL_PLAY_ORDER), then the remaining hosts.
  *
  * Filipino movies: use TMDB numeric id + no Tagalog lang flag (see embedLangParam).
  */
@@ -184,6 +182,25 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
       `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`,
   },
   {
+    id: "vidlink",
+    name: "VidLink",
+    supportsTv: true,
+    // TMDB-keyed player: /movie/{id} and /tv/{id}/{s}/{e}. Verified 200 for
+    // both paths with no frame-ancestors / X-Frame-Options restriction, and it
+    // answers in under ~1s for both movie and TV paths. The player reads
+    // ?autoplay=true (muted autoplay) and posts MEDIA_DATA to the parent once
+    // the stream resolves, so a silent host is detectable.
+    signalsPlayback: true,
+    movieUrl: (tmdbId, opts) =>
+      qs(`https://vidlink.pro/movie/${tmdbId}`, {
+        autoplay: opts?.autoplay === false ? "false" : "true",
+      }),
+    tvUrl: (tmdbId, season, episode, opts) =>
+      qs(`https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, {
+        autoplay: opts?.autoplay === false ? "false" : "true",
+      }),
+  },
+  {
     id: "vidsrc",
     name: "VidSrc",
     supportsTv: true,
@@ -193,23 +210,6 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId) => `https://vidsrc.to/embed/movie/${tmdbId}`,
     tvUrl: (tmdbId, season, episode) =>
       `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`,
-  },
-  {
-    id: "vixsrc",
-    name: "VixSrc",
-    supportsTv: true,
-    signalsPlayback: true,
-    probeUrl: "https://vixsrc.to/favicon.ico",
-    // vixsrc.to's Cloudflare WAF rejects iframe loads that have no Referer or a
-    // free-host one (*.vercel.app, *.web.app, *.netlify.app, *.github.io,
-    // *.onrender.com) — hence "works on localhost, blocked once deployed".
-    // Custom domains are accepted, so serve the app from one. Never strip the
-    // referrer for this host; the probe above detects the block and the player
-    // falls back to the next server.
-    // https://vixsrc.to — clean TMDB embeds, good regional coverage
-    movieUrl: (tmdbId) => `https://vixsrc.to/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}`,
   },
   {
     id: "vidcore",
@@ -242,14 +242,6 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId) => `https://www.2embed.skin/embed/movie/${tmdbId}`,
     tvUrl: (tmdbId, season, episode) =>
       `https://www.2embed.skin/embed/tv/${tmdbId}/${season}/${episode}`,
-  },
-  {
-    id: "moviesapi",
-    name: "MoviesAPI",
-    supportsTv: true,
-    movieUrl: (tmdbId) => `https://moviesapi.to/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://moviesapi.to/tv/${tmdbId}/${season}/${episode}`,
   },
   {
     id: "smashystream",
@@ -328,9 +320,10 @@ const DEAD_DRAMA_PROVIDER_IDS = new Set<EmbedProviderId>([
  * Prefer AniList/MAL metadata pairing over a single hard-coded host.
  *
  * Definition order is not the play order — getProvidersForContentType builds
- * the live chain: instant hosts first (MegaPlay → Cinezo → ScreenScape → TMDB
- * generals), resolve-based hosts (AnimePahe/SupaPlay) last, and dead hosts
- * (DropFile/ezvidapi, see DEAD_ANIME_PROVIDER_IDS) dropped entirely.
+ * the live chain: TMDB generals first (AutoEmbed → VidLink), then instant
+ * natives (MegaPlay → Cinezo), resolve-based hosts (AnimePahe/SupaPlay) last,
+ * and dead hosts (DropFile/ezvidapi, see DEAD_ANIME_PROVIDER_IDS) dropped
+ * entirely. VidLink lives in the general pool — it serves TMDB titles too.
  */
 export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
   {
@@ -374,43 +367,6 @@ export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
         dub: dub ? "true" : "false",
         autoplay: true,
         poster: true,
-      });
-    },
-  },
-  {
-    id: "screenscape",
-    name: "ScreenScape",
-    supportsTv: true,
-    animeOnly: true,
-    // Official API: /embed?tmdb=&type=movie|tv&s=&e=
-    movieUrl: (tmdbId) =>
-      qs("https://flix.screenscape.me/embed", {
-        tmdb: tmdbId,
-        type: "movie",
-      }),
-    tvUrl: (tmdbId, season, episode) =>
-      qs("https://flix.screenscape.me/embed", {
-        tmdb: tmdbId,
-        type: "tv",
-        s: season,
-        e: episode,
-      }),
-    animeUrl: (ids) => {
-      // Anime as TV (or movie) on TMDB when available
-      if (!ids.tmdb) return null;
-      if (ids.tmdbMediaType === "movie" || ids.animeFormat === "MOVIE") {
-        return qs("https://flix.screenscape.me/embed", {
-          tmdb: ids.tmdb,
-          type: "movie",
-        });
-      }
-      const s = Math.max(1, ids.season ?? 1);
-      const e = Math.max(1, ids.episode ?? 1);
-      return qs("https://flix.screenscape.me/embed", {
-        tmdb: ids.tmdb,
-        type: "tv",
-        s,
-        e,
       });
     },
   },
@@ -584,14 +540,13 @@ const DEAD_GENERAL_PROVIDER_IDS = new Set<EmbedProviderId>([
 ]);
 
 /**
- * Product-mandated order: VixSrc → MoviesAPI → AutoEmbed. Remaining hosts are
+ * Product-mandated order: AutoEmbed → VidLink. Remaining hosts are
  * last-resort fallbacks. VidFast can hang forever on "Fetching" (host 503) and
  * the iframe gives no failure signal, so it must not lead.
  */
 export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
-  "vixsrc",
-  "moviesapi",
   "autoembed",
+  "vidlink",
   "2embed",
   "vidfast",
   "2embedskin",
@@ -693,7 +648,7 @@ export function providerCanPlay(
 /**
  * Content-type aware provider chain (user product rules):
  *
- * VixSrc is always first, then MoviesAPI, then AutoEmbed, when a TMDB id is
+ * AutoEmbed is always first, then VidLink, when a TMDB id is
  * available. Content-specific hosts remain available as fallbacks for anime
  * and regional dramas.
  */
@@ -716,17 +671,17 @@ export function getProvidersForContentType(
     const generalSafe = general.filter(
       (p) => !ANIME_BLOCKED_PROVIDER_IDS.has(p.id),
     );
-    // Every AniList/MAL title gets a working server: MegaPlay (MAL *or* AniList,
-    // no resolve) → Cinezo (AniList) → ScreenScape (TMDB) → TMDB generals →
-    // resolve-based hosts LAST (AnimePahe/SupaPlay often fail to resolve, so
-    // they must not sit ahead of instant hosts). Dead hosts (dropfile/ezvidapi)
-    // are dropped so they don't burn a 10s timeout slot each.
+    // Every AniList/MAL title gets a working server: TMDB generals (AutoEmbed →
+    // VidLink) lead, then MegaPlay (MAL *or* AniList, no resolve) → Cinezo
+    // (AniList) → resolve-based hosts LAST (AnimePahe/SupaPlay often fail to
+    // resolve, so they must not sit ahead of instant hosts). Dead hosts
+    // (dropfile/ezvidapi) are dropped so they don't burn a 10s timeout slot each.
     const liveNatives = ANIME_EMBED_PROVIDERS.filter(
       (p) => !DEAD_ANIME_PROVIDER_IDS.has(p.id),
     );
     const instantNatives = preferProviders(
       liveNatives.filter((p) => !p.needsResolve),
-      ["megaplay", "cinezo", "screenscape"],
+      ["megaplay", "cinezo"],
     );
     const resolveNatives = liveNatives.filter((p) => p.needsResolve);
     chain = [
@@ -762,7 +717,7 @@ export function getProvidersForContentType(
     }
   } else if (isFilipinoContent(ids)) {
     // Filipino cinema: no PH-specialist embed host exists, so lead with the
-    // standard VixSrc → MoviesAPI → AutoEmbed order, then drama
+    // standard AutoEmbed → VidLink order, then drama
     // hosts as best-effort. (kissasian.cam's KissKH backend can't be driven by
     // a TMDB id, so it can't lead here — see the kisskh provider.)
     chain = [

@@ -62,9 +62,7 @@ type PlayerStatus = "loading" | "loaded" | "error" | "all_failed";
 // A host that stays silent on two different titles is blocked or down for this viewer (e.g. a Cloudflare block page).
 const sessionBadProviders = new Set<EmbedProviderId>();
 const silentFailures = new Map<EmbedProviderId, number>();
-const SILENT_TIMEOUT_MS: Partial<Record<EmbedProviderId, number>> = {
-  vixsrc: 10_000,
-};
+const SILENT_TIMEOUT_MS: Partial<Record<EmbedProviderId, number>> = {};
 
 function recordSilentFailure(id: EmbedProviderId) {
   const n = (silentFailures.get(id) ?? 0) + 1;
@@ -81,7 +79,7 @@ function probeHost(url: string): Promise<boolean> {
     hit = new Promise<boolean>((resolve) => {
       const img = new Image();
       // Same default referrer the iframe sends, so the probe sees the same
-      // WAF verdict (vixsrc.to 403s free-host referrers such as *.vercel.app).
+      // WAF verdict (some hosts 403 free-host referrers such as *.vercel.app).
       const timer = setTimeout(() => resolve(true), 5_000);
       img.onload = () => {
         clearTimeout(timer);
@@ -100,7 +98,7 @@ function probeHost(url: string): Promise<boolean> {
 
 /**
  * Smart video player with multi-provider fallback.
- * Default chain: VixSrc → MoviesAPI → AutoEmbed → remaining hosts.
+ * Default chain: AutoEmbed → VidLink → 2Embed → remaining hosts.
  */
 export function VideoPlayer({
   tmdbId,
@@ -213,7 +211,7 @@ export function VideoPlayer({
     frozenBad,
   ]);
 
-  // Hold the iframe until blocked hosts (e.g. VixSrc behind a Cloudflare block) are demoted.
+  // Hold the iframe until hosts that block free-host referrers are demoted.
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const probed = availableProviders.filter((p) => p.probeUrl);
@@ -616,7 +614,7 @@ export function VideoPlayer({
       const msg = raw.toLowerCase();
       if (!msg) return;
 
-      // VixSrc / AutoEmbed only emit these once the title resolved.
+      // AutoEmbed / VidLink only emit these once the title resolved.
       if (
         msg === "player_event" ||
         msg === "media_data" ||
@@ -780,12 +778,12 @@ export function VideoPlayer({
               <p className="text-sm text-white">
                 Loading from{" "}
                 <span className="font-semibold text-[var(--primary-light)]">
-                  {activeProvider?.name}
+                  Server {activeIndex + 1}
                 </span>
                 ...
               </p>
               <p className="text-xs text-[var(--text-muted)]">
-                Server {activeIndex + 1} of {availableProviders.length}
+                {availableProviders.length} servers available
                 {isAnime ? " · anime sources" : ""}
               </p>
             </div>
@@ -806,9 +804,11 @@ export function VideoPlayer({
                   blocked on your network.
                 </p>
                 <ul className="mx-auto mt-3 max-w-sm space-y-1 text-left text-xs text-[var(--text-muted)]">
-                  {availableProviders.slice(0, 4).map((p) => (
+                  {availableProviders.slice(0, 4).map((p, i) => (
                     <li key={p.id} className="flex justify-between gap-3">
-                      <span className="font-medium text-white/80">{p.name}</span>
+                      <span className="font-medium text-white/80">
+                        Server {i + 1}
+                      </span>
                       <span className="truncate">
                         {issues[p.id] ?? "Not tried"}
                       </span>
@@ -867,13 +867,13 @@ export function VideoPlayer({
                 ) : (
                   <MonitorPlay className="mr-1 h-3 w-3" />
                 )}
-                {activeProvider.name}
+                Server {activeIndex + 1}
               </Badge>
             )}
             {status === "loading" && activeProvider && (
               <Badge tone="muted">
                 <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                {activeProvider.name}
+                Server {activeIndex + 1}
               </Badge>
             )}
             {status === "error" && (
@@ -969,7 +969,7 @@ export function VideoPlayer({
                         ) : (
                           <span className="w-3.5" />
                         )}
-                        {p.name}
+                        Server {i + 1}
                         {i === 0 && !tried && (
                           <span className="ml-auto text-[10px] text-[var(--text-muted)]">
                             default

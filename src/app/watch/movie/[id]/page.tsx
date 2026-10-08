@@ -14,7 +14,7 @@ interface Props {
  * Movie watch page — /watch/movie/[id]
  *
  * Server component that fetches TMDb metadata and renders the embedded
- * video player with auto-fallback between providers (VixSrc → MoviesAPI → AutoEmbed).
+ * video player with auto-fallback between providers (AutoEmbed → VidLink).
  *
  * The [id] is the TMDb movie ID (e.g., /watch/movie/550 for Fight Club).
  * Playback does not require TMDB metadata — if the API key is missing on

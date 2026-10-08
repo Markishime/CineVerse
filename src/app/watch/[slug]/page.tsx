@@ -4,7 +4,7 @@ import { WatchPage } from "@/components/content/watch-page";
 /**
  * Legal in-app watch page.
  * Plays only rights-approved sources (Cloudflare Stream, PD, official YouTube, etc.).
- * Uses legal/cloud playback resolution; embed fallbacks run VixSrc → MoviesAPI → AutoEmbed.
+ * Uses legal/cloud playback resolution; embed fallbacks run AutoEmbed → VidLink.
  */
 export default async function WatchRoute({
   params,
