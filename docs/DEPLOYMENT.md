@@ -47,7 +47,7 @@ Framework preset: **Next.js**. No `output: "export"` — API routes are required
 - [ ] Auth sign-in works (Firebase client env)
 - [ ] Mobile: hard-refresh or “Update now” if an old service worker cached a 404
 - [ ] Privacy / terms pages live
-- [ ] **Server 1 (VidLink)** loads on the production URL, followed by **2Embed**, **VidFast**, and **2Embed Skin**. Servers are labelled Server 1…N. AutoEmbed, NontonGo, ScreenScape, VixSrc, MoviesAPI, and other dead or non-title endpoints are removed from the shipped provider list.
+- [ ] **Server 1 (VidFast)** loads on the production URL, followed by **2Embed**, **2Embed Skin**, and **VidSrc PM**. Servers are labelled Server 1…N. VidLink, AutoEmbed, NontonGo, ScreenScape, VixSrc, MoviesAPI, and other dead or non-title endpoints are removed from the shipped provider list.
 
 ## Firebase (optional backend only)
 

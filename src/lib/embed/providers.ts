@@ -12,9 +12,9 @@
 export type EmbedProviderId =
   // General — movies / series
   | "vidfast"
-  | "vidlink"
   | "2embed"
   | "2embedskin"
+  | "vidsrcpm"
   // Anime-only backends
   | "megaplay"
   | "cinezo"
@@ -100,7 +100,7 @@ function preferDub(opts?: EmbedUrlOpts, ids?: AnimeStreamIds): boolean {
  * General TMDB providers — verified endpoint formats (2026).
  *
  * Priority (most reliable first):
- * VidLink → 2Embed → VidFast → 2Embed Skin (see GENERAL_PLAY_ORDER).
+ * VidFast → 2Embed → 2Embed Skin → VidSrc PM (see GENERAL_PLAY_ORDER).
  *
  * Filipino movies use the same TMDB numeric id path as other titles.
  */
@@ -122,25 +122,6 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
       }),
   },
   {
-    id: "vidlink",
-    name: "VidLink",
-    supportsTv: true,
-    // TMDB-keyed player: /movie/{id} and /tv/{id}/{s}/{e}. Verified 200 for
-    // both paths with no frame-ancestors / X-Frame-Options restriction, and it
-    // answers in under ~1s for both movie and TV paths. The player reads
-    // ?autoplay=true (muted autoplay) and posts MEDIA_DATA to the parent once
-    // the stream resolves, so a silent host is detectable.
-    signalsPlayback: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://vidlink.pro/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay === false ? "false" : "true",
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay === false ? "false" : "true",
-      }),
-  },
-  {
     id: "2embed",
     name: "2Embed",
     supportsTv: true,
@@ -158,6 +139,14 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     movieUrl: (tmdbId) => `https://www.2embed.skin/embed/movie/${tmdbId}`,
     tvUrl: (tmdbId, season, episode) =>
       `https://www.2embed.skin/embed/tv/${tmdbId}/${season}/${episode}`,
+  },
+  {
+    id: "vidsrcpm",
+    name: "VidSrc PM",
+    supportsTv: true,
+    movieUrl: (tmdbId) => `https://vidsrc.pm/embed/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://vidsrc.pm/embed/tv/${tmdbId}/${season}/${episode}`,
   },
 ];
 
@@ -246,13 +235,14 @@ export const EMBED_PROVIDERS: EmbedProvider[] = [
 
 /**
  * Product order uses hosts whose representative movie and TV endpoints return
- * an embeddable response. VidFast remains below hosts with faster resolution.
+ * an embeddable response. VidFast is the default because its endpoint is the
+ * fastest verified primary in the current production check.
  */
 export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
-  "vidlink",
-  "2embed",
   "vidfast",
+  "2embed",
   "2embedskin",
+  "vidsrcpm",
 ];
 
 export function getProvidersForMediaType(

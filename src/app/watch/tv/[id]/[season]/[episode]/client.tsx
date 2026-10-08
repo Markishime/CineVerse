@@ -77,6 +77,10 @@ export function WatchTvClient({
   const [countdown, setCountdown] = useState<number | null>(null);
   const backdrop = tmdbBackdropUrl(tvShow.backdrop_path, "w1280");
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [season, episodeNum]);
+
   // Detect anime from TMDb genre (16 = Animation) + Japanese language
   const isAnime =
     genreIds.includes(16) && tvShow.original_language === "ja";

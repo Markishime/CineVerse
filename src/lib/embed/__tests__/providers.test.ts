@@ -13,6 +13,7 @@ describe("embed provider order", () => {
     expect(ids).not.toContain("moviesapi");
     expect(ids).not.toContain("screenscape");
     expect(ids).not.toContain("autoembed");
+    expect(ids).not.toContain("vidlink");
     expect(ids).not.toContain("nontongo");
     expect(ids).not.toContain("superembed");
     expect(ids).not.toContain("kisskh");
@@ -33,19 +34,32 @@ describe("embed provider order", () => {
       anilist: 1,
       mal: 1,
     });
-    expect(providers.slice(0, 3).map((p) => p.id)).toEqual([
-      "vidlink",
-      "2embed",
+    expect(providers.slice(0, 4).map((p) => p.id)).toEqual([
       "vidfast",
+      "2embed",
+      "2embedskin",
+      "vidsrcpm",
     ]);
   });
 
-  it("builds movie and tv urls for the two lead servers", () => {
-    expect(buildEmbedUrl("vidlink", 550, "movie")).toBe(
-      "https://vidlink.pro/movie/550?autoplay=true",
+  it("keeps the verified VidFast URL formats", () => {
+    expect(buildEmbedUrl("vidfast", 550, "movie")).toBe(
+      "https://vidfast.vc/movie/550?autoPlay=true",
     );
-    expect(buildEmbedUrl("vidlink", 1399, "tv", 2, 3)).toBe(
-      "https://vidlink.pro/tv/1399/2/3?autoplay=true",
+    expect(buildEmbedUrl("vidfast", 1399, "tv", 2, 3)).toBe(
+      "https://vidfast.vc/tv/1399/2/3?autoPlay=true",
+    );
+    expect(buildEmbedUrl("vidsrcpm", 550, "movie")).toBe(
+      "https://vidsrc.pm/embed/movie/550",
+    );
+  });
+
+  it("builds the remaining fallback URLs", () => {
+    expect(buildEmbedUrl("2embed", 550, "movie")).toBe(
+      "https://www.2embed.online/embed/movie/550",
+    );
+    expect(buildEmbedUrl("2embedskin", 550, "movie")).toBe(
+      "https://www.2embed.skin/embed/movie/550",
     );
   });
 });
