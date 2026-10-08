@@ -12,28 +12,15 @@
 export type EmbedProviderId =
   // General — movies / series
   | "vidfast"
-  | "onetwoonemovies"
-  | "autoembed"
   | "vidlink"
-  | "vidsrc"
-  | "vidcore"
   | "2embed"
   | "2embedskin"
-  | "smashystream"
-  | "vidphantom"
-  | "superembed"
   // Anime-only backends
   | "megaplay"
   | "cinezo"
   | "animepahe"
-  | "dropfile"
-  | "ezvidapi"
   | "supaplay"
-  // Asian-drama backends (K/C/J/Thai)
-  | "dramaplay"
-  | "kisskh"
-  | "nontongo"
-  | "frembed";
+  ;
 
 export interface EmbedUrlOpts {
   autoplay?: boolean;
@@ -110,43 +97,12 @@ function preferDub(opts?: EmbedUrlOpts, ids?: AnimeStreamIds): boolean {
 }
 
 /**
- * Only pass `lang` when the host is known to honor it. Tagalog/Filipino and
- * other unsupported codes must be omitted (not sent as tl) — hosts then serve
- * the default English/source track that actually works for PH cinema.
- */
-function embedLangParam(language?: string): string | undefined {
-  if (!language) return undefined;
-  const l = language.toLowerCase().split("-")[0] ?? language;
-  const supported = new Set([
-    "en",
-    "ko",
-    "ja",
-    "zh",
-    "th",
-    "es",
-    "fr",
-    "de",
-    "pt",
-    "hi",
-    "it",
-    "ru",
-    "ar",
-    "id",
-    "ms",
-    "tr",
-    "vi",
-  ]);
-  if (!supported.has(l)) return undefined;
-  return l;
-}
-
-/**
- * General TMDB providers — researched endpoint formats (2025–2026).
+ * General TMDB providers — verified endpoint formats (2026).
  *
  * Priority (most reliable first):
- * AutoEmbed → VidLink (see GENERAL_PLAY_ORDER), then the remaining hosts.
+ * VidLink → 2Embed → VidFast → 2Embed Skin (see GENERAL_PLAY_ORDER).
  *
- * Filipino movies: use TMDB numeric id + no Tagalog lang flag (see embedLangParam).
+ * Filipino movies use the same TMDB numeric id path as other titles.
  */
 export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
   {
@@ -164,22 +120,6 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
       qs(`https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`, {
         autoPlay: opts?.autoplay === false ? "false" : "true",
       }),
-  },
-  {
-    id: "onetwoonemovies",
-    name: "111Movies",
-    supportsTv: true,
-    movieUrl: (tmdbId) => `https://111movies.com/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://111movies.com/tv/${tmdbId}/${season}/${episode}`,
-  },
-  {
-    id: "autoembed",
-    name: "AutoEmbed",
-    supportsTv: true,
-    movieUrl: (tmdbId) => `https://autoembed.co/movie/tmdb/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`,
   },
   {
     id: "vidlink",
@@ -201,30 +141,6 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
       }),
   },
   {
-    id: "vidsrc",
-    name: "VidSrc",
-    supportsTv: true,
-    // Docs: https://vidsrc.to/ — TMDB or IMDb (tt…)
-    // Movie: /embed/movie/{id}
-    // TV:    /embed/tv/{id}/{season}/{episode}
-    movieUrl: (tmdbId) => `https://vidsrc.to/embed/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`,
-  },
-  {
-    id: "vidcore",
-    name: "VidCore",
-    supportsTv: true,
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://vidcore.org/embed/movie/${tmdbId}/`, {
-        lang: embedLangParam(opts?.language),
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://vidcore.org/embed/tv/${tmdbId}/${season}/${episode}/`, {
-        lang: embedLangParam(opts?.language),
-      }),
-  },
-  {
     id: "2embed",
     name: "2Embed",
     supportsTv: true,
@@ -243,87 +159,15 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
     tvUrl: (tmdbId, season, episode) =>
       `https://www.2embed.skin/embed/tv/${tmdbId}/${season}/${episode}`,
   },
-  {
-    id: "smashystream",
-    name: "SmashyStream",
-    supportsTv: true,
-    movieUrl: (tmdbId) => `https://player.smashy.stream/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      qs(`https://player.smashy.stream/tv/${tmdbId}`, {
-        s: season,
-        e: episode,
-      }),
-  },
-  {
-    id: "vidphantom",
-    name: "VidPhantom",
-    supportsTv: true,
-    movieUrl: (tmdbId) => `https://vidphantom.com/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://vidphantom.com/tv/${tmdbId}/${season}/${episode}`,
-  },
-  // SuperEmbed last — multiembed.mov often hijacks UI / false-positive "loaded"
-  {
-    id: "superembed",
-    name: "SuperEmbed",
-    supportsTv: true,
-    movieUrl: (tmdbId) =>
-      qs(`https://multiembed.mov/`, {
-        video_id: tmdbId,
-        tmdb: 1,
-      }),
-    tvUrl: (tmdbId, season, episode) =>
-      qs(`https://multiembed.mov/`, {
-        video_id: tmdbId,
-        tmdb: 1,
-        s: season,
-        e: episode,
-      }),
-  },
 ];
-
-/** Providers excluded from anime / hentai chains (hijack UI or useless without real streams). */
-const ANIME_BLOCKED_PROVIDER_IDS = new Set<EmbedProviderId>([
-  "superembed",
-  "smashystream",
-  "vidphantom",
-]);
-
-/**
- * Anime backends verified DEAD (do not add to chains — they only burn a 10s
- * load-timeout slot before the player falls through to a working host):
- * - dropfile: dropfile.cc no longer resolves (connection refused)
- * - ezvidapi: ezvidapi.com returns HTTP 502 on anime/tv/movie embeds
- * Kept defined for reference, but excluded from the live anime chain.
- */
-const DEAD_ANIME_PROVIDER_IDS = new Set<EmbedProviderId>([
-  "dropfile",
-  "ezvidapi",
-]);
-
-/**
- * Drama backends verified DEAD / unreliable — excluded from drama & Filipino
- * chains so they don't occupy a fallback slot (each dead host adds a 10s load
- * timeout before the player advances):
- * - dramaplay: dramaplay.one returns Cloudflare SSL error 525
- * - frembed:   frembed.asia only 302-redirects (French-geo, no stable embed)
- * NontonGo (nontongo.win) stays — it returns 200 and carries Asian dramas.
- * KissKH is handled separately (emits no TMDB URL, filtered by providerCanPlay).
- */
-const DEAD_DRAMA_PROVIDER_IDS = new Set<EmbedProviderId>([
-  "dramaplay",
-  "frembed",
-]);
 
 /**
  * Anime-only streaming backends.
  * Prefer AniList/MAL metadata pairing over a single hard-coded host.
  *
  * Definition order is not the play order — getProvidersForContentType builds
- * the live chain: TMDB generals first (AutoEmbed → VidLink), then instant
- * natives (MegaPlay → Cinezo), resolve-based hosts (AnimePahe/SupaPlay) last,
- * and dead hosts (DropFile/ezvidapi, see DEAD_ANIME_PROVIDER_IDS) dropped
- * entirely. VidLink lives in the general pool — it serves TMDB titles too.
+ * the live chain: TMDB generals first (VidLink → 2Embed), then instant natives
+ * (MegaPlay → Cinezo), with resolve-based hosts last.
  */
 export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
   {
@@ -382,56 +226,6 @@ export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
     animeUrl: () => null,
   },
   {
-    id: "dropfile",
-    name: "DropFile",
-    supportsTv: true,
-    animeOnly: true,
-    movieUrl: () => "",
-    tvUrl: () => "",
-    animeUrl: (ids) => {
-      // Prefer MAL id (stable anime catalog key); fall back to AniList
-      const id = ids.mal ?? ids.anilist;
-      if (!id) return null;
-      const ep = Math.max(1, ids.episode ?? 1);
-      const dub = preferDub(undefined, ids);
-      // DropFile public embed: /embed/{mal|anilist}/{episode}
-      return qs(`https://dropfile.cc/embed/${id}/${ep}`, {
-        type: ids.mal ? "mal" : "anilist",
-        anilist: ids.anilist,
-        mal: ids.mal,
-        dub: dub ? "1" : "0",
-        sub: dub ? "0" : "1",
-      });
-    },
-  },
-  {
-    id: "ezvidapi",
-    name: "ezvidapi",
-    supportsTv: true,
-    animeOnly: true,
-    movieUrl: (tmdbId) => `https://ezvidapi.com/embed/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://ezvidapi.com/embed/tv/${tmdbId}/${season}/${episode}`,
-    animeUrl: (ids) => {
-      // Multi-provider backend — TMDB paths; AniList when no TMDB
-      if (ids.tmdb) {
-        if (ids.tmdbMediaType === "movie" || ids.animeFormat === "MOVIE") {
-          return `https://ezvidapi.com/embed/movie/${ids.tmdb}`;
-        }
-        const s = Math.max(1, ids.season ?? 1);
-        const e = Math.max(1, ids.episode ?? 1);
-        return `https://ezvidapi.com/embed/tv/${ids.tmdb}/${s}/${e}`;
-      }
-      if (ids.anilist) {
-        const ep = Math.max(1, ids.episode ?? 1);
-        return qs(`https://ezvidapi.com/embed/anime/${ids.anilist}/${ep}`, {
-          dub: preferDub(undefined, ids) ? "true" : "false",
-        });
-      }
-      return null;
-    },
-  },
-  {
     id: "supaplay",
     name: "SupaPlay",
     supportsTv: true,
@@ -444,108 +238,17 @@ export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
   },
 ];
 
-/**
- * Asian-drama streaming backends (K-Drama / C-Drama / J-Drama / Thai Drama).
- * These hosts carry subtitled Asian dramas that general TMDB embeds often miss.
- *
- * Reliability note: only NontonGo's TMDB path is doc-verified. KissKH needs its
- * own episode id (no TMDB path) and DramaPlay/Frembed formats are unverified, so
- * the routing puts the proven TMDB generals AHEAD of these — see
- * getProvidersForContentType. These are best-effort supplements, not primaries.
- */
-export const DRAMA_EMBED_PROVIDERS: EmbedProvider[] = [
-  {
-    id: "dramaplay",
-    name: "DramaPlay",
-    supportsTv: true,
-    dramaOnly: true,
-    // https://dramaplay.one — TMDB movie/tv embeds with built-in subtitles.
-    // Keep the path id-only: an unsupported ?sub=<lang> (e.g. sub=tl) made it
-    // fail. Best-effort supplement, not a primary — demoted below the proven
-    // TMDB generals in the chains.
-    movieUrl: (tmdbId) => `https://dramaplay.one/embed/movie/${tmdbId}`,
-    tvUrl: (tmdbId, season, episode) =>
-      `https://dramaplay.one/embed/tv/${tmdbId}/${season}/${episode}`,
-  },
-  {
-    id: "kisskh",
-    name: "KissKH",
-    supportsTv: true,
-    dramaOnly: true,
-    // https://kisskh.megaplay.su — the player kissasian.cam serves dramas from.
-    // IMPORTANT: this embed is keyed by KissKH's OWN internal episode id
-    // (e.g. /kisskh/129692), NOT a TMDB id. The old /embed/movie/{tmdb} and
-    // /embed/tv/{tmdb}/… paths do not exist and 404 ("Route ... not found").
-    // Building the real URL needs a KissKH catalog search (title → drama id →
-    // episode id) which is not implemented yet, so we emit no URL here — the
-    // provider is filtered out of chains until a resolver exists. Do NOT
-    // resurrect the fake TMDB paths.
-    movieUrl: () => "",
-    tvUrl: () => "",
-  },
-  {
-    id: "nontongo",
-    name: "NontonGo",
-    supportsTv: true,
-    dramaOnly: true,
-    // https://www.nontongo.win — Indonesian-focused, strong K/C/J-drama coverage.
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://www.nontongo.win/embed/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://www.nontongo.win/embed/tv/${tmdbId}/${season}/${episode}`, {
-        autoplay: opts?.autoplay,
-      }),
-  },
-  {
-    id: "frembed",
-    name: "Frembed",
-    supportsTv: true,
-    dramaOnly: true,
-    // https://frembed.asia — French-origin, multilingual subs, good Asian drama coverage.
-    // TV uses "serie" (not "tv") + query params sa/epi.
-    movieUrl: (tmdbId, opts) =>
-      qs(`https://frembed.asia/embed/movie/${tmdbId}`, {
-        autoplay: opts?.autoplay,
-      }),
-    tvUrl: (tmdbId, season, episode, opts) =>
-      qs(`https://frembed.asia/embed/serie/${tmdbId}`, {
-        sa: season,
-        epi: episode,
-        autoplay: opts?.autoplay,
-      }),
-  },
-];
-
 /** All providers (general + anime + drama) */
 export const EMBED_PROVIDERS: EmbedProvider[] = [
   ...GENERAL_EMBED_PROVIDERS,
   ...ANIME_EMBED_PROVIDERS,
-  ...DRAMA_EMBED_PROVIDERS,
 ];
 
 /**
- * General hosts verified broken in the player:
- * - onetwoonemovies / vidphantom / smashystream: DNS dead or unreachable
- * - vidsrc: vidsrc.to now redirects to VidFast (duplicate)
- * - vidcore: redirects to a cookies-disabled error page
- */
-const DEAD_GENERAL_PROVIDER_IDS = new Set<EmbedProviderId>([
-  "onetwoonemovies",
-  "vidphantom",
-  "smashystream",
-  "vidsrc",
-  "vidcore",
-]);
-
-/**
- * Product-mandated order: AutoEmbed → VidLink. Remaining hosts are
- * last-resort fallbacks. VidFast can hang forever on "Fetching" (host 503) and
- * the iframe gives no failure signal, so it must not lead.
+ * Product order uses hosts whose representative movie and TV endpoints return
+ * an embeddable response. VidFast remains below hosts with faster resolution.
  */
 export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
-  "autoembed",
   "vidlink",
   "2embed",
   "vidfast",
@@ -556,7 +259,7 @@ export function getProvidersForMediaType(
   mediaType: "movie" | "tv",
 ): EmbedProvider[] {
   const list = GENERAL_EMBED_PROVIDERS.filter(
-    (p) => !DEAD_GENERAL_PROVIDER_IDS.has(p.id),
+    (p) => p.supportsTv || mediaType === "movie",
   );
   if (mediaType === "movie") return list;
   return list.filter((p) => p.supportsTv);
@@ -620,7 +323,6 @@ export function providerCanPlay(
   episode = 1,
 ): boolean {
   if (contentType === "anime") {
-    if (ANIME_BLOCKED_PROVIDER_IDS.has(provider.id)) return false;
     const url = buildAnimeEmbedUrl(provider.id, {
       title: "",
       anilist: ids.anilist ?? undefined,
@@ -648,9 +350,8 @@ export function providerCanPlay(
 /**
  * Content-type aware provider chain (user product rules):
  *
- * AutoEmbed is always first, then VidLink, when a TMDB id is
- * available. Content-specific hosts remain available as fallbacks for anime
- * and regional dramas.
+ * Verified general hosts lead when a TMDB id is available. Content-specific
+ * anime hosts remain available as fallbacks.
  */
 export function getProvidersForContentType(
   contentType: string,
@@ -660,24 +361,13 @@ export function getProvidersForContentType(
   episode = 1,
 ): EmbedProvider[] {
   const general = getProvidersForMediaType(mediaType);
-  // Drama hosts minus verified-dead ones (DramaPlay SSL 525, Frembed redirect)
-  // so they never occupy a fallback slot that stalls playback for 10s.
-  const liveDrama = DRAMA_EMBED_PROVIDERS.filter(
-    (p) => !DEAD_DRAMA_PROVIDER_IDS.has(p.id),
-  );
   let chain: EmbedProvider[];
 
   if (contentType === "anime") {
-    const generalSafe = general.filter(
-      (p) => !ANIME_BLOCKED_PROVIDER_IDS.has(p.id),
-    );
-    // Every AniList/MAL title gets a working server: TMDB generals (AutoEmbed →
-    // VidLink) lead, then MegaPlay (MAL *or* AniList, no resolve) → Cinezo
-    // (AniList) → resolve-based hosts LAST (AnimePahe/SupaPlay often fail to
-    // resolve, so they must not sit ahead of instant hosts). Dead hosts
-    // (dropfile/ezvidapi) are dropped so they don't burn a 10s timeout slot each.
+    // Every AniList/MAL title gets a working server: TMDB generals lead, then
+    // instant native anime hosts, followed by resolve-based hosts.
     const liveNatives = ANIME_EMBED_PROVIDERS.filter(
-      (p) => !DEAD_ANIME_PROVIDER_IDS.has(p.id),
+      (p) => !p.needsResolve,
     );
     const instantNatives = preferProviders(
       liveNatives.filter((p) => !p.needsResolve),
@@ -685,45 +375,18 @@ export function getProvidersForContentType(
     );
     const resolveNatives = liveNatives.filter((p) => p.needsResolve);
     chain = [
-      ...preferProviders(generalSafe, GENERAL_PLAY_ORDER),
+      ...preferProviders(general, GENERAL_PLAY_ORDER),
       ...instantNatives,
       ...resolveNatives,
     ];
-  } else if (
-    contentType === "kdrama" ||
-    DRAMA_CONTENT_TYPES.has(contentType) ||
-    contentType === "cdrama" ||
-    contentType === "jdrama" ||
-    contentType === "thaidrama"
-  ) {
-    // MOVIE vs SERIES split matters here. The drama-specialized hosts
-    // (NontonGo/DramaPlay) are episode/series-oriented and thin on theatrical
-    // films — Korean/Asian MOVIES (e.g. Parasite) must lead with the broad
-    // TMDB aggregators that actually carry films, with drama hosts only as
-    // supplements. For SERIES/dramas, NontonGo leads (proven for Asian shows).
-    // KissKH is never ordered — it emits no TMDB URL (needs its own episode
-    // id) and is filtered out by providerCanPlay. Dead hosts (DramaPlay=SSL
-    // 525, Frembed=French-geo redirect) are not placed ahead of live ones.
-    if (mediaType === "movie") {
-      chain = [
-        ...preferProviders(general, GENERAL_PLAY_ORDER),
-        ...preferProviders(liveDrama, ["nontongo"]),
-      ];
-    } else {
-      chain = [
-        ...preferProviders(general, GENERAL_PLAY_ORDER),
-        ...preferProviders(liveDrama, ["nontongo"]),
-      ];
-    }
+  } else if (DRAMA_CONTENT_TYPES.has(contentType)) {
+    // KissKH needs its own episode id and therefore cannot be used by the
+    // TMDB-only player. Use the verified general servers for these titles.
+    chain = preferProviders(general, GENERAL_PLAY_ORDER);
   } else if (isFilipinoContent(ids)) {
-    // Filipino cinema: no PH-specialist embed host exists, so lead with the
-    // standard AutoEmbed → VidLink order, then drama
-    // hosts as best-effort. (kissasian.cam's KissKH backend can't be driven by
-    // a TMDB id, so it can't lead here — see the kisskh provider.)
-    chain = [
-      ...preferProviders(general, GENERAL_PLAY_ORDER),
-      ...preferProviders(liveDrama, ["nontongo"]),
-    ];
+    // No PH-specialist embed host has a verified TMDB endpoint, so use the
+    // verified general servers for Filipino titles as well.
+    chain = preferProviders(general, GENERAL_PLAY_ORDER);
   } else {
     chain = preferProviders(general, GENERAL_PLAY_ORDER);
   }

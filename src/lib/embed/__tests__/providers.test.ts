@@ -12,6 +12,10 @@ describe("embed provider order", () => {
     expect(ids).not.toContain("vixsrc");
     expect(ids).not.toContain("moviesapi");
     expect(ids).not.toContain("screenscape");
+    expect(ids).not.toContain("autoembed");
+    expect(ids).not.toContain("nontongo");
+    expect(ids).not.toContain("superembed");
+    expect(ids).not.toContain("kisskh");
   });
 
   it.each([
@@ -20,7 +24,7 @@ describe("embed provider order", () => {
     ["anime", "tv"],
     ["kdrama", "tv"],
     ["cdrama", "tv"],
-  ] as const)("orders AutoEmbed → VidLink first for %s", (
+  ] as const)("orders verified providers first for %s", (
     contentType,
     mediaType,
   ) => {
@@ -30,24 +34,18 @@ describe("embed provider order", () => {
       mal: 1,
     });
     expect(providers.slice(0, 3).map((p) => p.id)).toEqual([
-      "autoembed",
       "vidlink",
       "2embed",
+      "vidfast",
     ]);
   });
 
   it("builds movie and tv urls for the two lead servers", () => {
-    expect(buildEmbedUrl("autoembed", 550, "movie")).toBe(
-      "https://autoembed.co/movie/tmdb/550",
-    );
     expect(buildEmbedUrl("vidlink", 550, "movie")).toBe(
       "https://vidlink.pro/movie/550?autoplay=true",
     );
     expect(buildEmbedUrl("vidlink", 1399, "tv", 2, 3)).toBe(
       "https://vidlink.pro/tv/1399/2/3?autoplay=true",
-    );
-    expect(buildEmbedUrl("autoembed", 1399, "tv", 2, 3)).toBe(
-      "https://autoembed.co/tv/tmdb/1399-2-3",
     );
   });
 });
