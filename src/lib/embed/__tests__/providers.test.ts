@@ -34,12 +34,10 @@ describe("embed provider order", () => {
       anilist: 1,
       mal: 1,
     });
-    expect(providers.slice(0, 4).map((p) => p.id)).toEqual([
-      "vidfast",
-      "2embed",
-      "2embedskin",
-      "vidsrcpm",
-    ]);
+    const expected = contentType === "anime"
+      ? ["megaplay", "cinezo", "vidfast", "2embed"]
+      : ["vidfast", "2embed", "2embedskin", "vidsrcpm"];
+    expect(providers.slice(0, 4).map((p) => p.id)).toEqual(expected);
   });
 
   it("keeps the verified VidFast URL formats", () => {

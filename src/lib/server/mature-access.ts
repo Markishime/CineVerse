@@ -1,7 +1,9 @@
 import type { NextRequest } from "next/server";
+import { isRestrictedContentUser } from "@/lib/content/mature";
+import { resolveAuth } from "@/lib/server/auth";
 
-/** 18+ content is removed: no request may include adult metadata. */
+/** Only the explicitly allowlisted, authenticated account may include adults-only metadata. */
 export async function canIncludeMature(request: NextRequest): Promise<boolean> {
-  void request;
-  return false;
+  const auth = await resolveAuth(request);
+  return isRestrictedContentUser(auth.email);
 }

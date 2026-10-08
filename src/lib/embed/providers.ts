@@ -365,8 +365,8 @@ export function getProvidersForContentType(
     );
     const resolveNatives = liveNatives.filter((p) => p.needsResolve);
     chain = [
-      ...preferProviders(general, GENERAL_PLAY_ORDER),
       ...instantNatives,
+      ...preferProviders(general, GENERAL_PLAY_ORDER),
       ...resolveNatives,
     ];
   } else if (DRAMA_CONTENT_TYPES.has(contentType)) {

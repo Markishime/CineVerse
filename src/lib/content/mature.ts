@@ -19,8 +19,10 @@
 import type { Content, ContentType } from "@/types/content";
 
 // ─── Restricted content email allowlist ─────────────────────────────────────
-// 18+ content is removed from CineVerse: no account may view it.
-const RESTRICTED_CONTENT_EMAILS = new Set<string>();
+// 18+ content is available only to explicitly allowlisted accounts.
+const RESTRICTED_CONTENT_EMAILS = new Set<string>([
+  "cmark7781@gmail.com",
+]);
 
 /**
  * Returns true when the given email is allowed to view restricted content
