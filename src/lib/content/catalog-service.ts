@@ -1152,7 +1152,7 @@ export class CatalogService {
           .map((c) =>
             sanitizeContentTrailer(ensurePoster(ensureKnownTrailers(c))),
           )
-          .filter((c) => !isMatureContent(c))
+          .filter((c) => includeMature || !isMatureContent(c))
           .filter((c) => !isBlockedTitle(c))
           .filter(isAtLeastMinYear);
 
@@ -1177,9 +1177,10 @@ export class CatalogService {
           items = items.filter((c) => !isAnimeLikeContent(c));
         }
 
-        // Anime Series / Movies: strict format split + never hentai on public tabs
+        // Anime Series / Movies: strict format split. Adult anime is included
+        // only for the allowlisted account; everyone else never sees hentai.
         if (type === "anime") {
-          items = items.filter((c) => !isHentaiContent(c));
+          items = items.filter((c) => includeMature || !isHentaiContent(c));
           if (animeFormat) {
             items = items.filter((c) =>
               matchesAnimeFormatCategory(c, animeFormat),
@@ -1199,13 +1200,14 @@ export class CatalogService {
       }
     }
 
-    // Regular type catalogs stay family-safe; 18+ is only on the mature tab.
-    const all = (await this.loadLive(false)).map((c) =>
+    // Regular type catalogs stay family-safe; 18+ is only visible to the
+    // allowlisted account (mature titles blend into their normal catalogs).
+    const all = (await this.loadLive(includeMature)).map((c) =>
       applyRegionPlayable(c, regionCode, isTitlePlayable),
     );
     let items = all
       .filter((c) => c.contentType === type)
-      .filter((c) => !isMatureContent(c))
+      .filter((c) => includeMature || !isMatureContent(c))
       .filter(isAtLeastMinYear);
     if (playableOnly) {
       items = items.filter((c) => c.playable);
@@ -1237,9 +1239,9 @@ export class CatalogService {
           !c.genres.some((g) => /anim/i.test(g.name)),
       );
     }
-    // Anime films vs series split + never hentai on public series/movies tabs
+    // Anime films vs series split; adult anime only for the allowlisted account.
     if (type === "anime") {
-      items = items.filter((c) => !isHentaiContent(c));
+      items = items.filter((c) => includeMature || !isHentaiContent(c));
       if (animeFormat) {
         items = items.filter((c) => matchesAnimeFormatCategory(c, animeFormat));
       }

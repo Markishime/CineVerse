@@ -104,9 +104,7 @@ function DiscoverInner() {
   const baseGenres = homeQuery.data?.genres?.length
     ? homeQuery.data.genres
     : FALLBACK_GENRES;
-  const genres = mature
-    ? [...baseGenres, { id: "mature", name: "Mature" }]
-    : baseGenres;
+  const genres = baseGenres;
 
   const { data, isLoading, isFetching, isError, dataUpdatedAt, refetch } =
     useQuery({

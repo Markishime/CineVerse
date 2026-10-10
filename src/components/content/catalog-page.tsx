@@ -79,7 +79,6 @@ const DRAMA_GENRES = [
   "Soap",
   "Thriller",
   "War & Politics",
-  "Mature",
 ];
 
 const GENRE_OPTIONS: Record<ContentType, string[]> = {
@@ -103,7 +102,6 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "TV Movie",
     "War",
     "Western",
-    "Mature",
   ],
   series: [
     "Action & Adventure",
@@ -124,7 +122,6 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "Thriller",
     "War & Politics",
     "Western",
-    "Mature",
   ],
   anime: [
     "Action",
@@ -144,7 +141,6 @@ const GENRE_OPTIONS: Record<ContentType, string[]> = {
     "Sports",
     "Supernatural",
     "Thriller",
-    "Mature",
   ],
   kdrama: DRAMA_GENRES,
   cdrama: DRAMA_GENRES,
@@ -347,13 +343,7 @@ export function CatalogPage({
             </h1>
             <p className="max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
               {subtitle ?? m.subtitle}
-              {mature ? " · 18+ mature content" : ""}
             </p>
-            {mature && (
-              <Badge tone="accent" className="mt-2">
-                18+ mature content enabled
-              </Badge>
-            )}
             <div className="mt-4 flex flex-wrap gap-2">
               <Chip
                 active={watchNowOnly}
@@ -425,9 +415,7 @@ export function CatalogPage({
             >
               All genres
             </Chip>
-            {GENRE_OPTIONS[type]
-              .filter((name) => name !== "Mature" || mature)
-              .map((name) => (
+            {GENRE_OPTIONS[type].map((name) => (
               <Chip
                 key={name}
                 active={genre === name}
@@ -439,7 +427,7 @@ export function CatalogPage({
               >
                 {name}
               </Chip>
-              ))}
+            ))}
           </div>
         </Reveal>
 

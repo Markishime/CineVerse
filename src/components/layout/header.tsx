@@ -21,22 +21,16 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
-import { isRestrictedContentUser } from "@/lib/content/mature";
 
 interface NavChild {
   href: string;
   label: string;
-  /** Only visible to the restricted-content allowlist email. */
-  restrictedOnly?: true;
 }
 
 interface NavItem {
   href: string;
   label: string;
   icon: typeof Film;
-  /** When true, `children` only appear (as a dropdown) if restricted user;
-   *  otherwise the item renders as a plain link. */
-  matureChildren?: true;
   children?: NavChild[];
 }
 
@@ -53,7 +47,6 @@ const baseNav: NavItem[] = [
       { href: "/movies/chinese", label: "Chinese Movies" },
       { href: "/movies/thai", label: "Thai Movies" },
       { href: "/movies/filipino", label: "Filipino Movies" },
-      { href: "/movies?genre=Mature", label: "Mature / 18+", restrictedOnly: true },
     ],
   },
   {
@@ -67,7 +60,6 @@ const baseNav: NavItem[] = [
       { href: "/series/chinese", label: "Chinese Series" },
       { href: "/series/thai", label: "Thai Series" },
       { href: "/series/filipino", label: "Filipino Series" },
-      { href: "/series?genre=Mature", label: "Mature / 18+", restrictedOnly: true },
     ],
   },
   {
@@ -83,11 +75,9 @@ const baseNav: NavItem[] = [
       "Science Fiction",
       "Thriller",
       "Animation",
-      "Mature",
     ].map((g) => ({
       href: `/discover?genre=${encodeURIComponent(g)}`,
       label: g === "Science Fiction" ? "Sci-Fi" : g,
-      ...(g === "Mature" ? { restrictedOnly: true as const } : {}),
     })),
   },
   {
@@ -98,7 +88,6 @@ const baseNav: NavItem[] = [
       { href: "/anime", label: "All Anime" },
       { href: "/anime/series", label: "Anime Series" },
       { href: "/anime/movies", label: "Anime Movies" },
-      { href: "/anime?genre=Mature", label: "Mature / 18+", restrictedOnly: true },
     ],
   },
   {
@@ -111,7 +100,6 @@ const baseNav: NavItem[] = [
       { href: "/cdrama", label: "C-Drama" },
       { href: "/thaidrama", label: "Thai Drama" },
       { href: "/series/filipino", label: "Filipino Drama" },
-      { href: "/kdrama?genre=Mature", label: "Mature / 18+", restrictedOnly: true },
     ],
   },
   { href: "/search", label: "Search", icon: Search },
@@ -226,23 +214,7 @@ export function Header() {
   const { user, profile } = useAuthStore();
   const isHome = pathname === "/";
 
-  const restrictedUser = isRestrictedContentUser(user?.email);
-  const nav = baseNav.map((item) => {
-    // Country movie catalogs: dropdown only for the allowlisted email.
-    if (item.matureChildren && !restrictedUser) {
-      return { ...item, children: undefined };
-    }
-    // Hentai (and any restrictedOnly child): only for allowlisted email.
-    if (item.children?.some((c) => c.restrictedOnly)) {
-      return {
-        ...item,
-        children: item.children.filter(
-          (c) => !c.restrictedOnly || restrictedUser,
-        ),
-      };
-    }
-    return item;
-  });
+  const nav = baseNav;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);

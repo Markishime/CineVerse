@@ -310,7 +310,7 @@ export default function SettingsPage() {
         </h2>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">
           {matureAccess
-            ? "Mature and adult titles are available in the Mature / 18+ genre across Movies, Series, Anime, and Dramas."
+            ? "Mature and adult titles are blended into the Movies, Series, Anime, and Dramas catalogs for this account."
             : "Mature and adult titles are not available for this account."}
         </p>
       </section>
