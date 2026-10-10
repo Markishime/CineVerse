@@ -540,38 +540,52 @@ export class CatalogService {
   }
 
   /**
-   * Detail lookups always include the mature catalog so /mature and 18+ cards
-   * resolve to /content/[slug] instead of "Title not found".
+   * Detail lookups resolve the mature catalog only for allowlisted viewers so
+   * 18+ cards open /content/[slug] instead of "Title not found". Public callers
+   * (`allowMature = false`) keep the strict public-only behavior.
    */
-  private async loadForDetail(): Promise<Content[]> {
-    return this.loadLive(false);
+  private async loadForDetail(allowMature = false): Promise<Content[]> {
+    return this.loadLive(allowMature);
   }
 
-  /** 18+ titles are never served, even by direct link. */
-  private publicOnly(content: Content | null): Content | null {
+  /**
+   * 18+ titles are hidden from the public. When the caller is the allowlisted
+   * account (`allowMature`), adults-only titles pass through for the 18+ UI.
+   */
+  private publicOnly(
+    content: Content | null,
+    allowMature = false,
+  ): Content | null {
     if (!content) return null;
+    if (allowMature) return content;
     return content.mature || isMatureContent(applyMatureFlag(content))
       ? null
       : content;
   }
 
-  async byId(id: string): Promise<Content | null> {
-    return this.publicOnly(await this.byIdRaw(id));
+  async byId(id: string, allowMature = false): Promise<Content | null> {
+    return this.publicOnly(await this.byIdRaw(id, allowMature), allowMature);
   }
 
-  private async byIdRaw(id: string): Promise<Content | null> {
+  private async byIdRaw(
+    id: string,
+    allowMature = false,
+  ): Promise<Content | null> {
     const decoded = decodeURIComponent(id).trim();
     const known =
       this.detailCache.get(id)?.content ??
       this.getTransient(id) ??
       this.liveCache?.items.find((c) => c.id === id) ??
+      (allowMature
+        ? this.matureCache?.items.find((c) => c.id === id)
+        : undefined) ??
       SEED_CONTENT.find((c) => c.id === id);
     if (known) return known;
     const external = await this.resolveExternalIdentity(decoded);
     if (external) return external;
-    const hydrated = await this.hydrate(id);
+    const hydrated = await this.hydrate(id, allowMature);
     if (hydrated) return hydrated.content;
-    const all = await this.loadForDetail();
+    const all = await this.loadForDetail(allowMature);
     return (
       all.find(
         (c) =>
@@ -583,8 +597,11 @@ export class CatalogService {
     );
   }
 
-  async bySlug(slug: string): Promise<Content | null> {
-    const content = this.publicOnly(await this.bySlugRaw(slug));
+  async bySlug(slug: string, allowMature = false): Promise<Content | null> {
+    const content = this.publicOnly(
+      await this.bySlugRaw(slug, allowMature),
+      allowMature,
+    );
     return content ? this.withEmbedIds(content) : null;
   }
 
@@ -601,7 +618,10 @@ export class CatalogService {
     return enriched;
   }
 
-  private async bySlugRaw(slug: string): Promise<Content | null> {
+  private async bySlugRaw(
+    slug: string,
+    allowMature = false,
+  ): Promise<Content | null> {
     const decoded = decodeURIComponent(slug).trim();
     const transient = this.getTransient(decoded);
     if (transient) {
@@ -609,14 +629,16 @@ export class CatalogService {
     }
     const external = await this.resolveExternalIdentity(decoded);
     if (external) return external;
-    const known = [...(this.liveCache?.items ?? []), ...SEED_CONTENT].find(
-      (c) => c.slug === decoded || c.id === decoded,
-    );
+    const known = [
+      ...(this.liveCache?.items ?? []),
+      ...(allowMature ? (this.matureCache?.items ?? []) : []),
+      ...SEED_CONTENT,
+    ].find((c) => c.slug === decoded || c.id === decoded);
     if (known) return this.detailCache.get(known.id)?.content ?? known;
     // Cold catalog builds take seconds; a `title-{id}` link can resolve straight from its provider.
     const direct = await this.resolveTmdbSlug(decoded);
     if (direct) return direct;
-    const all = await this.loadForDetail();
+    const all = await this.loadForDetail(allowMature);
     const hit = all.find(
       (c) =>
         c.slug === decoded ||
@@ -677,17 +699,20 @@ export class CatalogService {
     } | null>
   >();
 
-  async hydrate(idOrSlug: string) {
+  async hydrate(idOrSlug: string, allowMature = false) {
     const existing = this.detailInflight.get(idOrSlug);
     if (existing) return existing;
-    const pending = this.hydrateUncached(idOrSlug).finally(() =>
+    const pending = this.hydrateUncached(idOrSlug, allowMature).finally(() =>
       this.detailInflight.delete(idOrSlug),
     );
     this.detailInflight.set(idOrSlug, pending);
     return pending;
   }
 
-  private async hydrateUncached(idOrSlug: string): Promise<{
+  private async hydrateUncached(
+    idOrSlug: string,
+    allowMature = false,
+  ): Promise<{
     content: Content;
     cast: Credit[];
     crew: Credit[];
@@ -700,11 +725,12 @@ export class CatalogService {
     const available = [
       ...(transient ? [transient] : []),
       ...(this.liveCache?.items ?? []),
+      ...(allowMature ? (this.matureCache?.items ?? []) : []),
       ...SEED_CONTENT,
     ];
     const all = available.some((c) => c.id === decoded || c.slug === decoded)
       ? available
-      : await this.loadForDetail();
+      : await this.loadForDetail(allowMature);
     const base =
       all.find(
         (c) =>
@@ -1921,8 +1947,10 @@ export class CatalogService {
       ...(await this.loadLive(includeMature)),
     ]).map((c) => applyMatureFlag(c));
 
-    // Public search never surfaces 18+ — mature titles only via /mature.
-    results = filterPublicCatalog(results.map((c) => applyMatureFlag(c)));
+    // Public search never surfaces 18+; the allowlisted account may see them.
+    if (!includeMature) {
+      results = filterPublicCatalog(results.map((c) => applyMatureFlag(c)));
+    }
     results = filterBlocked(results);
     results = results.filter(isAtLeastMinYear);
 
@@ -2012,14 +2040,15 @@ export class CatalogService {
 
   async credits(
     contentId: string,
+    allowMature = false,
   ): Promise<{ cast: Credit[]; crew: Credit[] }> {
-    const h = await this.hydrate(contentId);
+    const h = await this.hydrate(contentId, allowMature);
     if (!h) return { cast: [], crew: [] };
     return { cast: h.cast, crew: h.crew };
   }
 
-  async trailers(contentId: string): Promise<Trailer[]> {
-    const h = await this.hydrate(contentId);
+  async trailers(contentId: string, allowMature = false): Promise<Trailer[]> {
+    const h = await this.hydrate(contentId, allowMature);
     if (!h) return [];
     // Prefer official Trailer-type videos for API consumers.
     const pool = [
@@ -2037,8 +2066,9 @@ export class CatalogService {
   async providers(
     contentId: string,
     region = "*",
+    allowMature = false,
   ): Promise<{ providers: WatchProvider[]; region: string }> {
-    const c = await this.byId(contentId);
+    const c = await this.byId(contentId, allowMature);
     if (!c) return { providers: [], region };
 
     const tmdbId = c.providerIds.tmdb;
@@ -2056,8 +2086,11 @@ export class CatalogService {
     return { providers: c.watchProviders ?? [], region };
   }
 
-  async recommendations(contentId: string): Promise<Recommendation[]> {
-    const base = await this.byId(contentId);
+  async recommendations(
+    contentId: string,
+    allowMature = false,
+  ): Promise<Recommendation[]> {
+    const base = await this.byId(contentId, allowMature);
     if (!base) return [];
     // Non-mature titles never get 18+ neighbors; mature titles may rec within adult set.
     const safeCatalog = isMatureContent(base)
@@ -2080,8 +2113,8 @@ export class CatalogService {
     });
   }
 
-  async seasons(contentId: string): Promise<Season[]> {
-    const c = await this.byId(contentId);
+  async seasons(contentId: string, allowMature = false): Promise<Season[]> {
+    const c = await this.byId(contentId, allowMature);
     if (!c) return [];
     if (c.contentType === "movie") return [];
 
@@ -2226,12 +2259,12 @@ export class CatalogService {
     }));
   }
 
-  async episodes(seasonId: string): Promise<Episode[]> {
+  async episodes(seasonId: string, allowMature = false): Promise<Episode[]> {
     const match = seasonId.match(/^(.*)_s(\d+)$/);
     if (!match) return [];
     const contentId = match[1]!;
     const seasonNumber = Number(match[2]);
-    const c = await this.byId(contentId);
+    const c = await this.byId(contentId, allowMature);
     if (!c) return [];
 
     // 0) Free full shows — real episode list + playable flags
@@ -2419,8 +2452,9 @@ export class CatalogService {
   async episodesWithPlayback(
     seasonId: string,
     region = "*",
+    allowMature = false,
   ): Promise<Array<Episode & { playable: boolean }>> {
-    const eps = await this.episodes(seasonId);
+    const eps = await this.episodes(seasonId, allowMature);
     const match = seasonId.match(/^(.*)_s(\d+)$/);
     if (!match) return eps.map((e) => ({ ...e, playable: false }));
     const contentId = match[1]!;
@@ -2438,11 +2472,11 @@ export class CatalogService {
     }));
   }
 
-  async playback(contentId: string, region = "*") {
+  async playback(contentId: string, region = "*", allowMature = false) {
     const { resolvePlayback } = await import("@/lib/playback/resolve-playback");
     const { isTitlePlayable } = await import("@/lib/playback/playback-store");
 
-    const c = await this.byId(contentId);
+    const c = await this.byId(contentId, allowMature);
     if (!c) {
       return {
         eligible: false,
@@ -2470,7 +2504,7 @@ export class CatalogService {
       };
     }
 
-    const trailers = await this.trailers(contentId);
+    const trailers = await this.trailers(contentId, allowMature);
     const aliases = [
       c.id,
       c.slug,

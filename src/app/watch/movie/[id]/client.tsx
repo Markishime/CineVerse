@@ -12,10 +12,14 @@ import type { TmdbMovieDetail } from "@/lib/embed/tmdb-fetcher";
 import { useEffect, useState } from "react";
 import { saveContinueWatching } from "@/lib/content/watch-progress";
 import { useAuthStore } from "@/stores/auth-store";
+import { isRestrictedContentUser } from "@/lib/content/mature";
+import { UnavailableTitle } from "@/components/content/unavailable-title";
 
 interface WatchMovieClientProps {
   tmdbId: number;
   movie: TmdbMovieDetail;
+  /** Title flagged 18+ by the server; only the allowlisted account may watch. */
+  isAdult?: boolean;
 }
 
 /** Detect Asian-drama type for regional movies (Korean, Chinese, Japanese, Thai). */
@@ -36,9 +40,14 @@ function detectDramaType(
  * Client component for the movie watch page.
  * Handles the interactive video player, share functionality, and cinematic UI.
  */
-export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
+export function WatchMovieClient({
+  tmdbId,
+  movie,
+  isAdult,
+}: WatchMovieClientProps) {
   const user = useAuthStore((s) => s.user);
   const [shareMsg, setShareMsg] = useState("");
+  const blocked = Boolean(isAdult) && !isRestrictedContentUser(user?.email);
   const backdrop = tmdbBackdropUrl(movie.backdrop_path, "w1280");
 
   // Detect anime movie: Animation genre (16) + Japanese language
@@ -56,6 +65,7 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
     : null;
 
   useEffect(() => {
+    if (blocked) return;
     const poster = movie.poster_path
       ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
       : null;
@@ -79,7 +89,7 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
       },
       user?.uid,
     );
-  }, [tmdbId, movie, user?.uid, isAnimeMovie, contentType, year]);
+  }, [tmdbId, movie, user?.uid, isAnimeMovie, contentType, year, blocked]);
 
   const share = async () => {
     try {
@@ -91,6 +101,8 @@ export function WatchMovieClient({ tmdbId, movie }: WatchMovieClientProps) {
       setShareMsg("Could not copy link");
     }
   };
+
+  if (blocked) return <UnavailableTitle />;
 
   return (
     <div className="relative min-h-dvh bg-[var(--background)] pb-24 pt-16">

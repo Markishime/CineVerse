@@ -9,7 +9,6 @@ import {
 import { fallbackEpisode, fallbackTvShow } from "@/lib/embed/tmdb-fallbacks";
 import { WatchTvClient } from "./client";
 import { isAdultTmdbTitle } from "@/lib/content/adult-filter";
-import { UnavailableTitle } from "@/components/content/unavailable-title";
 
 interface Props {
   params: Promise<{ id: string; season: string; episode: string }>;
@@ -94,7 +93,9 @@ export default async function WatchTvPage({ params }: Props) {
   const tvShow =
     liveShow ?? fallbackTvShow(tmdbId, seasonNum, episodeNum);
 
-  if (await isAdultTmdbTitle("tv", tmdbId, tvShow)) return <UnavailableTitle />;
+  // 18+ titles stay hidden from the public but remain watchable for the
+  // allowlisted account — the client gate decides using the signed-in email.
+  const isAdult = await isAdultTmdbTitle("tv", tmdbId, tvShow);
 
   // Only redirect season/episode bounds when we have real TMDB data
   if (liveShow) {
@@ -131,6 +132,7 @@ export default async function WatchTvPage({ params }: Props) {
         season={seasonNum}
         episodeNum={episodeNum}
         genreIds={tvShow.genres?.map((g) => g.id) ?? []}
+        isAdult={isAdult}
       />
     </Suspense>
   );

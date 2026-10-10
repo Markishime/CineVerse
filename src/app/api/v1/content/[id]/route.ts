@@ -9,9 +9,10 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
-  const content = await catalog.byId(decodeURIComponent(id));
+  const allowMature = await canIncludeMature(request);
+  const content = await catalog.byId(decodeURIComponent(id), allowMature);
   if (!content) return errorJson("Content not found", 404);
-  if (isAdultRestricted(content) && !(await canIncludeMature(request))) {
+  if (isAdultRestricted(content) && !allowMature) {
     return errorJson("Content not found", 404);
   }
   return json(content);

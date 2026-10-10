@@ -1,4 +1,5 @@
 import { catalog } from "@/lib/content/catalog-service";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 import { errorJson, json, resolveAuth } from "@/lib/server/auth";
 import * as userStore from "@/lib/server/user-store";
 import { NextRequest } from "next/server";
@@ -21,7 +22,9 @@ export async function POST(
   if (!auth.uid) return errorJson("Authentication required", 401);
   const { id } = await context.params;
   const contentId = decodeURIComponent(id);
-  if (!(await catalog.byId(contentId))) return errorJson("Content not found", 404);
+  const allowMature = isRestrictedContentUser(auth.email);
+  if (!(await catalog.byId(contentId, allowMature)))
+    return errorJson("Content not found", 404);
   const body = await request.json();
   if (!body.body || typeof body.rating !== "number") {
     return errorJson("rating and body are required", 400);

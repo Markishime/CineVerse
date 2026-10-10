@@ -21,6 +21,8 @@ import type {
   TmdbEpisodeDetail,
 } from "@/lib/embed/tmdb-fetcher";
 import { useAuthStore } from "@/stores/auth-store";
+import { isRestrictedContentUser } from "@/lib/content/mature";
+import { UnavailableTitle } from "@/components/content/unavailable-title";
 
 interface WatchTvClientProps {
   tmdbId: number;
@@ -29,6 +31,8 @@ interface WatchTvClientProps {
   season: number;
   episodeNum: number;
   genreIds?: number[];
+  /** Title flagged 18+ by the server; only the allowlisted account may watch. */
+  isAdult?: boolean;
 }
 
 function currentSeasonEpCount(tvShow: TmdbTvDetail, season: number): number {
@@ -70,12 +74,14 @@ export function WatchTvClient({
   season,
   episodeNum,
   genreIds = [],
+  isAdult,
 }: WatchTvClientProps) {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const [shareMsg, setShareMsg] = useState("");
   const [countdown, setCountdown] = useState<number | null>(null);
   const backdrop = tmdbBackdropUrl(tvShow.backdrop_path, "w1280");
+  const blocked = Boolean(isAdult) && !isRestrictedContentUser(user?.email);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -157,6 +163,8 @@ export function WatchTvClient({
 
   const epTitle = episode?.name || `Episode ${episodeNum}`;
   const fullTitle = `${tvShow.name} · S${String(season).padStart(2, "0")}E${String(episodeNum).padStart(2, "0")} — ${epTitle}`;
+
+  if (blocked) return <UnavailableTitle />;
 
   return (
     <div className="relative min-h-dvh bg-[var(--background)] pb-24 pt-16">
