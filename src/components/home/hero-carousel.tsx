@@ -43,64 +43,14 @@ import {
   lookupKnownTrailerKeys,
 } from "@/lib/content/known-trailers";
 
+import {
+  applyPlayback,
+  hardSilence,
+  releasePlayer,
+  type YtPlayer,
+} from "@/lib/playback/youtube-controls";
+
 const SOUND_PREF_KEY = "cineverse_hero_trailer_sound";
-
-type YtPlayer = {
-  playVideo?: () => void;
-  pauseVideo?: () => void;
-  stopVideo?: () => void;
-  mute?: () => void;
-  unMute?: () => void;
-  isMuted?: () => boolean;
-  setVolume?: (n: number) => void;
-  getPlayerState?: () => number;
-  destroy?: () => void;
-};
-
-function hardSilence(p: YtPlayer | null | undefined) {
-  if (!p) return;
-  try {
-    p.mute?.();
-    p.pauseVideo?.();
-    p.stopVideo?.();
-  } catch {
-    /* ignore */
-  }
-}
-
-function destroyPlayer(ref: { current: YtPlayer | null }) {
-  const p = ref.current;
-  if (!p) return;
-  try {
-    hardSilence(p);
-    p.destroy?.();
-  } catch {
-    /* ignore */
-  }
-  ref.current = null;
-}
-
-function applyPlayback(
-  p: YtPlayer | null | undefined,
-  opts: { play: boolean; soundOn: boolean },
-) {
-  if (!p) return;
-  try {
-    if (!opts.play) {
-      hardSilence(p);
-      return;
-    }
-    p.playVideo?.();
-    if (opts.soundOn) {
-      p.unMute?.();
-      p.setVolume?.(72);
-    } else {
-      p.mute?.();
-    }
-  } catch {
-    /* ignore */
-  }
-}
 
 function HeroTrailerBg({
   trailerKey,
@@ -172,7 +122,7 @@ function HeroTrailerBg({
   useEffect(() => {
     destroyedRef.current = false;
     if (!shouldPlay) {
-      destroyPlayer(playerRef);
+      releasePlayer(playerRef);
       onPlayer?.(null);
       const t = window.setTimeout(() => setShowPlayer(false), 0);
       return () => window.clearTimeout(t);
@@ -181,7 +131,7 @@ function HeroTrailerBg({
     return () => {
       window.clearTimeout(t);
       destroyedRef.current = true;
-      destroyPlayer(playerRef);
+      releasePlayer(playerRef);
       onPlayer?.(null);
     };
   }, [shouldPlay, activeKey, onPlayer]);
@@ -198,7 +148,7 @@ function HeroTrailerBg({
   useEffect(() => {
     return () => {
       destroyedRef.current = true;
-      destroyPlayer(playerRef);
+      releasePlayer(playerRef);
       onPlayer?.(null);
     };
   }, [onPlayer]);
@@ -246,6 +196,7 @@ function HeroTrailerBg({
 
   const onStateChange = useCallback((event: YouTubeEvent<number>) => {
     const p = event.target as unknown as YtPlayer;
+    if (destroyedRef.current || p !== playerRef.current) return;
     if (!shouldPlayRef.current) {
       hardSilence(p);
       return;
@@ -261,7 +212,7 @@ function HeroTrailerBg({
 
   // YouTube error 100/101/150 = unavailable / embed blocked → try next key
   const onError = useCallback(() => {
-    destroyPlayer(playerRef);
+    releasePlayer(playerRef);
     onPlayer?.(null);
     setKeyIndex((i) => {
       const next = i + 1;
@@ -703,16 +654,7 @@ export function HeroCarousel({
       hardSilence(p);
       return;
     }
-    if (!soundOn) {
-      try {
-        p?.mute?.();
-        p?.playVideo?.();
-      } catch {
-        /* ignore */
-      }
-      return;
-    }
-    applyPlayback(p, { play: true, soundOn: true });
+    applyPlayback(p, { play: true, soundOn });
   }, [playbackAllowed, soundOn, index]);
 
   useEffect(() => {
@@ -770,13 +712,6 @@ export function HeroCarousel({
           play: true,
           soundOn: next,
         });
-        if (!next) {
-          try {
-            p.mute?.();
-          } catch {
-            /* ignore */
-          }
-        }
       }
       return next;
     });
@@ -919,6 +854,7 @@ export function HeroCarousel({
                         src={posterThumb}
                         alt=""
                         fill
+                        loading="eager"
                         sizes="256px"
                         className="object-cover"
                         unoptimized

@@ -8,3 +8,4 @@
 6. **FCM push** — Client scaffolding present; production requires VAPID keys and device registration flows.
 7. **Image URLs** — Remote posters depend on TMDB/AniList CDNs; missing posters show graceful fallbacks.
 8. **Rules unit tests** — Static assertions always run; full emulator integration tests require `firebase emulators:exec`.
+9. **Lint dependency advisory** — `eslint-config-next` still brings in `braces` 3.0.3 through `fast-glob` / `micromatch`. GHSA-vfj7-8cjw-p6xm has no published patched version as of 2026-10-18. This dependency is used by local lint tooling; the production dependency audit is clean. Do not downgrade Next.js or Firebase in response to `npm audit fix --force` suggestions.

@@ -970,7 +970,7 @@ export async function fetchAnilistById(id: number): Promise<{
     body: JSON.stringify({
       query: `
         query ($id: Int) {
-          Media(id: $id, type: ANIME, isAdult: false) {
+          Media(id: $id, type: ANIME) {
             id format status episodes duration averageScore popularity description genres isAdult
             title { romaji english native }
             coverImage { large extraLarge }

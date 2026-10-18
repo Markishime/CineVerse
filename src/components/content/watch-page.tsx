@@ -371,7 +371,7 @@ export function WatchPage({
             verifyPin={(pin) => verifyParentalPin(user.uid, pin)}
             onCancel={() => {
               setPinGateOpen(false);
-              window.location.href = "/";
+              router.push("/");
             }}
             onSuccess={() => {
               setMatureSessionUnlocked(true);

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
@@ -57,6 +57,7 @@ import { Reveal } from "@/components/motion/reveal";
 import { useEffect, useState } from "react";
 
 export function ContentDetail({ slug }: { slug: string }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const playTrailer = searchParams.get("play") === "trailer";
   const playFull = searchParams.get("play") === "full";
@@ -384,7 +385,7 @@ export function ContentDetail({ slug }: { slug: string }) {
             verifyPin={(pin) => verifyParentalPin(user.uid, pin)}
             onCancel={() => {
               setPinGateOpen(false);
-              window.location.href = "/";
+              router.push("/");
             }}
             onSuccess={() => {
               setMatureSessionUnlocked(true);
@@ -443,6 +444,8 @@ export function ContentDetail({ slug }: { slug: string }) {
               })()}
               alt={title}
               fill
+              loading="eager"
+              sizes="210px"
               className="object-cover"
               unoptimized
             />

@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 
 export default function ErrorPage({
   error,
@@ -9,6 +10,7 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
   return (
     <div className="mx-auto flex min-h-[70dvh] max-w-lg flex-col items-center justify-center px-4 text-center">
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--danger)]">
@@ -22,7 +24,7 @@ export default function ErrorPage({
       </p>
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Button onClick={reset}>Try again</Button>
-        <Button variant="secondary" onClick={() => (window.location.href = "/")}>
+        <Button variant="secondary" onClick={() => router.push("/")}>
           Go home
         </Button>
       </div>

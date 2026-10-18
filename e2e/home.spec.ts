@@ -3,8 +3,12 @@ import { test, expect } from "@playwright/test";
 test.describe("CineVerse smoke", () => {
   test("homepage loads catalog sections", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("CineVerse", { exact: false }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Trending today/i })).toBeVisible({
+    await expect(
+      page.getByText("CineVerse", { exact: false }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Top 10 today" }),
+    ).toBeVisible({
       timeout: 30_000,
     });
   });
@@ -24,13 +28,15 @@ test.describe("CineVerse smoke", () => {
     await expect(page.getByRole("heading", { name: "Inception" })).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText("Where to watch")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Other legal providers" }),
+    ).toBeVisible();
   });
 
-  test("legal playback gate message present", async ({ page }) => {
+  test("legal provider links require sign-in", async ({ page }) => {
     await page.goto("/content/inception-2010");
     await expect(
-      page.getByText(/Full playback requires verified|Verified rights allow/i),
+      page.getByRole("heading", { name: "Sign in for legal watch links" }),
     ).toBeVisible({ timeout: 20_000 });
   });
 
