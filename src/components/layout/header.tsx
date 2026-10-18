@@ -21,6 +21,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
+import { isRestrictedContentUser } from "@/lib/content/mature";
 
 interface NavChild {
   href: string;
@@ -214,7 +215,33 @@ export function Header() {
   const { user, profile } = useAuthStore();
   const isHome = pathname === "/";
 
-  const nav = baseNav;
+  // 18+ nav entries only exist for the allowlisted restricted account.
+  const nav: NavItem[] = isRestrictedContentUser(user?.email)
+    ? baseNav.map((item) => {
+        if (item.href === "/anime") {
+          return {
+            ...item,
+            children: [
+              ...(item.children ?? []),
+              { href: "/anime/hentai", label: "Hentai (18+)" },
+            ],
+          };
+        }
+        if (item.href === "/movies") {
+          return {
+            ...item,
+            children: [
+              ...(item.children ?? []),
+              {
+                href: "/movies/filipino?genre=mature",
+                label: "Adult Filipino (18+)",
+              },
+            ],
+          };
+        }
+        return item;
+      })
+    : baseNav;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);

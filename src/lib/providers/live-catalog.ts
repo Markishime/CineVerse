@@ -2500,20 +2500,54 @@ export async function fetchJikanCredits(
 
 /* ─── TMDB ────────────────────────────────────────────────── */
 
+/**
+ * Which audience a TMDB request is for.
+ *
+ * - `public` — every family-safe catalog surface. Adult content is excluded
+ *   three ways: `include_adult=false`, the sexual keyword blocklist and the
+ *   Vivamax-style producer blocklist.
+ * - `mature` — the allowlisted 18+ library only. The three exclusions are
+ *   REMOVED and `include_adult=true`, otherwise hentai / 3D hentai / adult
+ *   Filipino titles (which TMDB marks `adult:true` or hangs off the blocked
+ *   keywords & producers) could never be returned at all.
+ */
+export type TmdbAccessMode = "public" | "mature";
+
+/**
+ * Pure builder for the final TMDB query params. Exported so the public/mature
+ * split is unit-testable without hitting the network.
+ */
+export function tmdbDiscoverParams(
+  path: string,
+  params: Record<string, string>,
+  mode: TmdbAccessMode = "public",
+): Record<string, string> {
+  const out: Record<string, string> = { ...params };
+  if (!path.startsWith("/discover/")) return out;
+  if (mode === "mature") {
+    out.include_adult = "true";
+    delete out.without_keywords;
+    delete out.without_companies;
+    return out;
+  }
+  out.include_adult = "false";
+  out.without_keywords = TMDB_ADULT_KEYWORD_IDS;
+  out.without_companies = TMDB_ADULT_COMPANY_IDS;
+  return out;
+}
+
 async function tmdbGet<T>(
   path: string,
   params: Record<string, string> = {},
+  mode: TmdbAccessMode = "public",
 ): Promise<T | null> {
   const token = process.env.TMDB_ACCESS_TOKEN?.trim();
   const apiKey = process.env.TMDB_API_KEY?.trim();
   if (!token && !apiKey) return null;
   const url = new URL(`${TMDB}${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  if (path.startsWith("/discover/")) {
-    url.searchParams.set("include_adult", "false");
-    url.searchParams.set("without_keywords", TMDB_ADULT_KEYWORD_IDS);
-    url.searchParams.set("without_companies", TMDB_ADULT_COMPANY_IDS);
-  }
+  Object.entries(tmdbDiscoverParams(path, params, mode)).forEach(([k, v]) =>
+    url.searchParams.set(k, v),
+  );
   if (!token && apiKey) url.searchParams.set("api_key", apiKey);
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -3525,17 +3559,47 @@ function mapTmdbTv(
  * Explicit sexual mature library from TMDB (metadata only — never streams).
  * ONLY nudity / sex / erotica / adult-flagged titles — not general R, horror, or TV-MA crime.
  *
- * Keyword ids (TMDB):
- *  9672 male nudity · 9673 female nudity · 155477 erotic · 190370 sex
+ * Every request runs in `mature` access mode so TMDB's `adult` flag, the
+ * sexual keyword blocklist and the Vivamax producer blocklist are NOT applied
+ * (they are public-surface rules). Without that, hentai / 3D hentai and adult
+ * Filipino titles would be filtered out before they ever reached this function.
+ *
+ * Four groups:
+ *  1. Erotica / nudity / sex — keyword-driven (TMDB 9672 male nudity · 9673
+ *     female nudity · 155477 erotic · 190370 sex).
+ *  2. Hentai + 3D hentai — TMDB /search (the only endpoint that returns
+ *     adult:true) plus the "hentai" keyword, keeping animation rows only.
+ *  3. Adult Filipino (Vivamax-style) — PH origin plus the producer brand.
+ *  4. NC-17.
  */
+
+/** TMDB Animation genre id — hentai is adult animation, not live action. */
+const TMDB_ANIMATION_GENRE_ID = 16;
+
+/** TMDB keyword id for "hentai" (resolved via /search/keyword). */
+const TMDB_HENTAI_KEYWORD_ID = "198385";
+
 export async function fetchTmdbMature(): Promise<Content[]> {
   // Nudity / sex / erotic keywords (OR)
   const sexualKw = "9673|9672|155477|190370|12564|249790";
+  /** Access mode: never apply the public adult exclusions here. */
+  const mature = "mature" as const;
 
   const [
-    adultMovies1,
-    adultMovies2,
-    adultMovies3,
+    hentaiSearchMovie1,
+    hentaiSearchMovie2,
+    hentaiSearchMovie3,
+    hentaiSearchMovie4,
+    hentaiSearchTv1,
+    hentaiSearchTv2,
+    hentaiKwMovie,
+    hentaiKwTv,
+    phMoviesA,
+    phMoviesB,
+    phKeyword,
+    vivamaxA,
+    vivamaxB,
+    phTv,
     nc17,
     movieNudity,
     movieErotic,
@@ -3546,81 +3610,184 @@ export async function fetchTmdbMature(): Promise<Content[]> {
     tvSexP3,
     tvDramaSex,
   ] = await Promise.all([
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      include_adult: "true",
-      "vote_count.gte": "3",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      include_adult: "true",
-      "vote_count.gte": "3",
-      page: "2",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      include_adult: "true",
-      "vote_count.gte": "3",
-      page: "3",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      certification_country: "US",
-      certification: "NC-17",
-      "vote_count.gte": "5",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      with_keywords: sexualKw,
-      "vote_count.gte": "20",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      with_keywords: sexualKw,
-      "vote_count.gte": "15",
-      page: "2",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "vote_count.desc",
-      with_keywords: "9673|9672",
-      "vote_count.gte": "30",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/movie", {
-      sort_by: "popularity.desc",
-      with_keywords: "9673|155477",
-      "vote_count.gte": "20",
-      page: "3",
-    }),
+    // ── Group 2: hentai + 3D hentai ──
+    // TMDB's /discover NEVER returns adult:true rows (even with
+    // include_adult=true), so the only way to reach adult animation is /search
+    // with include_adult=true plus the TMDB "hentai" keyword (id 198385).
+    // 3D hentai carries no separate TMDB axis — it arrives as animation too.
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/search/movie",
+      { query: "hentai", include_adult: "true", page: "1" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/search/movie",
+      { query: "hentai", include_adult: "true", page: "2" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/search/movie",
+      { query: "hentai", include_adult: "true", page: "3" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/search/movie",
+      { query: "hentai", include_adult: "true", page: "4" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/search/tv",
+      { query: "hentai", include_adult: "true", page: "1" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/search/tv",
+      { query: "hentai", include_adult: "true", page: "2" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      { sort_by: "popularity.desc", with_keywords: TMDB_HENTAI_KEYWORD_ID },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/tv",
+      { sort_by: "popularity.desc", with_keywords: TMDB_HENTAI_KEYWORD_ID },
+      mature,
+    ),
+    // ── Group 3: adult Filipino / Vivamax-style ──
+    // /discover reaches PH-origin titles flagged only by the erotic heuristics;
+    // /search picks up the adult:true titles the producer brands release.
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      { sort_by: "popularity.desc", with_origin_country: "PH", page: "1" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      { sort_by: "popularity.desc", with_origin_country: "PH", page: "2" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      {
+        sort_by: "popularity.desc",
+        with_origin_country: "PH",
+        with_keywords: sexualKw,
+        page: "1",
+      },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/search/movie",
+      { query: "vivamax", include_adult: "true", page: "1" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/search/movie",
+      { query: "vivamax", include_adult: "true", page: "2" },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/tv",
+      { sort_by: "popularity.desc", with_origin_country: "PH", page: "1" },
+      mature,
+    ),
+    // ── Group 4: NC-17 ──
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      {
+        sort_by: "popularity.desc",
+        certification_country: "US",
+        certification: "NC-17",
+        "vote_count.gte": "5",
+        page: "1",
+      },
+      mature,
+    ),
+    // ── Group 1: erotica / nudity / sex (keyword-driven) ──
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      {
+        sort_by: "popularity.desc",
+        with_keywords: sexualKw,
+        "vote_count.gte": "20",
+        page: "1",
+      },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      {
+        sort_by: "popularity.desc",
+        with_keywords: sexualKw,
+        "vote_count.gte": "15",
+        page: "2",
+      },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      {
+        sort_by: "vote_count.desc",
+        with_keywords: "9673|9672",
+        "vote_count.gte": "30",
+        page: "1",
+      },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/movie",
+      {
+        sort_by: "popularity.desc",
+        with_keywords: "9673|155477",
+        "vote_count.gte": "20",
+        page: "3",
+      },
+      mature,
+    ),
     // Series only (not forced K-drama) with sexual keywords
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      sort_by: "popularity.desc",
-      with_keywords: sexualKw,
-      "vote_count.gte": "15",
-      page: "1",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      sort_by: "popularity.desc",
-      with_keywords: "9673|9672|155477",
-      "vote_count.gte": "10",
-      page: "2",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      sort_by: "popularity.desc",
-      with_keywords: sexualKw,
-      "vote_count.gte": "10",
-      page: "3",
-    }),
-    tmdbGet<{ results?: Record<string, unknown>[] }>("/discover/tv", {
-      sort_by: "popularity.desc",
-      with_genres: "18",
-      with_keywords: "9673|9672",
-      "vote_count.gte": "25",
-      page: "1",
-    }),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/tv",
+      {
+        sort_by: "popularity.desc",
+        with_keywords: sexualKw,
+        "vote_count.gte": "15",
+        page: "1",
+      },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/tv",
+      {
+        sort_by: "popularity.desc",
+        with_keywords: "9673|9672|155477",
+        "vote_count.gte": "10",
+        page: "2",
+      },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/tv",
+      {
+        sort_by: "popularity.desc",
+        with_keywords: sexualKw,
+        "vote_count.gte": "10",
+        page: "3",
+      },
+      mature,
+    ),
+    tmdbGet<{ results?: Record<string, unknown>[] }>(
+      "/discover/tv",
+      {
+        sort_by: "popularity.desc",
+        with_genres: "18",
+        with_keywords: "9673|9672",
+        "vote_count.gte": "25",
+        page: "1",
+      },
+      mature,
+    ),
   ]);
 
   const markExplicit = (
@@ -3647,10 +3814,140 @@ export async function fetchTmdbMature(): Promise<Content[]> {
     };
   };
 
+  /**
+   * Rows from the broad PH-origin sweep also contain mainstream titles, so
+   * each row must independently prove it is adult. Hentai and the Vivamax
+   * brand search need no extra check — the query / keyword / producer is the
+   * signal, exactly like the keyword-driven erotica groups below.
+   */
+  const hasAdultSignal = (r: Record<string, unknown>): boolean =>
+    tmdbLooksAdult(
+      String(r.title ?? r.name ?? ""),
+      String(r.overview ?? ""),
+      Boolean(r.adult),
+    );
+
+  /** Adult animation is hentai; live-action "hentai" hits are not. */
+  const isAnimationRow = (r: Record<string, unknown>): boolean =>
+    Array.isArray(r.genre_ids) &&
+    (r.genre_ids as number[]).includes(TMDB_ANIMATION_GENRE_ID);
+
+  /** TV rows always land as `series` in the 18+ library (never K-drama). */
+  const asSeries = (c: Content | null): Content | null =>
+    c
+      ? {
+          ...c,
+          contentType: "series",
+          id: c.id.replace("tmdb_kdrama_", "tmdb_tv_"),
+        }
+      : null;
+
+  /**
+   * Hentai + 3D hentai: adult animation is anime, so it belongs under
+   * Anime → Hentai (`isHentaiContent` only ever returns true for `anime`).
+   * The TMDB id / media type are left untouched so hydration and the embed
+   * player keep resolving the same way they do for every other TMDB title.
+   */
+  const asHentai = (c: Content | null): Content | null => {
+    if (!c) return null;
+    const isFilm = c.contentType === "movie";
+    return {
+      ...c,
+      contentType: "anime",
+      animeFormat: isFilm ? "MOVIE" : "TV",
+      genres: [
+        { id: "animation", name: "Animation" },
+        ...c.genres.filter((g) => g.name !== "Animation"),
+      ],
+      seasonCount: isFilm ? null : (c.seasonCount ?? 1),
+      episodeCount: isFilm ? 1 : (c.episodeCount ?? 1),
+      tags: Array.from(
+        new Set([...(c.tags ?? []), "anime", "animation", "hentai"]),
+      ),
+    };
+  };
+
+  // ── Group 2: hentai + 3D hentai ──
+  const hentaiMovies = [
+    ...(hentaiSearchMovie1?.results ?? []),
+    ...(hentaiSearchMovie2?.results ?? []),
+    ...(hentaiSearchMovie3?.results ?? []),
+    ...(hentaiSearchMovie4?.results ?? []),
+    ...(hentaiKwMovie?.results ?? []),
+  ]
+    .filter(isAnimationRow)
+    .map((r) =>
+      asHentai(
+        markExplicit(mapTmdbMovie(r), [
+          "hentai",
+          "animation",
+          Boolean(r.adult) ? "adult" : "sexual-content",
+        ]),
+      ),
+    )
+    .filter(Boolean) as Content[];
+
+  const hentaiSeries = [
+    ...(hentaiSearchTv1?.results ?? []),
+    ...(hentaiSearchTv2?.results ?? []),
+    ...(hentaiKwTv?.results ?? []),
+  ]
+    .filter(isAnimationRow)
+    .map((r) =>
+      asHentai(
+        markExplicit(asSeries(mapTmdbTv(r, false)), [
+          "hentai",
+          "animation",
+          Boolean(r.adult) ? "adult" : "sexual-content",
+        ]),
+      ),
+    )
+    .filter(Boolean) as Content[];
+
+  // ── Group 3: adult Filipino / Vivamax-style ──
+  const filipinoMovies = [
+    ...(phMoviesA?.results ?? []),
+    ...(phMoviesB?.results ?? []),
+    ...(phKeyword?.results ?? []),
+  ]
+    .filter(hasAdultSignal)
+    .map((r) =>
+      markExplicit(mapTmdbMovie(r, "PH"), [
+        "filipino",
+        "adult-filipino",
+        Boolean(r.adult) ? "adult" : "sexual-content",
+      ]),
+    )
+    .filter(Boolean) as Content[];
+
+  // Brand search: the producer is the signal, so no per-row text check.
+  const vivamaxMovies = [
+    ...(vivamaxA?.results ?? []),
+    ...(vivamaxB?.results ?? []),
+  ]
+    .map((r) =>
+      markExplicit(mapTmdbMovie(r, "PH"), [
+        "filipino",
+        "adult-filipino",
+        "vivamax",
+        Boolean(r.adult) ? "adult" : "sexual-content",
+      ]),
+    )
+    .filter(Boolean) as Content[];
+
+  const filipinoSeries = (phTv?.results ?? [])
+    .filter(hasAdultSignal)
+    .map((r) =>
+      markExplicit(asSeries(mapTmdbTv(r, false)), [
+        "filipino",
+        "adult-filipino",
+        Boolean(r.adult) ? "adult" : "sexual-content",
+      ]),
+    )
+    .filter(Boolean) as Content[];
+
+  // ── Groups 1 + 4: keyword-driven erotica / nudity / sex / NC-17 ──
   const mappedMovies = [
-    ...(adultMovies1?.results ?? []),
-    ...(adultMovies2?.results ?? []),
-    ...(adultMovies3?.results ?? []),
     ...(nc17?.results ?? []),
     ...(movieNudity?.results ?? []),
     ...(movieErotic?.results ?? []),
@@ -3666,27 +3963,30 @@ export async function fetchTmdbMature(): Promise<Content[]> {
     )
     .filter(Boolean) as Content[];
 
-  // Force series (not kdrama) for TV results
   const mappedTv = [
     ...(tvNudity?.results ?? []),
     ...(tvErotic?.results ?? []),
     ...(tvSexP3?.results ?? []),
     ...(tvDramaSex?.results ?? []),
   ]
-    .map((r) => {
-      const c = mapTmdbTv(r, false);
-      if (!c) return null;
-      // Skip Korean-origin if classified as kdrama — re-tag as series only when explicit
-      const series: Content = {
-        ...c,
-        contentType: "series",
-        id: c.id.replace("tmdb_kdrama_", "tmdb_tv_"),
-      };
-      return markExplicit(series, ["sexual-content", "nudity", "explicit"]);
-    })
+    .map((r) =>
+      markExplicit(asSeries(mapTmdbTv(r, false)), [
+        "sexual-content",
+        "nudity",
+        "explicit",
+      ]),
+    )
     .filter(Boolean) as Content[];
 
-  return [...mappedMovies, ...mappedTv];
+  return [
+    ...hentaiMovies,
+    ...hentaiSeries,
+    ...filipinoMovies,
+    ...vivamaxMovies,
+    ...filipinoSeries,
+    ...mappedMovies,
+    ...mappedTv,
+  ];
 }
 
 export async function fetchTmdbMovies(): Promise<Content[]> {
