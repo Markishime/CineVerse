@@ -116,7 +116,9 @@ for (const signal of ["silent", "content not found", "playing"] as const) {
           signal,
         );
     }
-    await page.clock.fastForward(16_000);
+    // An explicit error switches immediately. Advancing the clock during the
+    // replacement frame's network load would also fire its load timeout.
+    if (signal !== "content not found") await page.clock.fastForward(16_000);
     await expect(iframe).toHaveAttribute(
       "src",
       signal === "playing"
