@@ -98,7 +98,7 @@ function probeHost(url: string): Promise<boolean> {
 
 /**
  * Smart video player with multi-provider fallback.
- * Default chain: AutoEmbed → VidLink → 2Embed → remaining hosts.
+ * Movies and anime share the general server list, followed by anime fallbacks.
  */
 export function VideoPlayer({
   tmdbId,

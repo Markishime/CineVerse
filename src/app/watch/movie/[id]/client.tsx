@@ -163,7 +163,7 @@ export function WatchMovieClient({
           </div>
         </div>
 
-        {/* Video player — anime films use anime-only backends (Cinezo, AnimePahe, …) */}
+        {/* Anime films share all movie servers, with native anime fallbacks. */}
         <VideoPlayer
           tmdbId={tmdbId}
           mediaType="movie"

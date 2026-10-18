@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildEmbedUrl,
+  buildAnimeEmbedUrl,
   EMBED_PROVIDERS,
   getProvidersForContentType,
 } from "@/lib/embed/providers";
@@ -25,19 +26,62 @@ describe("embed provider order", () => {
     ["anime", "tv"],
     ["kdrama", "tv"],
     ["cdrama", "tv"],
-  ] as const)("orders verified providers first for %s", (
-    contentType,
-    mediaType,
-  ) => {
-    const providers = getProvidersForContentType(contentType, mediaType, {
-      tmdb: 550,
+  ] as const)(
+    "orders verified providers first for %s",
+    (contentType, mediaType) => {
+      const providers = getProvidersForContentType(contentType, mediaType, {
+        tmdb: 550,
+        anilist: 1,
+        mal: 1,
+      });
+      const expected = ["vidfast", "2embed", "2embedskin", "vidsrcpm"];
+      expect(providers.slice(0, 4).map((p) => p.id)).toEqual(expected);
+    },
+  );
+
+  it.each(["MOVIE", "TV"] as const)(
+    "includes every movie provider for anime %s with the correct URL",
+    (animeFormat) => {
+      const mediaType = animeFormat === "MOVIE" ? "movie" : "tv";
+      const movieProviders = getProvidersForContentType("movie", "movie", {
+        tmdb: 550,
+      });
+      const animeIds = {
+        title: "Anime title",
+        tmdb: 123,
+        anilist: 1,
+        mal: 1,
+        animeFormat,
+        season: 2,
+        episode: 3,
+      };
+      const animeProviders = getProvidersForContentType(
+        "anime",
+        mediaType,
+        animeIds,
+        2,
+        3,
+      );
+      expect(animeProviders.map((p) => p.id)).toEqual([
+        ...movieProviders.map((p) => p.id),
+        "megaplay",
+        "cinezo",
+      ]);
+      for (const provider of movieProviders) {
+        expect(buildAnimeEmbedUrl(provider.id, animeIds)).toBe(
+          buildEmbedUrl(provider.id, 123, mediaType, 2, 3),
+        );
+      }
+    },
+  );
+
+  it("keeps native anime sources when no matching TMDB identity exists", () => {
+    const providers = getProvidersForContentType("anime", "tv", {
       anilist: 1,
       mal: 1,
+      animeFormat: "TV",
     });
-    const expected = contentType === "anime"
-      ? ["megaplay", "cinezo", "vidfast", "2embed"]
-      : ["vidfast", "2embed", "2embedskin", "vidsrcpm"];
-    expect(providers.slice(0, 4).map((p) => p.id)).toEqual(expected);
+    expect(providers.map((p) => p.id)).toEqual(["megaplay", "cinezo"]);
   });
 
   it("keeps the verified VidFast URL formats", () => {

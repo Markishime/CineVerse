@@ -607,10 +607,10 @@ export class CatalogService {
 
   private embedIdCache = new Map<string, { at: number; content: Content }>();
 
-  /** TVMaze/AniList-only titles need a TMDB id before the embed player can render. */
+  /** Resolve missing TMDB identity so anime also gets the general movie/TV servers. */
   private async withEmbedIds(content: Content): Promise<Content> {
     const ids = content.providerIds ?? {};
-    if (ids.tmdb || ids.anilist || ids.mal) return content;
+    if (ids.tmdb) return content;
     const hit = this.embedIdCache.get(content.id);
     if (hit && Date.now() - hit.at < this.DETAIL_TTL) return hit.content;
     const enriched = await this.ensureTmdbForEmbed(content).catch(() => content);

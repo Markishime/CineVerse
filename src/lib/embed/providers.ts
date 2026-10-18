@@ -5,8 +5,8 @@
  * - Metadata: AniList + MAL + TMDB (catalog layer)
  * - Playback: multi-provider fallback chain (not a single hard-coded host)
  *
- * Anime uses dedicated backends (AniList/MAL-aware). Movies/series/K-drama use
- * TMDB-based general embeds.
+ * Movies, series and anime share the TMDB-based general embeds. Anime also
+ * keeps dedicated AniList/MAL-aware backends as fallbacks.
  */
 
 export type EmbedProviderId =
@@ -155,8 +155,8 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
  * Prefer AniList/MAL metadata pairing over a single hard-coded host.
  *
  * Definition order is not the play order — getProvidersForContentType builds
- * the live chain: TMDB generals first (VidLink → 2Embed), then instant natives
- * (MegaPlay → Cinezo), with resolve-based hosts last.
+ * the live chain: all general movie/TV hosts first, then instant anime hosts
+ * (MegaPlay → Cinezo).
  */
 export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
   {
@@ -354,20 +354,15 @@ export function getProvidersForContentType(
   let chain: EmbedProvider[];
 
   if (contentType === "anime") {
-    // Every AniList/MAL title gets a working server: TMDB generals lead, then
-    // instant native anime hosts, followed by resolve-based hosts.
+    // Use the same complete general provider list as movies for both anime
+    // films and series, with native hosts available after it.
     const liveNatives = ANIME_EMBED_PROVIDERS.filter(
       (p) => !p.needsResolve,
     );
-    const instantNatives = preferProviders(
-      liveNatives.filter((p) => !p.needsResolve),
-      ["megaplay", "cinezo"],
-    );
-    const resolveNatives = liveNatives.filter((p) => p.needsResolve);
+    const instantNatives = preferProviders(liveNatives, ["megaplay", "cinezo"]);
     chain = [
-      ...instantNatives,
       ...preferProviders(general, GENERAL_PLAY_ORDER),
-      ...resolveNatives,
+      ...instantNatives,
     ];
   } else if (DRAMA_CONTENT_TYPES.has(contentType)) {
     // KissKH needs its own episode id and therefore cannot be used by the
