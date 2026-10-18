@@ -78,10 +78,15 @@ export function WatchTvClient({
 }: WatchTvClientProps) {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const authLoading = useAuthStore((s) => s.loading);
   const [shareMsg, setShareMsg] = useState("");
   const [countdown, setCountdown] = useState<number | null>(null);
   const backdrop = tmdbBackdropUrl(tvShow.backdrop_path, "w1280");
-  const blocked = Boolean(isAdult) && !isRestrictedContentUser(user?.email);
+  // The allowlist check needs the signed-in email, which hydrates async. Wait
+  // for auth to settle so the allowlisted account is never shown the terminal
+  // "unavailable" screen before its email arrives; fail closed once resolved.
+  const blocked =
+    !authLoading && Boolean(isAdult) && !isRestrictedContentUser(user?.email);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -163,6 +168,20 @@ export function WatchTvClient({
 
   const epTitle = episode?.name || `Episode ${episodeNum}`;
   const fullTitle = `${tvShow.name} · S${String(season).padStart(2, "0")}E${String(episodeNum).padStart(2, "0")} — ${epTitle}`;
+
+  // Auth still resolving on an 18+ title — show a neutral loading state rather
+  // than the terminal "unavailable" screen (the allowlisted account would
+  // otherwise flash it before its email hydrates).
+  if (isAdult && authLoading) {
+    return (
+      <div className="mx-auto flex min-h-[70dvh] max-w-lg flex-col items-center justify-center px-4 text-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+        <p className="mt-4 text-sm text-[var(--text-secondary)]">
+          Checking account access…
+        </p>
+      </div>
+    );
+  }
 
   if (blocked) return <UnavailableTitle />;
 

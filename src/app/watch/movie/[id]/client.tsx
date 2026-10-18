@@ -46,8 +46,13 @@ export function WatchMovieClient({
   isAdult,
 }: WatchMovieClientProps) {
   const user = useAuthStore((s) => s.user);
+  const authLoading = useAuthStore((s) => s.loading);
   const [shareMsg, setShareMsg] = useState("");
-  const blocked = Boolean(isAdult) && !isRestrictedContentUser(user?.email);
+  // The allowlist check needs the signed-in email, which hydrates async. Wait
+  // for auth to settle so the allowlisted account is never shown the terminal
+  // "unavailable" screen before its email arrives; fail closed once resolved.
+  const blocked =
+    !authLoading && Boolean(isAdult) && !isRestrictedContentUser(user?.email);
   const backdrop = tmdbBackdropUrl(movie.backdrop_path, "w1280");
 
   // Detect anime movie: Animation genre (16) + Japanese language
@@ -65,7 +70,7 @@ export function WatchMovieClient({
     : null;
 
   useEffect(() => {
-    if (blocked) return;
+    if (blocked || authLoading) return;
     const poster = movie.poster_path
       ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
       : null;
@@ -89,7 +94,7 @@ export function WatchMovieClient({
       },
       user?.uid,
     );
-  }, [tmdbId, movie, user?.uid, isAnimeMovie, contentType, year, blocked]);
+  }, [tmdbId, movie, user?.uid, isAnimeMovie, contentType, year, blocked, authLoading]);
 
   const share = async () => {
     try {
@@ -101,6 +106,20 @@ export function WatchMovieClient({
       setShareMsg("Could not copy link");
     }
   };
+
+  // Auth still resolving on an 18+ title — show a neutral loading state rather
+  // than the terminal "unavailable" screen (the allowlisted account would
+  // otherwise flash it before its email hydrates).
+  if (isAdult && authLoading) {
+    return (
+      <div className="mx-auto flex min-h-[70dvh] max-w-lg flex-col items-center justify-center px-4 text-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+        <p className="mt-4 text-sm text-[var(--text-secondary)]">
+          Checking account access…
+        </p>
+      </div>
+    );
+  }
 
   if (blocked) return <UnavailableTitle />;
 
