@@ -1124,7 +1124,7 @@ export class CatalogService {
 
     if (matureGenre) {
       if (!includeMature) return paginate([], page, size);
-      return this.matureLibrary(page, size, type, country);
+      return this.matureLibrary(page, size, type);
     }
 
     // Watch Now / free-only still uses the local playable catalog (not the full world index)
@@ -1883,14 +1883,11 @@ export class CatalogService {
    * - type=anime (Anime → Hentai tab): on-demand AniList isAdult pages
    *   (thousands of titles) + Jikan Rx / scrapers on page 1. Never ecchi-only.
    * - other types: adults-only titles from the mature warm catalog.
-   * - country: optional ISO code so e.g. the Filipino page can show only the
-   *   adult Filipino / Vivamax-style slice of the mature library.
    */
   async matureLibrary(
     page = 1,
     pageSize = 60,
     type?: ContentType | "all",
-    country?: string,
   ): Promise<Paginated<Content>> {
     const size = Math.min(pageSize, 100);
 
@@ -1898,14 +1895,6 @@ export class CatalogService {
     let items = filterAdultLibrary(all).filter(isAtLeastMinYear);
     if (type && type !== "all") {
       items = items.filter((c) => c.contentType === type);
-    }
-    if (country?.trim()) {
-      const cc = country.trim().toUpperCase();
-      items = items.filter(
-        (c) =>
-          c.countries?.some((cn) => cn.toUpperCase() === cc) ||
-          c.language?.toUpperCase() === cc,
-      );
     }
     items = sortContent(items, "popularity");
     return paginate(items, page, size);
@@ -2020,12 +2009,7 @@ export class CatalogService {
     if (String(params.genre ?? "").trim().toLowerCase() === "mature") {
       if (!allowMature) return paginate([], 1, 60);
       const type = params.type ? (String(params.type) as ContentType) : "all";
-      return this.matureLibrary(
-        params.page ? Number(params.page) : 1,
-        60,
-        type,
-        params.country ? String(params.country) : undefined,
-      );
+      return this.matureLibrary(params.page ? Number(params.page) : 1, 60, type);
     }
     const includeMature = false;
     const mood = params.mood ? String(params.mood) : "";

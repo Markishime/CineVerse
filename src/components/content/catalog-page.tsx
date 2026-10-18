@@ -239,8 +239,6 @@ export function CatalogPage({
   title,
   subtitle,
   matureOnly,
-  genre: genreProp,
-  hideGenres,
 }: {
   type: ContentType;
   country?: string;
@@ -250,10 +248,6 @@ export function CatalogPage({
   subtitle?: string;
   /** When true, the whole page is hidden behind an 18+ gate when off. */
   matureOnly?: boolean;
-  /** Force a genre (e.g. "mature") instead of reading it from the URL. */
-  genre?: string;
-  /** Hide the genre browser — used by dedicated slices like Hentai. */
-  hideGenres?: boolean;
 }) {
   const m = meta[type];
   const user = useAuthStore((s) => s.user);
@@ -264,10 +258,8 @@ export function CatalogPage({
   const [sort, setSort] = useState<CatalogSort>("popularity");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [genre, setGenre] = useState(() => {
-    if (typeof window === "undefined") return genreProp ?? "";
-    return (
-      new URLSearchParams(window.location.search).get("genre") ?? genreProp ?? ""
-    );
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("genre") ?? "";
   });
   const matureGenreSelected = genre.trim().toLowerCase() === "mature";
   /** Default all popular/trending; free full via Watch Now toggle */
@@ -381,12 +373,11 @@ export function CatalogPage({
           </header>
         </Reveal>
 
-        {!hideGenres && (
-          <Reveal
-            delay={0.03}
-            inView={false}
-            className="mb-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-3 sm:p-4"
-          >
+        <Reveal
+          delay={0.03}
+          inView={false}
+          className="mb-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-3 sm:p-4"
+        >
           <div className="mb-2 flex items-center justify-between gap-3 px-1">
             <div>
               <p className="text-sm font-semibold text-white">
@@ -438,8 +429,7 @@ export function CatalogPage({
               </Chip>
             ))}
           </div>
-          </Reveal>
-        )}
+        </Reveal>
 
         {/* Toolbar: sort + view */}
         <Reveal
