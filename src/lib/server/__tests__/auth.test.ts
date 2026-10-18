@@ -1,8 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { resolveAuth } from "@/lib/server/auth";
 
 describe("resolveAuth token trust", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("rejects demo administrator tokens in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const auth = await resolveAuth(
+      new NextRequest("https://cineverse.app/api/v1/admin/playback-sources", {
+        headers: { authorization: "Bearer demo:admin" },
+      }),
+    );
+    expect(auth.uid).toBeNull();
+    expect(auth.isAdmin).toBe(false);
+  });
+
   it("returns no identity when no bearer token is present", async () => {
     const auth = await resolveAuth(
       new NextRequest("https://cineverse.app/api/v1/movies"),

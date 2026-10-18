@@ -42,9 +42,7 @@ function scoreSource(s: PlaybackSourceDocument, preferFull: boolean): number {
   return score;
 }
 
-function toEmbedMode(
-  source: PlaybackSourceDocument,
-): ResolvedPlayback["mode"] {
+function toEmbedMode(source: PlaybackSourceDocument): ResolvedPlayback["mode"] {
   if (source.sourceType === "youtube_embed" && source.youtubeVideoId) {
     return "youtube_iframe";
   }
@@ -60,7 +58,7 @@ function toEmbedMode(
   }
   if (
     source.playbackAssetId?.startsWith("archive:") ||
-    source.manifestPath?.includes("archive.org")
+    source.manifestPath?.startsWith("https://archive.org/embed/")
   ) {
     return "archive_embed";
   }
@@ -161,7 +159,14 @@ export function resolveAssetUrl(
       const path = asset
         .replace(/^gs:\/\/[^/]+\//, "")
         .replace(/^playback\//, "playback/");
-      return `${base.replace(/\/$/, "")}/${path}`;
+      try {
+        const url = new URL(`${base.replace(/\/$/, "")}/${path}`);
+        if (url.protocol === "https:" && !url.username && !url.password) {
+          return url.href;
+        }
+      } catch {
+        return undefined;
+      }
     }
   }
 
@@ -171,6 +176,7 @@ export function resolveAssetUrl(
 function isTrustedHost(url: string): boolean {
   try {
     const u = new URL(url);
+    if (u.protocol !== "https:" || u.username || u.password) return false;
     const allowed = [
       "archive.org",
       "ia601000.us.archive.org",
@@ -185,18 +191,13 @@ function isTrustedHost(url: string): boolean {
       .map((s) => s.trim())
       .filter(Boolean);
     const hosts = [...allowed, ...extra];
-    return hosts.some(
-      (h) => u.hostname === h || u.hostname.endsWith(`.${h}`),
-    );
+    return hosts.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`));
   } catch {
     return false;
   }
 }
 
-function matchesEpisode(
-  s: PlaybackSourceDocument,
-  opts: ResolveOpts,
-): boolean {
+function matchesEpisode(s: PlaybackSourceDocument, opts: ResolveOpts): boolean {
   // Prefer exact episodeId match
   if (opts.episodeId && s.episodeId === opts.episodeId) {
     return true;
@@ -221,18 +222,16 @@ function matchesEpisode(
       return true;
     }
   }
-  if (opts.episodeId && !s.episodeId) return false;
-  // Movie-level: no episode binding
-  return !s.episodeId && s.seasonNumber == null && s.episodeNumber == null;
+  // An episode request must never fall back to a movie or a title-level asset.
+  return false;
 }
 
 export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
   const region = (opts.region ?? "US").toUpperCase();
   const preferFull = opts.preferFull !== false;
-  const candidateIds = [
-    opts.titleId,
-    ...(opts.contentIdAliases ?? []),
-  ].filter(Boolean);
+  const candidateIds = [opts.titleId, ...(opts.contentIdAliases ?? [])].filter(
+    Boolean,
+  );
 
   const wantsEpisode =
     Boolean(opts.episodeId) ||
@@ -242,17 +241,13 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
   for (const id of candidateIds) {
     const approved = listSources({ titleId: id, status: "approved" });
     if (wantsEpisode) {
-      candidates.push(
-        ...approved.filter((s) => matchesEpisode(s, opts)),
-      );
+      candidates.push(...approved.filter((s) => matchesEpisode(s, opts)));
     } else {
       // Title-level: movie full or title-level sources only (not random episode)
       candidates.push(
         ...approved.filter(
           (s) =>
-            !s.episodeId &&
-            s.seasonNumber == null &&
-            s.episodeNumber == null,
+            !s.episodeId && s.seasonNumber == null && s.episodeNumber == null,
         ),
       );
     }
@@ -263,18 +258,15 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
     .filter(isSourceCurrentlyValid)
     .filter((s) => regionAllowed(s, region))
     .filter((s) => s.embeddingAllowed)
-    .sort(
-      (a, b) => scoreSource(b, preferFull) - scoreSource(a, preferFull),
-    );
+    .sort((a, b) => scoreSource(b, preferFull) - scoreSource(a, preferFull));
 
   const full = valid.find(
-    (s) =>
-      s.contentKind === "full_movie" || s.contentKind === "full_episode",
+    (s) => s.contentKind === "full_movie" || s.contentKind === "full_episode",
   );
   const chosen =
     preferFull && full
       ? full
-      : valid.find((s) => s.contentKind === "trailer") ?? valid[0];
+      : (valid.find((s) => s.contentKind === "trailer") ?? valid[0]);
 
   if (!chosen) {
     return {
@@ -308,8 +300,49 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
     };
   }
 
-  const mode = toEmbedMode(chosen);
+  const ordered = preferFull
+    ? valid.filter(
+        (s) =>
+          s.contentKind === "full_movie" || s.contentKind === "full_episode",
+      )
+    : [
+        ...valid.filter((s) => s.contentKind === "trailer"),
+        ...valid.filter((s) => s.contentKind !== "trailer"),
+      ];
+
+  // A missing asset or provider configuration must not hide another approved source.
+  for (const source of ordered) {
+    const resolved = resolveSource(source, region);
+    if (resolved?.playable) return resolved;
+  }
+
+  return {
+    playable: false,
+    mode: "none",
+    region,
+    externalProvidersOnly: true,
+    watchLabel: "Not Available on CineVerse",
+    reason:
+      "No approved source is currently configured for playback. Try an official trailer or the listed watch providers.",
+  };
+}
+
+function resolveSource(
+  chosen: PlaybackSourceDocument,
+  region: string,
+): ResolvedPlayback | null {
+  let mode = toEmbedMode(chosen);
   const signedUrl = resolveAssetUrl(chosen);
+  if (signedUrl) {
+    const url = new URL(signedUrl);
+    if (url.hostname === "archive.org" && url.pathname.startsWith("/embed/")) {
+      mode = "archive_embed";
+    } else if (mode === "cineverse_hls" || mode === "cineverse_mp4") {
+      mode = url.pathname.toLowerCase().endsWith(".m3u8")
+        ? "cineverse_hls"
+        : "cineverse_mp4";
+    }
+  }
   const expiresAt =
     mode === "cineverse_hls" || mode === "cineverse_mp4"
       ? new Date(Date.now() + 60 * 60 * 1000).toISOString()
@@ -375,11 +408,17 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
           playable: true,
           contentKind: chosen.contentKind as ContentKind,
           sourceType: "cloudflare_stream",
-          mode: stream.mode === "cineverse_hls" ? "cineverse_hls" : "cloudflare_iframe",
+          mode:
+            stream.mode === "cineverse_hls"
+              ? "cineverse_hls"
+              : "cloudflare_iframe",
           cloudflareVideoUid: stream.videoUid,
           cloudflareCustomerCode: stream.customerCode,
           cloudflareToken: stream.signedToken,
-          signedUrl: stream.manifestUrl ?? stream.iframeUrl,
+          signedUrl:
+            stream.mode === "cineverse_hls"
+              ? stream.manifestUrl
+              : stream.iframeUrl,
           expiresAt: stream.expiresAt,
           attributionText: chosen.attributionText,
           rightsHolder: chosen.rightsHolder,
@@ -392,15 +431,7 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
           episodeNumber: chosen.episodeNumber,
         };
       }
-      return {
-        playable: false,
-        mode: "none",
-        region,
-        externalProvidersOnly: true,
-        watchLabel: "Not Available on CineVerse",
-        reason:
-          "Cloudflare Stream video is mapped but player is not configured. Set NEXT_PUBLIC_CLOUDFLARE_STREAM_CUSTOMER_CODE (and signing keys if required).",
-      };
+      return null;
     }
   }
 
@@ -414,7 +445,7 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
       playable: true,
       contentKind: chosen.contentKind as ContentKind,
       sourceType: chosen.sourceType,
-      mode: mode === "archive_embed" ? "cineverse_mp4" : mode,
+      mode,
       signedUrl,
       subtitles: chosen.subtitles,
       expiresAt,
@@ -434,15 +465,7 @@ export function resolvePlayback(opts: ResolveOpts): ResolvedPlayback {
     };
   }
 
-  return {
-    playable: false,
-    mode: "none",
-    region,
-    externalProvidersOnly: true,
-    watchLabel: "Not Available on CineVerse",
-    reason:
-      "A rights record exists but the embed asset is not available for in-app playback (check Stream/CDN config).",
-  };
+  return null;
 }
 
 /** Trailers: only approved youtube_embed trailer sources (not clips/featurettes). */

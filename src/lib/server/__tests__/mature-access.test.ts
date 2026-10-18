@@ -33,6 +33,16 @@ describe("canIncludeMature", () => {
     await expect(canIncludeMature(req())).resolves.toBe(false);
   });
 
+  it("requires an authenticated uid even when the email matches", async () => {
+    resolveAuth.mockResolvedValue({
+      uid: null,
+      email: "cmark7781@gmail.com",
+      isAdmin: false,
+      token: null,
+    });
+    await expect(canIncludeMature(req())).resolves.toBe(false);
+  });
+
   it("denies anonymous callers (no resolved email)", async () => {
     resolveAuth.mockResolvedValue({
       uid: null,

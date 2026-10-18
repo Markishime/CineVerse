@@ -10,15 +10,12 @@ export interface AuthContext {
 
 /**
  * Extract bearer token and resolve the signed-in user.
- * Order: Firebase Admin verify → Identity Toolkit API key lookup → demo tokens.
+ * Firebase Admin verification with Identity Toolkit fallback.
+ * Demo identities are available only during local development and tests.
  */
-export async function resolveAuth(
-  request: NextRequest,
-): Promise<AuthContext> {
+export async function resolveAuth(request: NextRequest): Promise<AuthContext> {
   const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ")
-    ? header.slice(7).trim()
-    : null;
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : null;
 
   if (!token) {
     return { uid: null, email: null, isAdmin: false, token: null };
@@ -26,6 +23,9 @@ export async function resolveAuth(
 
   // Demo / emulator style tokens
   if (token.startsWith("demo:")) {
+    if (process.env.NODE_ENV === "production") {
+      return { uid: null, email: null, isAdmin: false, token };
+    }
     const uid = token.slice(5);
     return {
       uid,
@@ -65,9 +65,8 @@ export async function resolveAuth(
 
   // 2) Identity Toolkit accounts:lookup (works with Web API key, no SA JSON)
   try {
-    const { verifyIdTokenViaApiKey } = await import(
-      "@/lib/server/firebase-admin"
-    );
+    const { verifyIdTokenViaApiKey } =
+      await import("@/lib/server/firebase-admin");
     const viaKey = await verifyIdTokenViaApiKey(token);
     if (viaKey?.uid) {
       return {

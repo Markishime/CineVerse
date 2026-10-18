@@ -5,5 +5,5 @@ import { resolveAuth } from "@/lib/server/auth";
 /** Only the explicitly allowlisted, authenticated account may include adults-only metadata. */
 export async function canIncludeMature(request: NextRequest): Promise<boolean> {
   const auth = await resolveAuth(request);
-  return isRestrictedContentUser(auth.email);
+  return Boolean(auth.uid && isRestrictedContentUser(auth.email));
 }
