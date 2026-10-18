@@ -47,7 +47,8 @@ Framework preset: **Next.js**. No `output: "export"` — API routes are required
 - [ ] Auth sign-in works (Firebase client env)
 - [ ] Mobile: hard-refresh or “Update now” if an old service worker cached a 404
 - [ ] Privacy / terms pages live
-- [ ] **Server 1 (VidFast)** loads on the production URL, followed by **2Embed**, **2Embed Skin**, and **VidSrc PM**. Servers are labelled Server 1…N. VidLink, AutoEmbed, NontonGo, ScreenScape, VixSrc, MoviesAPI, and other dead or non-title endpoints are removed from the shipped provider list.
+- [ ] Anime films and series start with **AutoEmbed** (`player.autoembed.co`), then **VidFast**, **2Embed**, **2Embed Skin**, **VidSrc PM**, **MegaPlay**, and **Cinezo**, when the required title IDs exist. Titles without a matched TMDB ID retain their compatible native anime providers. Non-anime titles keep VidFast first, with AutoEmbed available as a fallback.
+- [ ] AutoEmbed errors or an unresponsive player advance to the next server; a playback message or manual selection keeps the chosen player. Verify actual playback separately from endpoint availability and mocked server-selection tests.
 
 ## Firebase (optional backend only)
 

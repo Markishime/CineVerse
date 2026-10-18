@@ -15,6 +15,7 @@ export type EmbedProviderId =
   | "2embed"
   | "2embedskin"
   | "vidsrcpm"
+  | "autoembed"
   // Anime-only backends
   | "megaplay"
   | "cinezo"
@@ -105,6 +106,18 @@ function preferDub(opts?: EmbedUrlOpts, ids?: AnimeStreamIds): boolean {
  * Filipino movies use the same TMDB numeric id path as other titles.
  */
 export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
+  {
+    id: "autoembed",
+    name: "AutoEmbed",
+    supportsTv: true,
+    // Player URLs embedded by https://autoembed.co/movie/tmdb/{id} and
+    // https://autoembed.co/tv/tmdb/{id}-{season}-{episode}.
+    // Load the player directly so its playback/error messages reach our frame.
+    signalsPlayback: true,
+    movieUrl: (tmdbId) => `https://player.autoembed.co/embed/movie/${tmdbId}`,
+    tvUrl: (tmdbId, season, episode) =>
+      `https://player.autoembed.co/embed/tv/${tmdbId}/${season}-${episode}/`,
+  },
   {
     id: "vidfast",
     name: "VidFast",
@@ -243,6 +256,13 @@ export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
   "2embed",
   "2embedskin",
   "vidsrcpm",
+  "autoembed",
+];
+
+/** AutoEmbed leads anime films and episodes; all other general hosts remain. */
+export const ANIME_PLAY_ORDER: EmbedProviderId[] = [
+  "autoembed",
+  ...GENERAL_PLAY_ORDER.filter((id) => id !== "autoembed"),
 ];
 
 export function getProvidersForMediaType(
@@ -361,7 +381,7 @@ export function getProvidersForContentType(
     );
     const instantNatives = preferProviders(liveNatives, ["megaplay", "cinezo"]);
     chain = [
-      ...preferProviders(general, GENERAL_PLAY_ORDER),
+      ...preferProviders(general, ANIME_PLAY_ORDER),
       ...instantNatives,
     ];
   } else if (DRAMA_CONTENT_TYPES.has(contentType)) {

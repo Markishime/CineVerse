@@ -678,10 +678,9 @@ export function VideoPlayer({
     // postMessage the parent (verified: some providers stream regional films
     // via a <video> with no parent signal). Auto-advancing on "no positive
     // signal" was skipping these working providers and landing on a blank host.
-    // We now advance ONLY on an explicit negative signal (handled in the
-    // message listener) or a total no-load (the load-timeout effect). A play/
-    // PLAYER_TITLE signal, when a host does send one, upgrades the badge to the
-    // confirmed-playing state but is not required to keep the provider.
+    // Only providers marked signalsPlayback (AutoEmbed) also use the bounded
+    // post-load verification below. Other hosts remain until an explicit
+    // error or manual switch; a silent third-party player may still work.
     setStatus("loaded");
     onProviderLoad?.(activeProvider.id);
     setTriedProviders((prev) =>
@@ -869,13 +868,13 @@ export function VideoPlayer({
                 ) : (
                   <MonitorPlay className="mr-1 h-3 w-3" />
                 )}
-                Server {activeIndex + 1}
+                Server {activeIndex + 1} · {activeProvider.name}
               </Badge>
             )}
             {status === "loading" && activeProvider && (
               <Badge tone="muted">
                 <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                Server {activeIndex + 1}
+                Server {activeIndex + 1} · {activeProvider.name}
               </Badge>
             )}
             {status === "error" && (
@@ -971,7 +970,7 @@ export function VideoPlayer({
                         ) : (
                           <span className="w-3.5" />
                         )}
-                        Server {i + 1}
+                        Server {i + 1} · {p.name}
                         {i === 0 && !tried && (
                           <span className="ml-auto text-[10px] text-[var(--text-muted)]">
                             default

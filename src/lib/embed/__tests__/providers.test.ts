@@ -13,7 +13,6 @@ describe("embed provider order", () => {
     expect(ids).not.toContain("vixsrc");
     expect(ids).not.toContain("moviesapi");
     expect(ids).not.toContain("screenscape");
-    expect(ids).not.toContain("autoembed");
     expect(ids).not.toContain("vidlink");
     expect(ids).not.toContain("nontongo");
     expect(ids).not.toContain("superembed");
@@ -23,7 +22,6 @@ describe("embed provider order", () => {
   it.each([
     ["movie", "movie"],
     ["series", "tv"],
-    ["anime", "tv"],
     ["kdrama", "tv"],
     ["cdrama", "tv"],
   ] as const)(
@@ -63,7 +61,8 @@ describe("embed provider order", () => {
         3,
       );
       expect(animeProviders.map((p) => p.id)).toEqual([
-        ...movieProviders.map((p) => p.id),
+        "autoembed",
+        ...movieProviders.filter((p) => p.id !== "autoembed").map((p) => p.id),
         "megaplay",
         "cinezo",
       ]);
@@ -82,6 +81,22 @@ describe("embed provider order", () => {
       animeFormat: "TV",
     });
     expect(providers.map((p) => p.id)).toEqual(["megaplay", "cinezo"]);
+  });
+
+  it("uses AutoEmbed episode paths even if a movie media type leaks into anime series", () => {
+    expect(
+      buildAnimeEmbedUrl("autoembed", {
+        title: "Anime series",
+        tmdb: 85937,
+        animeFormat: "TV",
+        tmdbMediaType: "movie",
+        season: 2,
+        episode: 3,
+      }),
+    ).toBe("https://player.autoembed.co/embed/tv/85937/2-3/");
+    expect(buildEmbedUrl("autoembed", 372058, "movie")).toBe(
+      "https://player.autoembed.co/embed/movie/372058",
+    );
   });
 
   it("keeps the verified VidFast URL formats", () => {
