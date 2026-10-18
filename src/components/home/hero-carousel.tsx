@@ -1,31 +1,26 @@
 "use client";
-import { usePerformanceStore } from "@/stores/performance-store";
-
 import Image from "next/image";
 import Link from "next/link";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import YouTube, { type YouTubeEvent, type YouTubeProps } from "react-youtube";
-import {
-  AnimatePresence,
-  motion,
-  useReducedMotion,
-  useMotionValue,
-} from "framer-motion";
+import { motion, useMotionValue } from "framer-motion";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clapperboard,
   Info,
+  Pause,
   Play,
-  Sparkles,
+  Star,
   Volume2,
   VolumeX,
 } from "lucide-react";
 import type { Content } from "@/types/content";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { AddToListButton } from "@/components/content/add-to-list-button";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import { formatRuntime, formatScore, cn } from "@/lib/utils";
@@ -104,11 +99,10 @@ function HeroTrailerBg({
     !failedAll && keyQueue[keyIndex] ? keyQueue[keyIndex]! : null;
 
   // Only the active, visible slide may own a live YouTube iframe.
-  const shouldPlay = Boolean(
-    active && playbackAllowed && activeKey && !reduceMotion,
-  );
+  const shouldPlay = Boolean(active && playbackAllowed && activeKey);
 
   const [showPlayer, setShowPlayer] = useState(false);
+  const [playingKey, setPlayingKey] = useState<string | null>(null);
   const playerRef = useRef<YtPlayer | null>(null);
   const destroyedRef = useRef(false);
   const shouldPlayRef = useRef(shouldPlay);
@@ -124,7 +118,10 @@ function HeroTrailerBg({
     if (!shouldPlay) {
       releasePlayer(playerRef);
       onPlayer?.(null);
-      const t = window.setTimeout(() => setShowPlayer(false), 0);
+      const t = window.setTimeout(() => {
+        setShowPlayer(false);
+        setPlayingKey(null);
+      }, 0);
       return () => window.clearTimeout(t);
     }
     const t = window.setTimeout(() => setShowPlayer(true), 220);
@@ -194,24 +191,33 @@ function HeroTrailerBg({
     [onPlayer],
   );
 
-  const onStateChange = useCallback((event: YouTubeEvent<number>) => {
-    const p = event.target as unknown as YtPlayer;
-    if (destroyedRef.current || p !== playerRef.current) return;
-    if (!shouldPlayRef.current) {
-      hardSilence(p);
-      return;
-    }
-    // Loop only when ended (0) or cued (5) — never fight mute on pause (2)
-    if (event.data === 0 || event.data === 5) {
-      applyPlayback(p, {
-        play: true,
-        soundOn: soundOnRef.current,
-      });
-    }
-  }, []);
+  const onStateChange = useCallback(
+    (event: YouTubeEvent<number>) => {
+      const p = event.target as unknown as YtPlayer;
+      if (destroyedRef.current || p !== playerRef.current) return;
+      if (!shouldPlayRef.current) {
+        hardSilence(p);
+        return;
+      }
+      // Keep the artwork visible until the trailer actually starts, rather than
+      // replacing it with YouTube's blank loading screen or autoplay prompt.
+      if (event.data === 1) setPlayingKey(activeKey);
+      if (event.data === 2) setPlayingKey(null);
+      // Loop only when ended (0) or cued (5) — never fight mute on pause (2)
+      if (event.data === 0 || event.data === 5) {
+        applyPlayback(p, {
+          play: true,
+          soundOn: soundOnRef.current,
+        });
+      }
+    },
+    [activeKey],
+  );
 
   // YouTube error 100/101/150 = unavailable / embed blocked → try next key
   const onError = useCallback(() => {
+    if (destroyedRef.current) return;
+    setPlayingKey(null);
     releasePlayer(playerRef);
     onPlayer?.(null);
     setKeyIndex((i) => {
@@ -226,7 +232,16 @@ function HeroTrailerBg({
   }, [keyQueue.length, onPlayer]);
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-[var(--background)]">
+    <div
+      className="absolute inset-0 overflow-hidden bg-[var(--background)]"
+      data-trailer-state={
+        shouldPlay
+          ? playingKey === activeKey
+            ? "playing"
+            : "loading"
+          : "poster"
+      }
+    >
       <div
         className={cn(
           "absolute inset-0",
@@ -238,7 +253,7 @@ function HeroTrailerBg({
             src={poster}
             alt=""
             fill
-            priority={active}
+            fetchPriority={active ? "high" : "auto"}
             loading={active ? undefined : "lazy"}
             sizes="100vw"
             className="object-cover object-center"
@@ -252,7 +267,9 @@ function HeroTrailerBg({
       <div
         className={cn(
           "absolute inset-0 z-[1] overflow-hidden transition-opacity duration-700",
-          showPlayer && activeKey && shouldPlay ? "opacity-100" : "opacity-0",
+          showPlayer && activeKey && shouldPlay && playingKey === activeKey
+            ? "opacity-100"
+            : "opacity-0",
         )}
         aria-hidden
       >
@@ -300,12 +317,14 @@ function HeroCopy({
   soundOn,
   isActive,
   animated,
+  onPlayTrailer,
 }: {
   item: Content;
   eyebrow?: string;
   soundOn: boolean;
   isActive: boolean;
   animated: boolean;
+  onPlayTrailer: () => void;
 }) {
   const title = displayTitle(item);
   const score = primaryScore(item);
@@ -335,51 +354,55 @@ function HeroCopy({
 
   return (
     <Wrap
-      className="text-scrim max-w-xl rounded-2xl p-5 sm:max-w-2xl sm:p-8"
+      className="hero-feature-copy w-full max-w-[44rem]"
       {...containerProps}
     >
       <P
-        className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]"
+        className="mb-5 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--primary-light)] sm:mb-6"
         {...itemProps}
       >
-        <Sparkles className="h-3.5 w-3.5" />
+        <Clapperboard className="h-4 w-4" />
         {eyebrow || "Popular & trending today"}
       </P>
 
-      <Item className="mb-3 flex flex-wrap items-center gap-2" {...itemProps}>
-        <Badge
-          tone={
-            item.contentType === "movie"
-              ? "primary"
-              : item.contentType === "series"
-                ? "cyan"
-                : item.contentType === "anime"
-                  ? "accent"
-                  : "gold"
-          }
-        >
+      <Item
+        className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-medium text-white/75 sm:text-sm"
+        {...itemProps}
+      >
+        <span className="rounded border border-white/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/90">
           {item.contentType}
-        </Badge>
-        {score != null && <Badge tone="gold">★ {formatScore(score)}</Badge>}
-        {item.year && <Badge tone="muted">{item.year}</Badge>}
-        {runtimeLabel && <Badge tone="muted">{runtimeLabel}</Badge>}
+        </span>
+        {score != null && (
+          <span className="inline-flex items-center gap-1.5 text-[var(--primary-light)]">
+            <Star className="h-3.5 w-3.5 fill-current" />
+            {formatScore(score)}
+          </span>
+        )}
+        {item.year && <span>{item.year}</span>}
+        {runtimeLabel && <span>{runtimeLabel}</span>}
         {trailerKey && (
-          <Badge tone="primary">
-            {soundOn && isActive ? "Trailer · audio" : "Trailer"}
-          </Badge>
+          <span className="hidden items-center gap-1.5 sm:inline-flex">
+            <Play className="h-3 w-3" />
+            {soundOn && isActive ? "Trailer with sound" : "Trailer available"}
+          </span>
         )}
       </Item>
 
       <Title
-        className="font-display text-3xl font-bold leading-[1.1] tracking-tight text-white sm:text-5xl md:text-6xl"
+        className="text-balance font-display text-[2.65rem] font-bold leading-[1.02] tracking-[-0.045em] text-[var(--text-primary)] sm:text-6xl lg:text-7xl"
         {...itemProps}
       >
-        {title}
+        <Link
+          href={detailsHref}
+          className="rounded-sm !text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+        >
+          {title}
+        </Link>
       </Title>
 
       {genreNames.length > 0 && (
         <P
-          className="mt-3 text-sm font-medium text-white/80"
+          className="mt-5 text-xs font-medium tracking-wide text-white/75 sm:text-sm"
           {...itemProps}
         >
           {genreNames.join(" · ")}
@@ -388,38 +411,56 @@ function HeroCopy({
 
       {item.overview && (
         <P
-          className="mt-3 line-clamp-3 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base"
+          className="mt-4 line-clamp-3 max-w-[34rem] text-sm leading-7 text-white/75 sm:text-base"
           {...itemProps}
         >
           {item.overview}
         </P>
       )}
 
-      <Item className="mt-7 flex flex-wrap gap-3" {...itemProps}>
+      <Item
+        className="mt-7 flex flex-wrap items-center gap-2.5 sm:mt-8 sm:gap-3"
+        {...itemProps}
+      >
         <Link href={watchHref} className="watch-now-cta">
           <Button
             size="lg"
             variant="gold"
-            className="watch-now-cta !text-black shadow-lg shadow-[var(--gold)]/25 transition-transform duration-300 hover:scale-[1.03] active:scale-[0.98]"
+            className="watch-now-cta h-11 px-4 text-xs !text-black transition-transform duration-200 motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[0.98] sm:h-12 sm:px-6 sm:text-base"
           >
             <Play className="h-4 w-4 fill-current !text-black" />
-            Play
+            Watch now
           </Button>
         </Link>
-        <Link href={detailsHref}>
+        {trailerKey && (
           <Button
             size="lg"
-            variant="secondary"
-            className="transition-transform duration-300 hover:scale-[1.03] active:scale-[0.98]"
+            variant="outline"
+            onClick={onPlayTrailer}
+            className="h-11 border-white/30 bg-white/5 px-4 text-xs text-white transition-transform duration-200 hover:bg-white/10 motion-safe:hover:-translate-y-0.5 sm:h-12 sm:px-6 sm:text-base"
+          >
+            <Play className="h-4 w-4" />
+            Watch trailer
+          </Button>
+        )}
+        <Link
+          href={detailsHref}
+          aria-label={`More info about ${title}`}
+          className="hidden sm:inline-flex"
+        >
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-12 w-12 rounded-full border border-white/25 text-white hover:bg-white/10"
+            aria-label={`More info about ${title}`}
           >
             <Info className="h-4 w-4" />
-            More Info
           </Button>
         </Link>
         <AddToListButton
           content={item}
           variant="icon"
-          className="!h-12 !w-12"
+          className="!h-11 !w-11 sm:!h-12 sm:!w-12"
         />
       </Item>
     </Wrap>
@@ -433,8 +474,7 @@ export function HeroCarousel({
   items: Content[];
   eyebrow?: string;
 }) {
-  const reduceMotion = useReducedMotion() ?? false;
-  const effective = usePerformanceStore((s) => s.effective);
+  const reduceMotion = usePrefersReducedMotion();
 
   // Client hydration: primary trailer + alternate keys for each slide
   const [hydratedTrailers, setHydratedTrailers] = useState<
@@ -455,9 +495,9 @@ export function HeroCarousel({
   }, []);
 
   useEffect(() => {
-    // Trailers only matter in cinematic mode, and only for the visible slide
-    // plus the next one — never fan out one request per featured title.
-    if (effective !== "cinematic" || reduceMotion || !items.length) return;
+    // Video previews do not need WebGL. Resolve the visible and next title in
+    // every graphics mode, including when the user opts to play one manually.
+    if (!items.length) return;
     const targets = [items[index], items[(index + 1) % items.length]].filter(
       (c): c is Content => Boolean(c?.id) && !requestedRef.current.has(c.id),
     );
@@ -486,6 +526,7 @@ export function HeroCarousel({
               }>;
             };
             const mapped = (data.trailers ?? [])
+              .filter((t) => t.site?.toLowerCase() === "youtube")
               .map((t) => ({
                 id: t.id ?? `yt_${t.key}`,
                 key: String(t.key ?? "").trim(),
@@ -494,7 +535,9 @@ export function HeroCarousel({
                 official: Boolean(t.official),
                 type: t.type ?? "Trailer",
               }))
-              .filter((t) => isPlayableTrailerKey(t.key));
+              .filter(
+                (t) => isPlayableTrailerKey(t.key) && pickHeroTrailer([t]),
+              );
 
             const best = pickHeroTrailer(mapped);
             const alts = mapped
@@ -519,7 +562,7 @@ export function HeroCarousel({
         setAlternateKeysById((prev) => ({ ...prev, ...altUpdates }));
       }
     })();
-  }, [items, index, effective, reduceMotion]);
+  }, [items, index]);
 
   // Preserve server order. Always pin curated keys client-side so a bad
   // TMDB/seed id never blocks JJK / Last of Us / Stranger Things / etc.
@@ -546,15 +589,17 @@ export function HeroCarousel({
   }, [items, hydratedTrailers]);
 
   const [soundOn, setSoundOn] = useState(false);
-  const [soundHint, setSoundHint] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const [previewRequested, setPreviewRequested] = useState(false);
   const progress = useMotionValue(0);
   const [heroInView, setHeroInView] = useState(true);
   const [docVisible, setDocVisible] = useState(true);
   const sectionRef = useRef<HTMLElement | null>(null);
   const activePlayerRef = useRef<YtPlayer | null>(null);
 
-  const playbackAllowed =
-    heroInView && docVisible && !reduceMotion && effective === "cinematic";
+  const previewEnabled = !paused && (!reduceMotion || previewRequested);
+  const playbackAllowed = heroInView && docVisible && previewEnabled;
+  const carouselAllowed = heroInView && docVisible && !paused && !reduceMotion;
 
   // Pause / mute when hero leaves the viewport (scroll down)
   useEffect(() => {
@@ -589,7 +634,6 @@ export function HeroCarousel({
       if (saved === "1") {
         const t = window.setTimeout(() => {
           setSoundOn(true);
-          setSoundHint(false);
         }, 0);
         return () => window.clearTimeout(t);
       }
@@ -603,17 +647,20 @@ export function HeroCarousel({
   const autoplayPlugin = useMemo(
     () =>
       Autoplay({
+        active: carouselAllowed,
         delay: autoplayDelay,
         stopOnInteraction: false,
         stopOnMouseEnter: true,
+        stopOnFocusIn: true,
+        playOnInit: false,
       }),
-    [autoplayDelay],
+    [autoplayDelay, carouselAllowed],
   );
 
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {
       loop: slides.length > 1,
-      duration: reduceMotion ? 18 : 36,
+      duration: reduceMotion ? 0 : 30,
       align: "start",
       containScroll: false,
       skipSnaps: false,
@@ -661,7 +708,7 @@ export function HeroCarousel({
     if (!emblaApi) return;
     try {
       const ap = emblaApi.plugins()?.autoplay;
-      if (!playbackAllowed) {
+      if (!carouselAllowed) {
         ap?.stop?.();
       } else {
         ap?.play?.();
@@ -670,17 +717,17 @@ export function HeroCarousel({
     } catch {
       /* ignore */
     }
-  }, [emblaApi, soundOn, playbackAllowed]);
+  }, [emblaApi, carouselAllowed, autoplayDelay]);
 
   useEffect(() => {
-    if (!playbackAllowed || reduceMotion || slides.length < 2) return;
+    if (!carouselAllowed || slides.length < 2) return;
     progress.set(0);
-    const start = performance.now();
     let raf = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / autoplayDelay);
-      progress.set(t);
-      if (t < 1) raf = requestAnimationFrame(tick);
+    const tick = () => {
+      const remaining = emblaApi?.plugins().autoplay?.timeUntilNext();
+      if (remaining != null)
+        progress.set(Math.max(0, Math.min(1, 1 - remaining / autoplayDelay)));
+      raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
@@ -689,7 +736,8 @@ export function HeroCarousel({
     autoplayDelay,
     reduceMotion,
     slides.length,
-    playbackAllowed,
+    carouselAllowed,
+    emblaApi,
     progress,
   ]);
 
@@ -709,14 +757,35 @@ export function HeroCarousel({
       const p = activePlayerRef.current;
       if (p) {
         applyPlayback(p, {
-          play: true,
+          play: playbackAllowed,
           soundOn: next,
         });
       }
       return next;
     });
-    setSoundHint(false);
+  }, [playbackAllowed]);
+
+  const playTrailer = useCallback(() => {
+    setPaused(false);
+    setPreviewRequested(true);
+    setSoundOn(true);
+    try {
+      sessionStorage.setItem(SOUND_PREF_KEY, "1");
+    } catch {
+      /* optional preference */
+    }
+    applyPlayback(activePlayerRef.current, { play: true, soundOn: true });
   }, []);
+
+  const togglePreview = useCallback(() => {
+    if (!previewEnabled) {
+      setPreviewRequested(true);
+      setPaused(false);
+    } else {
+      hardSilence(activePlayerRef.current);
+      setPaused(true);
+    }
+  }, [previewEnabled]);
 
   const scrollToCatalog = useCallback(() => {
     // Silence before scrolling away so audio doesn't linger mid-scroll
@@ -761,9 +830,15 @@ export function HeroCarousel({
   return (
     <section
       ref={sectionRef}
-      className="relative min-h-[100dvh] w-full overflow-hidden bg-[var(--background)]"
+      className="hero-feature relative w-full overflow-hidden bg-[var(--background)]"
+      aria-label="Featured titles"
+      aria-roledescription="carousel"
+      data-featured-index={index}
     >
-      <div className="h-[100dvh] w-full overflow-hidden" ref={emblaRef}>
+      <div
+        className="hero-feature-viewport w-full overflow-hidden"
+        ref={emblaRef}
+      >
         <div className="flex h-full">
           {slides.map((item, i) => {
             const title = displayTitle(item);
@@ -788,14 +863,15 @@ export function HeroCarousel({
               : posterUrl
                 ? resizeTmdbImage(posterUrl, "w780")
                 : cinematicBackdropUrl(item.id, title);
-            const posterThumb = posterUrl
-              ? resizeTmdbImage(posterUrl, "w500")
-              : null;
-
             return (
               <div
                 key={`${item.id}-slide-${i}`}
-                className="relative h-[100dvh] min-w-0 shrink-0 grow-0 basis-full overflow-hidden"
+                className="relative h-full min-w-0 shrink-0 grow-0 basis-full overflow-hidden"
+                role="group"
+                aria-roledescription="slide"
+                aria-label={`${i + 1} of ${slides.length}: ${title}`}
+                aria-hidden={!isActive}
+                inert={!isActive}
               >
                 <HeroTrailerBg
                   trailerKey={trailerKey}
@@ -809,58 +885,17 @@ export function HeroCarousel({
                   onPlayer={isActive ? registerActivePlayer : undefined}
                 />
 
-                <div className="absolute inset-0 z-[3] bg-gradient-to-t from-[var(--background)] via-[var(--background)]/65 to-black/30" />
-                <div className="absolute inset-y-0 left-0 z-[3] w-full bg-gradient-to-r from-[var(--background)] via-[var(--background)]/80 to-transparent md:w-[70%]" />
+                <div className="hero-feature-shade pointer-events-none absolute inset-0 z-[3]" />
 
-                <div className="relative z-10 mx-auto flex h-full max-w-7xl items-end justify-between gap-10 px-4 pb-32 pt-28 sm:items-center sm:px-6 sm:pb-28">
-                  {isActive ? (
-                    reduceMotion ? (
-                      <HeroCopy
-                        item={item}
-                        eyebrow={eyebrow}
-                        soundOn={soundOn}
-                        isActive
-                        animated={false}
-                      />
-                    ) : (
-                      <AnimatePresence mode="wait">
-                        <HeroCopy
-                          key={item.id}
-                          item={item}
-                          eyebrow={eyebrow}
-                          soundOn={soundOn}
-                          isActive
-                          animated={false}
-                        />
-                      </AnimatePresence>
-                    )
-                  ) : (
-                    <div className="pointer-events-none opacity-0" aria-hidden>
-                      <HeroCopy
-                        item={item}
-                        eyebrow={eyebrow}
-                        soundOn={false}
-                        isActive={false}
-                        animated={false}
-                      />
-                    </div>
-                  )}
-                  {isActive && posterThumb && (
-                    <div
-                      className="relative hidden aspect-[2/3] w-52 shrink-0 overflow-hidden rounded-xl shadow-2xl ring-1 ring-white/20 lg:block xl:w-64"
-                      aria-hidden
-                    >
-                      <Image
-                        src={posterThumb}
-                        alt=""
-                        fill
-                        loading="eager"
-                        sizes="256px"
-                        className="object-cover"
-                        unoptimized
-                      />
-                    </div>
-                  )}
+                <div className="relative z-10 mx-auto flex h-full max-w-7xl items-end px-5 pb-60 pt-28 sm:px-6 sm:pb-64">
+                  <HeroCopy
+                    item={item}
+                    eyebrow={eyebrow}
+                    soundOn={soundOn && isActive}
+                    isActive={isActive}
+                    animated={isActive && !reduceMotion}
+                    onPlayTrailer={playTrailer}
+                  />
                 </div>
               </div>
             );
@@ -880,79 +915,136 @@ export function HeroCarousel({
         </div>
       )}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-10 z-20 flex items-center justify-between gap-3 px-4 sm:bottom-12 sm:px-8">
-        <div className="pointer-events-auto flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label="Previous"
-            className="border border-white/15 bg-black/55 backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
-            onClick={() => emblaApi?.scrollPrev()}
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label="Next"
-            className="border border-white/15 bg-black/55 backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
-            onClick={() => emblaApi?.scrollNext()}
-          >
-            <ChevronRight className="h-5 w-5" />
-          </Button>
-
-          {activeHasTrailer && (
-            <Button
-              variant={soundOn ? "gold" : "secondary"}
-              size="sm"
-              aria-pressed={soundOn}
-              aria-label={soundOn ? "Mute trailer" : "Unmute trailer"}
-              className={cn(
-                "border border-white/15 backdrop-blur-md transition-transform hover:scale-105 active:scale-95",
-                !soundOn && "bg-black/55",
-              )}
-              onClick={toggleSound}
-            >
-              {soundOn ? (
-                <Volume2 className="h-4 w-4" />
-              ) : (
-                <VolumeX className="h-4 w-4" />
-              )}
-              <span className="hidden sm:inline">
-                {soundOn ? "Sound on" : "Sound off"}
+      <div className="absolute inset-x-0 bottom-12 z-20 mx-auto max-w-7xl px-5 sm:bottom-14 sm:px-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="hidden text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60 sm:inline">
+              In the spotlight
+            </span>
+            <span className="whitespace-nowrap text-xs tabular-nums text-white/80">
+              {String(index + 1).padStart(2, "0")}{" "}
+              <span className="text-white/35">
+                / {String(slides.length).padStart(2, "0")}
               </span>
-            </Button>
-          )}
-        </div>
-
-        <div className="pointer-events-auto flex max-w-[50%] flex-wrap items-center justify-end gap-2">
-          {activeHasTrailer && soundHint && !soundOn && (
-            <button
-              type="button"
-              onClick={toggleSound}
-              className="hidden animate-pulse rounded-full border border-white/20 bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-md sm:inline-flex"
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="icon"
+              aria-label="Previous featured title"
+              className="h-10 w-10 rounded-full border border-white/20 bg-[var(--background)]/60 motion-safe:active:scale-95"
+              disabled={slides.length < 2}
+              onClick={() => emblaApi?.scrollPrev(reduceMotion)}
             >
-              Tap for cinematic audio
-            </button>
-          )}
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
+              aria-label="Next featured title"
+              className="h-10 w-10 rounded-full border border-white/20 bg-[var(--background)]/60 motion-safe:active:scale-95"
+              disabled={slides.length < 2}
+              onClick={() => emblaApi?.scrollNext(reduceMotion)}
+            >
+              <ChevronRight className="h-5 w-5" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={togglePreview}
+              aria-label={previewEnabled ? "Pause preview" : "Play preview"}
+              aria-pressed={previewEnabled}
+              className="h-10 w-10 rounded-full border border-white/20 text-white/80 hover:bg-white/10"
+            >
+              {previewEnabled ? (
+                <Pause className="h-4 w-4" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+            </Button>
+            {activeHasTrailer && (
+              <Button
+                variant={soundOn ? "gold" : "secondary"}
+                size="sm"
+                aria-pressed={soundOn}
+                aria-label={soundOn ? "Mute trailer" : "Unmute trailer"}
+                className={cn(
+                  "h-10 rounded-full border border-white/20 px-3 motion-safe:active:scale-95",
+                  !soundOn && "bg-[var(--background)]/60",
+                )}
+                onClick={toggleSound}
+              >
+                {soundOn ? (
+                  <Volume2 className="h-4 w-4" />
+                ) : (
+                  <VolumeX className="h-4 w-4" />
+                )}
+                <span className="hidden sm:inline">
+                  {soundOn ? "Sound on" : "Sound off"}
+                </span>
+              </Button>
+            )}
+          </div>
+        </div>
+        <div
+          className="no-scrollbar flex gap-2.5 overflow-x-auto pb-1"
+          aria-label="Choose a featured title"
+        >
           {slides.map((s, i) => (
             <button
               key={`dot-${s.id}-${i}`}
               type="button"
-              aria-label={`Go to slide ${i + 1}`}
-              onClick={() => emblaApi?.scrollTo(i)}
+              aria-label={`Show ${displayTitle(s)}`}
+              aria-current={i === index ? "true" : undefined}
+              onClick={() => emblaApi?.scrollTo(i, reduceMotion)}
               className={cn(
-                "relative h-1.5 overflow-hidden rounded-full transition-all duration-300",
+                "group relative flex w-[172px] shrink-0 items-center gap-2.5 overflow-hidden rounded-xl border p-2 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] sm:w-[210px]",
                 i === index
-                  ? "w-8 bg-white/25"
-                  : "w-1.5 bg-white/35 hover:bg-white/55",
+                  ? "border-[var(--primary)]/65 bg-white/10"
+                  : "border-white/10 bg-[var(--background)]/45 hover:border-white/35 hover:bg-white/5",
               )}
             >
+              <span className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md bg-[var(--surface)]">
+                <Image
+                  src={resizeTmdbImage(
+                    normalizeImageUrl(s.backdrop?.url) ??
+                      normalizeImageUrl(s.poster?.url) ??
+                      cinematicBackdropUrl(s.id, displayTitle(s)),
+                    "w342",
+                  )}
+                  alt=""
+                  fill
+                  sizes="64px"
+                  loading="lazy"
+                  unoptimized
+                  className="object-cover transition-transform duration-300 motion-safe:group-hover:scale-105"
+                />
+                {s.trailer && (
+                  <Play className="absolute bottom-1 right-1 h-3 w-3 fill-white text-white" />
+                )}
+              </span>
+              <span className="min-w-0">
+                <span
+                  className={cn(
+                    "mb-1 block text-[9px] font-semibold uppercase tracking-[0.12em]",
+                    i === index
+                      ? "text-[var(--primary-light)]"
+                      : "text-white/45",
+                  )}
+                >
+                  {i === index ? "Now featured" : s.contentType}
+                </span>
+                <span className="line-clamp-2 text-xs font-medium leading-4 text-white/90">
+                  {displayTitle(s)}
+                </span>
+              </span>
               {i === index && (
                 <motion.span
-                  className="absolute inset-0 origin-left rounded-full bg-[var(--primary-light)]"
+                  className="absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[var(--primary-light)]"
                   style={{
-                    scaleX: reduceMotion ? 1 : progress,
+                    scaleX: reduceMotion || paused ? 1 : progress,
                   }}
                 />
               )}
@@ -970,9 +1062,7 @@ export function HeroCarousel({
         <span className="text-[10px] font-medium uppercase tracking-[0.22em] opacity-80">
           Browse
         </span>
-        <ChevronDown
-          className={cn("h-5 w-5", !reduceMotion && "hero-scroll-cue")}
-        />
+        <ChevronDown className="h-4 w-4" />
       </button>
     </section>
   );

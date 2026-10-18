@@ -1,6 +1,7 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { pageTransition } from "@/lib/motion";
@@ -11,20 +12,16 @@ import { pageTransition } from "@/lib/motion";
  */
 export function PageTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const reduce = useReducedMotion();
-
-  if (reduce) {
-    return <>{children}</>;
-  }
+  const reduce = usePrefersReducedMotion();
 
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.div
         key={pathname}
-        variants={pageTransition}
-        initial="initial"
-        animate="animate"
-        exit="exit"
+        variants={reduce ? undefined : pageTransition}
+        initial={reduce ? false : "initial"}
+        animate={reduce ? undefined : "animate"}
+        exit={reduce ? undefined : "exit"}
         // Transform/opacity only — keeps route changes at 60fps
         className="min-h-[inherit] will-change-[opacity,transform]"
         style={{ backfaceVisibility: "hidden" }}

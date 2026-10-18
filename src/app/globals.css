@@ -160,6 +160,45 @@ body.cineverse-cinema-mode header {
   }
 }
 
+.hero-feature-viewport {
+  height: 94svh;
+  min-height: 760px;
+  max-height: 1050px;
+}
+
+.hero-feature-shade {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(5, 11, 24, 0.94) 0%,
+      rgba(5, 11, 24, 0.7) 32%,
+      rgba(5, 11, 24, 0.08) 75%
+    ),
+    linear-gradient(
+      0deg,
+      var(--background) 0%,
+      rgba(5, 11, 24, 0.88) 15%,
+      transparent 60%,
+      rgba(5, 11, 24, 0.22) 100%
+    );
+}
+
+.hero-feature-copy {
+  text-shadow: 0 2px 24px rgba(5, 11, 24, 0.35);
+}
+
+@media (max-width: 640px) {
+  .hero-feature-shade {
+    background: linear-gradient(
+      0deg,
+      var(--background) 0%,
+      rgba(5, 11, 24, 0.9) 28%,
+      rgba(5, 11, 24, 0.55) 66%,
+      rgba(5, 11, 24, 0.2) 100%
+    );
+  }
+}
+
 /* Hero Ken Burns — subtle push on active poster/backdrop */
 @media (prefers-reduced-motion: no-preference) {
   .hero-kenburns {
@@ -304,12 +343,11 @@ button[class*="bg-[var(--gold)]"] span {
 
 /* Scrim panels for text over images / video — solid-first (impeccable: no glass default) */
 .text-scrim {
-  background:
-    linear-gradient(
-      145deg,
-      rgba(10, 18, 34, 0.78) 0%,
-      rgba(6, 12, 24, 0.64) 100%
-    );
+  background: linear-gradient(
+    145deg,
+    rgba(10, 18, 34, 0.78) 0%,
+    rgba(6, 12, 24, 0.64) 100%
+  );
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   backdrop-filter: blur(18px) saturate(1.4);
   border: 1px solid rgba(255, 255, 255, 0.12);
