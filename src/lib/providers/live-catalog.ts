@@ -527,6 +527,12 @@ export async function resolveTmdbIdForTitle(opts: {
    * Prevents an anime from resolving to its LIVE-ACTION adaptation.
    */
   requireAnimation?: boolean;
+  /**
+   * Search adult titles too. Hentai / 18+ anime is only returned by TMDB when
+   * `include_adult=true`; without it every mature title stays TMDB-less and the
+   * shared movie/TV embed servers cannot build a URL.
+   */
+  includeAdult?: boolean;
 }): Promise<{ tmdb: number; tmdbMediaType: "movie" | "tv" } | null> {
   const queries = [
     opts.title,
@@ -542,10 +548,16 @@ export async function resolveTmdbIdForTitle(opts: {
   for (const q of queries.slice(0, 4)) {
     const [movies, tv] = await Promise.all([
       searchMovie
-        ? tmdbGet<{ results?: TmdbSearchRow[] }>("/search/movie", { query: q })
+        ? tmdbGet<{ results?: TmdbSearchRow[] }>("/search/movie", {
+            query: q,
+            ...(opts.includeAdult ? { include_adult: "true" } : {}),
+          })
         : Promise.resolve({ results: [] as TmdbSearchRow[] }),
       searchTv
-        ? tmdbGet<{ results?: TmdbSearchRow[] }>("/search/tv", { query: q })
+        ? tmdbGet<{ results?: TmdbSearchRow[] }>("/search/tv", {
+            query: q,
+            ...(opts.includeAdult ? { include_adult: "true" } : {}),
+          })
         : Promise.resolve({ results: [] as TmdbSearchRow[] }),
     ]);
 

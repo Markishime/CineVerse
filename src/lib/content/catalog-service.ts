@@ -1095,6 +1095,8 @@ export class CatalogService {
         year: content.year,
         preferMovie,
         requireAnimation: isAnime,
+        // 18+ / hentai only appears in TMDB search with include_adult=true.
+        includeAdult: content.mature || isMatureContent(content),
         alternateTitles: alts,
       });
       if (!resolved) {

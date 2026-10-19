@@ -5,9 +5,15 @@
  */
 
 const ANIMEPAHE_API = "https://myapi-psi-wheat.vercel.app";
+/**
+ * AniDB video scraper/stream extractor for anidb.app.
+ * `/api/search?q=` → `/api/anime/:slug` (episodes) → `/api/watch/:episodeId`
+ * (per-episode embed token). No API key; CORS-enabled public worker.
+ */
+const ANIDB_STREAM_API = "https://anidb-scraper-api.sapis.workers.dev";
 
 export type ResolvedAnimeEmbed = {
-  provider: "animepahe" | "supaplay";
+  provider: "animepahe" | "supaplay" | "anidb";
   url: string;
   label?: string;
 };
@@ -149,3 +155,112 @@ export async function resolveAnimePaheEmbed(opts: {
     label: ep.title,
   };
 }
+
+type AnidbSearchHit = {
+  id?: string;
+  title?: string;
+  type?: string;
+  url?: string;
+};
+
+type AnidbEpisode = {
+  id?: string | number;
+  number?: number | string;
+  episodeNumber?: number | string;
+  title?: string;
+};
+
+type AnidbWatch = {
+  success?: boolean;
+  data?: {
+    embeds?: Array<{ language?: string; embedUrl?: string }>;
+    sources?: Array<{ url?: string; rawUrl?: string; language?: string }>;
+  };
+};
+
+/**
+ * Resolve an anidb.app embed (iframe) for an anime / hentai episode.
+ *
+ * anidb.app exposes no stable public route keyed by AniDB id — the embed token
+ * is issued per episode — so we match on title, then walk the episode list and
+ * the per-episode watch payload. Returns null when the title or the episode is
+ * not carried by the backend so the player falls through to the next server.
+ */
+export async function resolveAnidbEmbed(opts: {
+  title: string;
+  episode?: number;
+  year?: number | null;
+  anilist?: number;
+  mal?: number;
+  dub?: boolean;
+}): Promise<ResolvedAnimeEmbed | null> {
+  const title = opts.title?.trim();
+  if (!title) return null;
+  const epNum = Math.max(1, opts.episode ?? 1);
+
+  // Hard budget for the whole walk. AniDB leads the 18+ chain, so a slow or
+  // failing backend must fall through to the general hosts quickly instead of
+  // blocking playback.
+  const deadline = Date.now() + 20_000;
+  const remaining = () => deadline - Date.now();
+  const budget = (ms: number) => Math.min(ms, remaining());
+
+  const search = await fetchJson<{ data?: AnidbSearchHit[] }>(
+    `${ANIDB_STREAM_API}/api/search?q=${encodeURIComponent(title)}`,
+    budget(12_000),
+  );
+  const hits = (search?.data ?? []).filter(
+    (h): h is AnidbSearchHit & { id: string } => Boolean(h?.id),
+  );
+  if (!hits.length) return null;
+
+  const ranked = [...hits].sort(
+    (a, b) => titleScore(title, b.title ?? "") - titleScore(title, a.title ?? ""),
+  );
+
+  // The catalog lists seasons/specials as separate entries, so try the closest
+  // few titles until one yields the requested absolute episode.
+  for (const hit of ranked.slice(0, 3)) {
+    if (remaining() <= 0) break;
+    if (titleScore(title, hit.title ?? "") < 25) break;
+
+    const anime = await fetchJson<{ data?: { episodes?: AnidbEpisode[] } }>(
+      `${ANIDB_STREAM_API}/api/anime/${encodeURIComponent(hit.id)}`,
+      budget(12_000),
+    );
+    const episodes = anime?.data?.episodes ?? [];
+    if (!episodes.length) continue;
+
+    const ep =
+      episodes.find(
+        (e) => Number(e.number ?? e.episodeNumber) === epNum,
+      ) ?? episodes[epNum - 1];
+    const episodeId = ep?.id;
+    if (episodeId == null || episodeId === "") continue;
+    if (remaining() <= 0) break;
+
+    const watch = await fetchJson<AnidbWatch>(
+      `${ANIDB_STREAM_API}/api/watch/${encodeURIComponent(String(episodeId))}`,
+      budget(12_000),
+    );
+    const embeds = (watch?.data?.embeds ?? []).filter((e) => e.embedUrl);
+    if (!embeds.length) continue;
+
+    // Match the requested audio track when the host labels it; otherwise take
+    // whatever the backend offers.
+    const preferred = opts.dub
+      ? embeds.find((e) => /eng|dub/i.test(e.language ?? ""))
+      : embeds.find((e) => /jap|sub/i.test(e.language ?? ""));
+    const picked = preferred ?? embeds[0];
+    if (!picked?.embedUrl) continue;
+
+    return {
+      provider: "anidb",
+      url: picked.embedUrl,
+      label: ep?.title || hit.title,
+    };
+  }
+
+  return null;
+}
+

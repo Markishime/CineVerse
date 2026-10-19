@@ -7,7 +7,9 @@ existing provider list even when Philippine locale hints are present.
 
 Other movies, series and dramas keep VidFast first, then VidRock, VidSrc SH,
 MultiEmbed, 2Embed CC, 2Embed, 2Embed Skin, VidSrc PM, and AutoEmbed. Nine servers
-appear in their Servers menu. The additional providers are excluded from anime.
+appear in their Servers menu. Regular anime keeps only the five shared general
+hosts, while 18+ / hentai anime gets the same nine-server list so it has the same
+fallback coverage.
 
 Each server receives the same TMDB ID. TV URLs include the selected season and
 episode; MultiEmbed additionally requires `tmdb=1` to interpret numeric IDs

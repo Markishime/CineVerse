@@ -13,22 +13,25 @@ for (const animeFormat of ["TV", "MOVIE"] as const) {
       animeFormat,
       providerIds: { tmdb: 123, anilist: 1, mal: 1 },
     });
+    const anidbEmbedUrl = "https://anidb.app/embed/token-ep3";
     await page.route("**/api/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
       const body = path.endsWith("/slug/anilist_1")
         ? content
-        : {
-            items: [],
-            seasons: [],
-            trailers: [],
-            providers: [],
-            eligible: false,
-          };
+        : path.endsWith("/playback/anime-embed")
+          ? { ok: true, provider: "anidb", url: anidbEmbedUrl }
+          : {
+              items: [],
+              seasons: [],
+              trailers: [],
+              providers: [],
+              eligible: false,
+            };
       await route.fulfill({ json: body });
     });
     // Check our server selection and URL routing without contacting stream hosts.
     await page.route(
-      /^https:\/\/(player\.autoembed\.co|vidfast\.vc|www\.2embed\.(online|skin)|vidsrc\.pm|megaplay\.buzz|player\.cinezo\.live)\//,
+      /^https:\/\/(player\.autoembed\.co|vidfast\.vc|www\.2embed\.(online|skin)|vidsrc\.pm|megaplay\.buzz|player\.cinezo\.live|anidb\.app)\//,
       (route) =>
         route.fulfill({
           contentType: "text/html",
@@ -49,15 +52,16 @@ for (const animeFormat of ["TV", "MOVIE"] as const) {
         : "https://player.autoembed.co/embed/tv/123/2-3/",
       `https://megaplay.buzz/stream/mal/1/${animeFormat === "MOVIE" ? 1 : 3}/sub`,
       `https://player.cinezo.live/embed/anime/1/${animeFormat === "MOVIE" ? 1 : 3}?dub=false&autoplay=true&poster=true`,
+      anidbEmbedUrl,
     ];
     await expect(iframe).toHaveAttribute("src", urls[0]!);
-    for (const i of [1, 2, 3, 4, 5, 6, 0]) {
+    for (const i of [1, 2, 3, 4, 5, 6, 7, 0]) {
       await player
         .getByRole("button", { name: "Servers", exact: true })
         .click();
       await expect(
         player.getByRole("button", { name: /^Server \d/ }),
-      ).toHaveCount(7);
+      ).toHaveCount(8);
       await player
         .getByRole("button", { name: new RegExp(`^Server ${i + 1}(?:\\s|$)`) })
         .click();

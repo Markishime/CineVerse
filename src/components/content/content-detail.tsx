@@ -44,7 +44,10 @@ import {
   resizeTmdbImage,
 } from "@/lib/content/posters";
 import { formatRuntime, formatScore } from "@/lib/utils";
-import { isRestrictedContentUser } from "@/lib/content/mature";
+import {
+  isAdultRestricted,
+  isRestrictedContentUser,
+} from "@/lib/content/mature";
 import {
   hasParentalPin,
   isMatureSessionUnlocked,
@@ -706,6 +709,8 @@ export function ContentDetail({ slug }: { slug: string }) {
                 contentType={content.contentType}
                 anilistId={content.providerIds?.anilist}
                 malId={content.providerIds?.mal}
+                anidbId={content.providerIds?.anidb}
+                adult={isAdultRestricted(content)}
                 animeFormat={content.animeFormat}
                 year={content.year}
                 autoPlay

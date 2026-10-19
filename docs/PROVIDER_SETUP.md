@@ -64,6 +64,34 @@ authorized adult account. Vivamax and other Filipino films use TMDB in Filipino
 Movies with the Philippine release region. Adult entries are included in the normal
 catalogs for authorized viewers; there are no separate adult navbar links.
 
+## AniDB stream playback (anime + hentai)
+
+Playback no longer depends on AniDB metadata credentials. The `anidb` embed
+provider resolves an `anidb.app` player URL from the title + absolute episode
+number through the public AniDB scraper worker:
+
+```text
+GET https://anidb-scraper-api.sapis.workers.dev/api/search?q={title}
+GET https://anidb-scraper-api.sapis.workers.dev/api/anime/{slug}
+GET https://anidb-scraper-api.sapis.workers.dev/api/watch/{episodeId}   → embedUrl
+```
+
+CineVerse proxies this with `resolveAnidbEmbed()` behind
+`GET /api/v1/playback/anime-embed?provider=anidb&title=…&episode=…` — no API key
+or env var. Chain position:
+
+- **Adults-only / hentai anime** — `anidb` leads the server list, then all nine
+  TMDB hosts (VidFast, VidRock, VidSrc SH, MultiEmbed, 2Embed CC, 2Embed,
+  2Embed Skin, VidSrc PM, AutoEmbed), then MegaPlay/Cinezo. TMDB identity is
+  resolved with `include_adult=true` so 18+ titles get the same nine servers as
+  movies and series.
+- **Regular anime** — general hosts first, then MegaPlay/Cinezo, then `anidb`.
+- Titles that have an AniDB id but no AniList/MAL/TMDB id still get a server
+  (`providerIds.anidb` counts as playable identity).
+
+Unresolvable titles (backend down, title not in the AniDB catalog, episode
+missing) fail the async resolve and the player advances to the next server.
+
 ## AniList (discovery fallback)
 
 - Public GraphQL endpoint: `https://graphql.anilist.co`

@@ -72,6 +72,7 @@ describe("embed provider order", () => {
         ...movieProviders.map((p) => p.id),
         "megaplay",
         "cinezo",
+        "anidb",
       ]);
       for (const provider of movieProviders) {
         expect(buildAnimeEmbedUrl(provider.id, animeIds)).toBe(
@@ -87,7 +88,63 @@ describe("embed provider order", () => {
       mal: 1,
       animeFormat: "TV",
     });
-    expect(providers.map((p) => p.id)).toEqual(["megaplay", "cinezo"]);
+    expect(providers.map((p) => p.id)).toEqual(["megaplay", "cinezo", "anidb"]);
+  });
+
+  it("leads the chain with the AniDB stream for adults-only anime", () => {
+    const providers = getProvidersForContentType("anime", "tv", {
+      tmdb: 123,
+      anilist: 1,
+      mal: 1,
+      anidb: 99,
+      animeFormat: "TV",
+      adult: true,
+    });
+    expect(providers[0].id).toBe("anidb");
+    expect(providers.filter((p) => p.needsResolve).map((p) => p.id)).toEqual([
+      "anidb",
+    ]);
+    // Hentai / 18+ keeps parity with movies and series: all nine TMDB servers
+    // are in the Servers menu, with the anime natives after them.
+    expect(providers.map((p) => p.id)).toEqual([
+      "anidb",
+      "vidfast",
+      "vidrock",
+      "vidsrcsh",
+      "multiembed",
+      "2embedcc",
+      "2embed",
+      "2embedskin",
+      "vidsrcpm",
+      "autoembed",
+      "megaplay",
+      "cinezo",
+    ]);
+  });
+
+  it("keeps all nine TMDB servers in the hentai chain", () => {
+    const providers = getProvidersForContentType("anime", "tv", {
+      tmdb: 123,
+      anilist: 1,
+      mal: 1,
+      animeFormat: "TV",
+      adult: true,
+    });
+    const tmdbServers = providers
+      .filter((p) => !p.animeOnly && p.id !== "anidb")
+      .map((p) => p.id);
+    expect(tmdbServers).toEqual([
+      "vidfast",
+      "vidrock",
+      "vidsrcsh",
+      "multiembed",
+      "2embedcc",
+      "2embed",
+      "2embedskin",
+      "vidsrcpm",
+      "autoembed",
+    ]);
+    expect(tmdbServers).toHaveLength(9);
   });
 
   it("uses AutoEmbed episode paths even if a movie media type leaks into anime series", () => {

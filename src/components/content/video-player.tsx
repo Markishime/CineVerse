@@ -49,6 +49,10 @@ interface VideoPlayerProps {
   anilistId?: number;
   /** MyAnimeList id */
   malId?: number;
+  /** AniDB anime id */
+  anidbId?: number;
+  /** Adults-only / hentai anime — leads the AniDB-backed stream chain */
+  adult?: boolean;
   animeFormat?: string;
   year?: number | null;
   autoPlay?: boolean;
@@ -111,6 +115,8 @@ export function VideoPlayer({
   contentType = "series",
   anilistId,
   malId,
+  anidbId,
+  adult,
   animeFormat,
   year,
   autoPlay = true,
@@ -186,9 +192,11 @@ export function VideoPlayer({
         tmdb: tmdbId,
         anilist: anilistId,
         mal: malId,
+        anidb: anidbId,
         animeFormat,
         countries,
         originalLanguage,
+        adult,
       },
       Math.max(1, season ?? 1),
       Math.max(1, episode ?? 1),
@@ -203,6 +211,8 @@ export function VideoPlayer({
     tmdbId,
     anilistId,
     malId,
+    anidbId,
+    adult,
     animeFormat,
     countries,
     originalLanguage,
@@ -264,6 +274,7 @@ export function VideoPlayer({
     tmdbId,
     anilistId,
     malId,
+    anidbId,
     resolvedContentType,
     season,
     episode,
@@ -351,8 +362,13 @@ export function VideoPlayer({
   // the same sub preference; non-anime content keeps its language preference.
   const preferDub = isAnime ? false : preferDubForLanguage(effectiveLanguage);
 
+  // Callers append "· SxxExx" for the player chrome. Title-based resolvers
+  // (AniDB / AnimePahe) must search the bare series title or they look for an
+  // episode-suffixed name that no catalog contains.
+  const streamTitle = title.replace(/\s*·\s*S\d+E\d+\s*$/i, "").trim() || title;
+
   const animeIds: AnimeStreamIds = {
-    title,
+    title: streamTitle,
     anilist: anilistId,
     mal: malId,
     tmdb: tmdbId,
@@ -405,7 +421,7 @@ export function VideoPlayer({
 
   const embedUrl = resolvedUrl ?? staticEmbedUrl;
 
-  // Async resolve for AnimePahe / SupaPlay
+  // Async resolve for AniDB / AnimePahe (token- or session-based backends)
   useEffect(() => {
     if (!activeProvider?.needsResolve || !isAnime) return;
 
@@ -413,14 +429,21 @@ export function VideoPlayer({
 
     (async () => {
       try {
-        if (activeProvider.id === "animepahe") {
+        if (
+          activeProvider.id === "animepahe" ||
+          activeProvider.id === "anidb"
+        ) {
           const params = new URLSearchParams({
-            provider: "animepahe",
-            title,
+            provider: activeProvider.id,
+            title: streamTitle,
             episode: String(animeIds.episode ?? 1),
           });
           if (year) params.set("year", String(year));
           if (anilistId) params.set("anilist", String(anilistId));
+          if (malId) params.set("mal", String(malId));
+          if (activeProvider.id === "anidb" && preferDub) {
+            params.set("dub", "true");
+          }
           const res = await fetch(
             `/api/v1/playback/anime-embed?${params.toString()}`,
           );
@@ -472,7 +495,16 @@ export function VideoPlayer({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProvider?.id, isAnime, title, anilistId, animeIds.episode, year]);
+  }, [
+    activeProvider?.id,
+    isAnime,
+    title,
+    anilistId,
+    malId,
+    animeIds.episode,
+    year,
+    preferDub,
+  ]);
 
   // When static URL is missing (and not resolving), advance once
   useEffect(() => {

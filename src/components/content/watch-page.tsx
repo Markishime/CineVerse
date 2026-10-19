@@ -30,7 +30,7 @@ import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import { formatScore } from "@/lib/utils";
 import { getDeviceRegion } from "@/lib/user/region";
 import { useAuthStore } from "@/stores/auth-store";
-import { isRestrictedContentUser } from "@/lib/content/mature";
+import { isAdultRestricted, isRestrictedContentUser } from "@/lib/content/mature";
 import {
   hasParentalPin,
   isMatureSessionUnlocked,
@@ -527,6 +527,7 @@ export function WatchPage({
         {(content.providerIds?.anilist ||
           content.providerIds?.mal ||
           content.providerIds?.tmdb ||
+          content.providerIds?.anidb ||
           content.contentType === "anime") && (
           <div id="embed-player" className="mt-4">
             <VideoPlayer
@@ -564,6 +565,8 @@ export function WatchPage({
               }
               anilistId={content.providerIds?.anilist}
               malId={content.providerIds?.mal}
+              anidbId={content.providerIds?.anidb}
+              adult={isAdultRestricted(content)}
               animeFormat={content.animeFormat}
               year={content.year}
               autoPlay

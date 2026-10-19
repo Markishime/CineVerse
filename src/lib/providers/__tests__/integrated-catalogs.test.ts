@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchWorldAnimePage, fetchWorldMoviesPage } from "../live-catalog";
+import {
+  fetchWorldAnimePage,
+  fetchWorldMoviesPage,
+  resolveTmdbIdForTitle,
+} from "../live-catalog";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -107,5 +111,44 @@ describe("ordinary catalogs include authorized adult titles", () => {
       "series",
     );
     expect(safe.items.every((c) => !c.mature)).toBe(true);
+  });
+
+  it("searches TMDB adult titles so hentai can use the shared servers", async () => {
+    vi.stubEnv("TMDB_ACCESS_TOKEN", "test-token");
+    const urls: URL[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        urls.push(new URL(input));
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: 55,
+                name: "Hentai Sample",
+                original_name: "Hentai Sample",
+                original_language: "ja",
+                genre_ids: [16],
+                popularity: 5,
+                first_air_date: "2024-01-01",
+              },
+            ],
+          }),
+        );
+      }),
+    );
+
+    const hit = await resolveTmdbIdForTitle({
+      title: "Hentai Sample",
+      year: 2024,
+      requireAnimation: true,
+      preferMovie: false,
+      includeAdult: true,
+    });
+    expect(hit).toEqual({ tmdb: 55, tmdbMediaType: "tv" });
+    expect(urls.length).toBeGreaterThan(0);
+    expect(
+      urls.every((u) => u.searchParams.get("include_adult") === "true"),
+    ).toBe(true);
   });
 });

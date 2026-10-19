@@ -26,6 +26,7 @@ export type EmbedProviderId =
   // Anime-only backends
   | "megaplay"
   | "cinezo"
+  | "anidb"
   | "animepahe"
   | "supaplay";
 
@@ -223,6 +224,20 @@ export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
     },
   },
   {
+    id: "anidb",
+    name: "AniDB",
+    supportsTv: true,
+    animeOnly: true,
+    // AniDB-stream backends (anidb.app) are keyed by an opaque per-episode
+    // embed token, so the URL is resolved server-side from title + absolute
+    // episode before the iframe loads (same contract as AnimePahe).
+    // Resolved client-side via /api/v1/playback/anime-embed
+    needsResolve: true,
+    movieUrl: () => "",
+    tvUrl: () => "",
+    animeUrl: () => null,
+  },
+  {
     id: "animepahe",
     name: "AnimePahe",
     supportsTv: true,
@@ -268,6 +283,20 @@ export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
 /** Anime uses the same default and general fallback order as other videos. */
 export const ANIME_PLAY_ORDER: EmbedProviderId[] = [...GENERAL_PLAY_ORDER];
 
+/**
+ * Adults-only / hentai anime uses the full nine TMDB servers — the same list
+ * movies and series get — so 18+ titles have the same fallback coverage.
+ * AniDB still leads the chain (see getProvidersForContentType).
+ */
+export const ADULT_PLAY_ORDER: EmbedProviderId[] = [
+  "vidfast",
+  "vidrock",
+  "vidsrcsh",
+  "multiembed",
+  "2embedcc",
+  ...GENERAL_PLAY_ORDER,
+];
+
 export function getProvidersForMediaType(
   mediaType: "movie" | "tv",
 ): EmbedProvider[] {
@@ -281,10 +310,17 @@ export interface ProviderIdHints {
   tmdb?: number | null;
   anilist?: number | null;
   mal?: number | null;
+  /** AniDB anime id (metadata parity with the AniDB catalog import) */
+  anidb?: number | null;
   animeFormat?: string | null;
   /** ISO countries e.g. PH — content locale hints */
   countries?: string[] | null;
   originalLanguage?: string | null;
+  /**
+   * Adults-only / hentai anime. Hentai is frequently missing from the general
+   * TMDB hosts, so AniDB-backed streams lead the 18+ chain.
+   */
+  adult?: boolean | null;
 }
 
 /** Reorder a general list so preferred ids come first (stable). */
@@ -333,7 +369,7 @@ export function providerCanPlay(
     });
     // needsResolve providers are playable if we have title identity
     if (provider.needsResolve) {
-      return Boolean(ids.anilist || ids.mal || ids.tmdb);
+      return Boolean(ids.anilist || ids.mal || ids.tmdb || ids.anidb);
     }
     return Boolean(url);
   }
@@ -364,9 +400,24 @@ export function getProvidersForContentType(
   if (contentType === "anime") {
     // Preserve the shared provider list for anime films and series,
     // with native hosts available after it.
+    const generalChain = preferProviders(general, ANIME_PLAY_ORDER);
     const liveNatives = ANIME_EMBED_PROVIDERS.filter((p) => !p.needsResolve);
     const instantNatives = preferProviders(liveNatives, ["megaplay", "cinezo"]);
-    chain = [...preferProviders(general, ANIME_PLAY_ORDER), ...instantNatives];
+    const anidbStreams = ANIME_EMBED_PROVIDERS.filter((p) => p.id === "anidb");
+    // 18+ / hentai keeps parity with movie & series playback: the full nine
+    // TMDB servers (general + the extra live-action fallbacks) are available,
+    // not just the five shared anime hosts. AniDB-backed embeds are resolved
+    // from title + absolute episode and carry adult anime the TMDB hosts often
+    // lack, so they lead the 18+ chain.
+    const adultChain = ids.adult
+      ? preferProviders(
+          [...general, ...LIVE_ACTION_EMBED_PROVIDERS],
+          ADULT_PLAY_ORDER,
+        )
+      : generalChain;
+    chain = ids.adult
+      ? [...anidbStreams, ...adultChain, ...instantNatives]
+      : [...generalChain, ...instantNatives, ...anidbStreams];
   } else {
     // Extra movie/TV servers also cover Filipino titles and every drama type.
     // Keep the anime list above independent from these additions.
