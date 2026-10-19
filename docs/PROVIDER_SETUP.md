@@ -25,10 +25,12 @@ with [AniDB](https://anidb.net/perl-bin/animedb.pl?show=client), then configure
 these server-only values in `.env.local` and your hosting environment:
 
 ```text
-ANIDB_CLIENT_NAME=your_registered_client
+ANIDB_CLIENT=your_registered_client
 ANIDB_CLIENT_VERSION=1
 ANIDB_CACHE_DIR=/absolute/path/to/persistent/anidb-cache
 ```
+
+`ANIDB_CLIENT_NAME` is also supported for existing configurations.
 
 Run one importer per cache directory:
 

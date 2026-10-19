@@ -40,9 +40,12 @@ export interface AnidbRecord {
 }
 export const anidbCacheDir = () =>
   process.env.ANIDB_CACHE_DIR || join(tmpdir(), "cineverse-anidb");
+const anidbClientName = () =>
+  process.env.ANIDB_CLIENT?.trim() || process.env.ANIDB_CLIENT_NAME?.trim();
+
 export function isAnidbConfigured() {
   return Boolean(
-    process.env.ANIDB_CLIENT_NAME &&
+    anidbClientName() &&
     /^[1-9]\d*$/.test(process.env.ANIDB_CLIENT_VERSION ?? ""),
   );
 }
@@ -280,7 +283,7 @@ export async function fetchAnidbById(aid: number): Promise<AnidbRecord | null> {
         request: "anime",
         aid: String(aid),
         protover: "1",
-        client: process.env.ANIDB_CLIENT_NAME!,
+        client: anidbClientName()!,
         clientver: process.env.ANIDB_CLIENT_VERSION!,
       });
       const response = await fetch(

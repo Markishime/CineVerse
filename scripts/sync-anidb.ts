@@ -17,7 +17,7 @@ loadEnvConfig(process.cwd());
 async function main() {
   if (!isAnidbConfigured())
     throw new Error(
-      "Set ANIDB_CLIENT_NAME and ANIDB_CLIENT_VERSION to your registered AniDB HTTP client before importing.",
+      "Set ANIDB_CLIENT and ANIDB_CLIENT_VERSION to your registered AniDB HTTP client before importing.",
     );
   const args = process.argv.slice(2);
   const all = args.includes("--all");

@@ -43,6 +43,7 @@ beforeEach(async () => {
   cacheDir = await mkdtemp(join(tmpdir(), "cineverse-anidb-test-"));
   vi.stubEnv("ANIDB_CACHE_DIR", cacheDir);
   vi.stubEnv("ANIDB_CLIENT_NAME", "");
+  vi.stubEnv("ANIDB_CLIENT", "");
   vi.stubEnv("ANIDB_CLIENT_VERSION", "");
 });
 afterEach(async () => {
@@ -151,7 +152,7 @@ describe("AniDB metadata", () => {
   });
 
   it("caches HTTP metadata, preserves provider parameters and opens cold AniDB links", async () => {
-    vi.stubEnv("ANIDB_CLIENT_NAME", "cineversetest");
+    vi.stubEnv("ANIDB_CLIENT", "cineversetest");
     vi.stubEnv("ANIDB_CLIENT_VERSION", "2");
     const fetchMock = vi.fn(async (input: string) => {
       expect(input).toContain("httpapi");
