@@ -55,6 +55,7 @@ advertisement, or provider title message.
   player. Its other two sample films did not resolve during the checks; it is a
   fallback, not a promise of complete Philippine catalog coverage. Its poster
   requires Play; another click can be needed after the initial ad interaction.
+  Its nested video can also require its own Play tap on mobile browsers.
 - VidSrc SH played *Heneral Luna*, but the other two samples did not pass the
   same playback check. MultiEmbed, CineSrc, FilmU, Stellar, PrimeSrc, VidPhantom,
   VidLink, Cinezo, VidKing, 111Movies, Rive, VidPlus and Videasy did not pass in

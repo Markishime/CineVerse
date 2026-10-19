@@ -81,6 +81,19 @@ for (const [id, title, provider] of [
               })
               .catch(() => null);
             if (
+              provider === "2embedcc" &&
+              playback &&
+              playback.duration > 600 &&
+              playback.time < 2
+            ) {
+              // Nested frames may require their own trusted Play gesture on mobile.
+              const play = frame
+                .getByRole("button", { name: "Play", exact: true })
+                .first();
+              if (await play.isVisible())
+                await play.click({ timeout: 1500 }).catch(() => {});
+            }
+            if (
               playback &&
               playback.time > 2 &&
               playback.duration > 600 &&
