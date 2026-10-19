@@ -35,7 +35,7 @@ describe("embed provider order", () => {
         anilist: 1,
         mal: 1,
       });
-      const expected = ["vidfast", "2embed", "2embedskin", "vidsrcpm"];
+      const expected = ["vidfast", "vidrock", "vidsrcsh", "multiembed"];
       expect(providers.slice(0, 4).map((p) => p.id)).toEqual(expected);
     },
   );
@@ -48,12 +48,10 @@ describe("embed provider order", () => {
   );
 
   it.each(["MOVIE", "TV"] as const)(
-    "includes every movie provider for anime %s with the correct URL",
+    "keeps the existing shared providers for anime %s with the correct URL",
     (animeFormat) => {
       const mediaType = animeFormat === "MOVIE" ? "movie" : "tv";
-      const movieProviders = getProvidersForContentType("movie", "movie", {
-        tmdb: 550,
-      });
+      const movieProviders = getProvidersForMediaType("movie");
       const animeIds = {
         title: "Anime title",
         tmdb: 123,

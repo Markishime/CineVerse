@@ -1,3 +1,8 @@
+import {
+  LIVE_ACTION_EMBED_PROVIDERS,
+  type LiveActionProviderId,
+} from "./live-action-providers";
+
 /**
  * Streaming embed providers for CineVerse.
  *
@@ -10,6 +15,7 @@
  */
 
 export type EmbedProviderId =
+  | LiveActionProviderId
   // General — movies / series
   | "vidfast"
   | "2embed"
@@ -20,8 +26,7 @@ export type EmbedProviderId =
   | "megaplay"
   | "cinezo"
   | "animepahe"
-  | "supaplay"
-  ;
+  | "supaplay";
 
 export interface EmbedUrlOpts {
   autoplay?: boolean;
@@ -243,6 +248,7 @@ export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
 /** All providers (general + anime + drama) */
 export const EMBED_PROVIDERS: EmbedProvider[] = [
   ...GENERAL_EMBED_PROVIDERS,
+  ...LIVE_ACTION_EMBED_PROVIDERS,
   ...ANIME_EMBED_PROVIDERS,
 ];
 
@@ -270,28 +276,14 @@ export function getProvidersForMediaType(
   return preferProviders(list, GENERAL_PLAY_ORDER);
 }
 
-/** Asian-drama content types that use the dedicated drama backends. */
-const DRAMA_CONTENT_TYPES = new Set([
-  "kdrama",
-  "cdrama",
-  "jdrama",
-  "thaidrama",
-]);
-
 export interface ProviderIdHints {
   tmdb?: number | null;
   anilist?: number | null;
   mal?: number | null;
   animeFormat?: string | null;
-  /** ISO countries e.g. PH — used for Filipino-first host order */
+  /** ISO countries e.g. PH — content locale hints */
   countries?: string[] | null;
   originalLanguage?: string | null;
-}
-
-function isFilipinoContent(ids: ProviderIdHints): boolean {
-  const lang = (ids.originalLanguage ?? "").toLowerCase();
-  if (lang === "tl" || lang === "fil" || lang === "tgl") return true;
-  return (ids.countries ?? []).some((c) => c.toUpperCase() === "PH");
 }
 
 /** Reorder a general list so preferred ids come first (stable). */
@@ -369,26 +361,18 @@ export function getProvidersForContentType(
   let chain: EmbedProvider[];
 
   if (contentType === "anime") {
-    // Use the same complete general provider list as movies for both anime
-    // films and series, with native hosts available after it.
-    const liveNatives = ANIME_EMBED_PROVIDERS.filter(
-      (p) => !p.needsResolve,
-    );
+    // Preserve the shared provider list for anime films and series,
+    // with native hosts available after it.
+    const liveNatives = ANIME_EMBED_PROVIDERS.filter((p) => !p.needsResolve);
     const instantNatives = preferProviders(liveNatives, ["megaplay", "cinezo"]);
-    chain = [
-      ...preferProviders(general, ANIME_PLAY_ORDER),
-      ...instantNatives,
-    ];
-  } else if (DRAMA_CONTENT_TYPES.has(contentType)) {
-    // KissKH needs its own episode id and therefore cannot be used by the
-    // TMDB-only player. Use the verified general servers for these titles.
-    chain = preferProviders(general, GENERAL_PLAY_ORDER);
-  } else if (isFilipinoContent(ids)) {
-    // No PH-specialist embed host has a verified TMDB endpoint, so use the
-    // verified general servers for Filipino titles as well.
-    chain = preferProviders(general, GENERAL_PLAY_ORDER);
+    chain = [...preferProviders(general, ANIME_PLAY_ORDER), ...instantNatives];
   } else {
-    chain = preferProviders(general, GENERAL_PLAY_ORDER);
+    // Extra movie/TV servers also cover Filipino titles and every drama type.
+    // Keep the anime list above independent from these additions.
+    chain = preferProviders(
+      [...general, ...LIVE_ACTION_EMBED_PROVIDERS],
+      ["vidfast", "vidrock", "vidsrcsh", "multiembed", ...GENERAL_PLAY_ORDER],
+    );
   }
 
   // Drop providers that cannot produce a URL for this title
