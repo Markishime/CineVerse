@@ -37,7 +37,7 @@ for (const contentType of [
     );
     // Exercise routing and fallback without depending on external media hosts.
     await page.route(
-      /^https:\/\/(vidfast\.vc|vidrock\.net|vidsrc\.sh|multiembed\.mov)\//,
+      /^https:\/\/(vidfast\.vc|vidrock\.net|vidsrc\.sh|multiembed\.mov|www\.2embed\.cc)\//,
       (route) =>
         route.fulfill({
           contentType: "text/html",
@@ -51,10 +51,13 @@ for (const contentType of [
     const iframe = player.locator("iframe");
     const suffix = movie ? "movie/123" : "tv/123/2/3";
     const urls = [
-      `https://vidfast.vc/${suffix}?autoPlay=true`,
       `https://vidrock.net/${suffix}`,
+      movie
+        ? "https://www.2embed.cc/embed/123"
+        : "https://www.2embed.cc/embedtv/123&s=2&e=3",
       `https://vidsrc.sh/embed/${suffix}`,
       `https://multiembed.mov/?video_id=123&tmdb=1${movie ? "" : "&s=2&e=3"}`,
+      `https://vidfast.vc/${suffix}?autoPlay=true`,
     ];
     await expect(iframe).toHaveAttribute("src", urls[0]!);
     await expect(
@@ -67,13 +70,13 @@ for (const contentType of [
         window.parent.postMessage({ type: "content not found" }, "*"),
       );
     await expect(iframe).toHaveAttribute("src", urls[1]!);
-    for (const i of [2, 3, 0]) {
+    for (const i of [2, 3, 4, 1, 0]) {
       await player
         .getByRole("button", { name: "Servers", exact: true })
         .click();
       await expect(
         player.getByRole("button", { name: /^Server \d/ }),
-      ).toHaveCount(8);
+      ).toHaveCount(9);
       await player
         .getByRole("button", { name: new RegExp(`^Server ${i + 1}(?:\\s|$)`) })
         .click();

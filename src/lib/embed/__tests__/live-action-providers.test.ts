@@ -5,7 +5,7 @@ import {
   getProvidersForContentType,
 } from "../providers";
 
-const additions = ["vidrock", "vidsrcsh", "multiembed"] as const;
+const additions = ["vidrock", "vidsrcsh", "multiembed", "2embedcc"] as const;
 
 describe("additional movie and TV providers", () => {
   it.each([
@@ -26,7 +26,7 @@ describe("additional movie and TV providers", () => {
         2,
         3,
       );
-      expect(providers.slice(0, 4).map((p) => p.id)).toEqual([
+      expect(providers.slice(0, 5).map((p) => p.id)).toEqual([
         "vidfast",
         ...additions,
       ]);
@@ -51,6 +51,8 @@ describe("additional movie and TV providers", () => {
         ...locale,
       }).map((p) => p.id);
       expect(ids).toEqual(expect.arrayContaining([...additions]));
+      expect(ids[0]).toBe("vidrock");
+      expect(ids[1]).toBe("2embedcc");
     }
   });
 
@@ -74,6 +76,12 @@ describe("additional movie and TV providers", () => {
   );
 
   it("builds documented movie and episode URLs with TMDB identities", () => {
+    expect(buildEmbedUrl("2embedcc", 593961, "movie")).toBe(
+      "https://www.2embed.cc/embed/593961",
+    );
+    expect(buildEmbedUrl("2embedcc", 1399, "tv", 2, 3)).toBe(
+      "https://www.2embed.cc/embedtv/1399&s=2&e=3",
+    );
     expect(buildEmbedUrl("vidrock", 123, "movie")).toBe(
       "https://vidrock.net/movie/123",
     );

@@ -1,9 +1,20 @@
 import type { EmbedProvider } from "./providers";
 
-export type LiveActionProviderId = "vidrock" | "vidsrcsh" | "multiembed";
+export type LiveActionProviderId =
+  "vidrock" | "vidsrcsh" | "multiembed" | "2embedcc";
 
 /** Additional movie/TV fallbacks. Keep these out of anime provider chains. */
 export const LIVE_ACTION_EMBED_PROVIDERS: EmbedProvider[] = [
+  {
+    id: "2embedcc",
+    name: "2Embed CC",
+    supportsTv: true,
+    // https://www.2embed.cc/#api — differs from the .online/.skin endpoints.
+    // The documented TV route uses &s= and &e= in the path, without a '?'.
+    movieUrl: (id) => `https://www.2embed.cc/embed/${id}`,
+    tvUrl: (id, season, episode) =>
+      `https://www.2embed.cc/embedtv/${id}&s=${season}&e=${episode}`,
+  },
   {
     id: "vidrock",
     name: "VidRock",

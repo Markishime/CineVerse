@@ -2,6 +2,7 @@ import {
   LIVE_ACTION_EMBED_PROVIDERS,
   type LiveActionProviderId,
 } from "./live-action-providers";
+import { isFilipinoLocale } from "./language";
 
 /**
  * Streaming embed providers for CineVerse.
@@ -253,8 +254,8 @@ export const EMBED_PROVIDERS: EmbedProvider[] = [
 ];
 
 /**
- * VidFast is the default for every supported movie, series, drama and anime
- * title. Other hosts remain in the fallback chain.
+ * Shared default order. Filipino live-action titles use their verified locale
+ * priority in getProvidersForContentType; anime keeps this shared order.
  */
 export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
   "vidfast",
@@ -369,9 +370,21 @@ export function getProvidersForContentType(
   } else {
     // Extra movie/TV servers also cover Filipino titles and every drama type.
     // Keep the anime list above independent from these additions.
+    // VidFast can serve an unembeddable 403 without firing iframe.onerror.
+    // Start Filipino titles on the host verified with real Philippine films.
+    const preferred: EmbedProviderId[] = isFilipinoLocale(ids)
+      ? ["vidrock", "2embedcc", "vidsrcsh", "multiembed", ...GENERAL_PLAY_ORDER]
+      : [
+          "vidfast",
+          "vidrock",
+          "vidsrcsh",
+          "multiembed",
+          "2embedcc",
+          ...GENERAL_PLAY_ORDER,
+        ];
     chain = preferProviders(
       [...general, ...LIVE_ACTION_EMBED_PROVIDERS],
-      ["vidfast", "vidrock", "vidsrcsh", "multiembed", ...GENERAL_PLAY_ORDER],
+      preferred,
     );
   }
 

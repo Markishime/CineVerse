@@ -1,8 +1,8 @@
 import { tmdbFetch } from "@/lib/providers/tmdb-client";
 
-/** TMDB keyword ids for sexual/erotic content and Vivamax producers (excluded everywhere). */
+/** TMDB sexual/erotic keywords. 9673 (love) and 9672 (based on true story) are ordinary themes. */
 export const TMDB_ADULT_KEYWORD_IDS =
-  "267122|155477|256466|354470|325693|281741|359980|380475|384749|381106|41404|227102|298666|302868|337153|284535|9673|9672|190370|6593";
+  "267122|155477|256466|354470|325693|281741|359980|380475|384749|381106|41404|227102|298666|302868|337153|284535|190370|6593";
 export const TMDB_ADULT_COMPANY_IDS = "149142|173083";
 
 const KEYWORD_SET = new Set(TMDB_ADULT_KEYWORD_IDS.split("|").map(Number));
@@ -34,7 +34,9 @@ export async function isAdultTmdbTitle(
   detail?: AdultCheckDetail | null,
 ): Promise<boolean> {
   if (detail?.adult) return true;
-  if (textLooksAdult(detail?.title ?? detail?.name ?? "", detail?.overview ?? "")) {
+  if (
+    textLooksAdult(detail?.title ?? detail?.name ?? "", detail?.overview ?? "")
+  ) {
     return true;
   }
   if (detail?.production_companies?.some((c) => COMPANY_SET.has(c.id))) {
