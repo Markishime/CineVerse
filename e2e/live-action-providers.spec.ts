@@ -44,7 +44,9 @@ for (const contentType of [
           body: "<body>Player</body>",
         }),
     );
-    await page.goto("/watch/tmdb_123?season=2&episode=3");
+    // Stay on the mocked content route. Normal playback redirects to a server-
+    // rendered TMDB page, whose metadata request bypasses browser API mocks.
+    await page.goto("/watch/tmdb_123?play=trailer&season=2&episode=3");
     const player = page.locator("[data-cineverse-player]");
     const iframe = player.locator("iframe");
     const suffix = movie ? "movie/123" : "tv/123/2/3";
