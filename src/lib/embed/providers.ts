@@ -2,7 +2,7 @@
  * Streaming embed providers for CineVerse.
  *
  * Architecture:
- * - Metadata: AniList + MAL + TMDB (catalog layer)
+ * - Metadata: AniDB + AniList + MAL + TMDB (catalog layer)
  * - Playback: multi-provider fallback chain (not a single hard-coded host)
  *
  * Movies, series and anime share the TMDB-based general embeds. Anime also
@@ -247,9 +247,8 @@ export const EMBED_PROVIDERS: EmbedProvider[] = [
 ];
 
 /**
- * Product order uses hosts whose representative movie and TV endpoints return
- * an embeddable response. VidFast is the default because its endpoint is the
- * fastest verified primary in the current production check.
+ * VidFast is the default for every supported movie, series, drama and anime
+ * title. Other hosts remain in the fallback chain.
  */
 export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
   "vidfast",
@@ -259,11 +258,8 @@ export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
   "autoembed",
 ];
 
-/** AutoEmbed leads anime films and episodes; all other general hosts remain. */
-export const ANIME_PLAY_ORDER: EmbedProviderId[] = [
-  "autoembed",
-  ...GENERAL_PLAY_ORDER.filter((id) => id !== "autoembed"),
-];
+/** Anime uses the same default and general fallback order as other videos. */
+export const ANIME_PLAY_ORDER: EmbedProviderId[] = [...GENERAL_PLAY_ORDER];
 
 export function getProvidersForMediaType(
   mediaType: "movie" | "tv",
@@ -271,8 +267,7 @@ export function getProvidersForMediaType(
   const list = GENERAL_EMBED_PROVIDERS.filter(
     (p) => p.supportsTv || mediaType === "movie",
   );
-  if (mediaType === "movie") return list;
-  return list.filter((p) => p.supportsTv);
+  return preferProviders(list, GENERAL_PLAY_ORDER);
 }
 
 /** Asian-drama content types that use the dedicated drama backends. */

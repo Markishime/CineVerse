@@ -4,6 +4,7 @@ import {
   buildAnimeEmbedUrl,
   EMBED_PROVIDERS,
   getProvidersForContentType,
+  getProvidersForMediaType,
 } from "@/lib/embed/providers";
 
 describe("embed provider order", () => {
@@ -24,6 +25,8 @@ describe("embed provider order", () => {
     ["series", "tv"],
     ["kdrama", "tv"],
     ["cdrama", "tv"],
+    ["jdrama", "tv"],
+    ["thaidrama", "tv"],
   ] as const)(
     "orders verified providers first for %s",
     (contentType, mediaType) => {
@@ -34,6 +37,13 @@ describe("embed provider order", () => {
       });
       const expected = ["vidfast", "2embed", "2embedskin", "vidsrcpm"];
       expect(providers.slice(0, 4).map((p) => p.id)).toEqual(expected);
+    },
+  );
+
+  it.each(["movie", "tv"] as const)(
+    "uses VidFast first for direct %s provider lists",
+    (mediaType) => {
+      expect(getProvidersForMediaType(mediaType)[0].id).toBe("vidfast");
     },
   );
 
@@ -61,8 +71,7 @@ describe("embed provider order", () => {
         3,
       );
       expect(animeProviders.map((p) => p.id)).toEqual([
-        "autoembed",
-        ...movieProviders.filter((p) => p.id !== "autoembed").map((p) => p.id),
+        ...movieProviders.map((p) => p.id),
         "megaplay",
         "cinezo",
       ]);

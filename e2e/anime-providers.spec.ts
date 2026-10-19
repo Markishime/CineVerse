@@ -40,13 +40,13 @@ for (const animeFormat of ["TV", "MOVIE"] as const) {
     const iframe = player.locator("iframe");
     const suffix = animeFormat === "MOVIE" ? "movie/123" : "tv/123/2/3";
     const urls = [
-      animeFormat === "MOVIE"
-        ? "https://player.autoembed.co/embed/movie/123"
-        : "https://player.autoembed.co/embed/tv/123/2-3/",
       `https://vidfast.vc/${suffix}?autoPlay=true`,
       `https://www.2embed.online/embed/${suffix}`,
       `https://www.2embed.skin/embed/${suffix}`,
       `https://vidsrc.pm/embed/${suffix}`,
+      animeFormat === "MOVIE"
+        ? "https://player.autoembed.co/embed/movie/123"
+        : "https://player.autoembed.co/embed/tv/123/2-3/",
       `https://megaplay.buzz/stream/mal/1/${animeFormat === "MOVIE" ? 1 : 3}/sub`,
       `https://player.cinezo.live/embed/anime/1/${animeFormat === "MOVIE" ? 1 : 3}?dub=false&autoplay=true&poster=true`,
     ];
@@ -67,7 +67,7 @@ for (const animeFormat of ["TV", "MOVIE"] as const) {
 }
 
 for (const signal of ["silent", "content not found", "playing"] as const) {
-  test(`AutoEmbed ${signal} handles anime fallback correctly`, async ({
+  test(`VidFast ${signal} handles anime fallback correctly`, async ({
     page,
   }) => {
     await page.clock.install();
@@ -94,7 +94,7 @@ for (const signal of ["silent", "content not found", "playing"] as const) {
       }),
     );
     await page.route(
-      /^https:\/\/(player\.autoembed\.co|vidfast\.vc)\//,
+      /^https:\/\/(vidfast\.vc|www\.2embed\.online)\//,
       (route) =>
         route.fulfill({
           contentType: "text/html",
@@ -103,14 +103,14 @@ for (const signal of ["silent", "content not found", "playing"] as const) {
     );
     await page.goto("/watch/anilist_1?season=2&episode=3");
     const iframe = page.locator("[data-cineverse-player] iframe");
-    const autoembedUrl = "https://player.autoembed.co/embed/tv/123/2-3/";
-    await expect(iframe).toHaveAttribute("src", autoembedUrl);
+    const defaultUrl = "https://vidfast.vc/tv/123/2/3?autoPlay=true";
+    await expect(iframe).toHaveAttribute("src", defaultUrl);
     await expect(
       page.frameLocator("[data-cineverse-player] iframe").locator("body"),
     ).toHaveText("Player");
     if (signal !== "silent") {
       await page
-        .frame({ url: autoembedUrl })!
+        .frame({ url: defaultUrl })!
         .evaluate(
           (message) => window.parent.postMessage({ type: message }, "*"),
           signal,
@@ -121,9 +121,9 @@ for (const signal of ["silent", "content not found", "playing"] as const) {
     if (signal !== "content not found") await page.clock.fastForward(16_000);
     await expect(iframe).toHaveAttribute(
       "src",
-      signal === "playing"
-        ? autoembedUrl
-        : "https://vidfast.vc/tv/123/2/3?autoPlay=true",
+      signal === "content not found"
+        ? "https://www.2embed.online/embed/tv/123/2/3"
+        : defaultUrl,
     );
   });
 }

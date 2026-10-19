@@ -51,7 +51,7 @@ describe("anime watch provider identity", () => {
         })
           .slice(0, 5)
           .map((p) => p.id),
-      ).toEqual(["autoembed", "vidfast", "2embed", "2embedskin", "vidsrcpm"]);
+      ).toEqual(["vidfast", "2embed", "2embedskin", "vidsrcpm", "autoembed"]);
       await catalog.bySlug("anilist_1");
       expect(resolve).toHaveBeenCalledTimes(1);
     },
