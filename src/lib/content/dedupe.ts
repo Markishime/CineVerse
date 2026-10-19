@@ -4,6 +4,7 @@ import { slugify } from "@/lib/utils";
 export interface DedupeKey {
   tmdb?: number;
   anilist?: number;
+  anidb?: number;
   imdb?: string;
   titleYear?: string;
 }
@@ -12,6 +13,7 @@ export function buildDedupeKey(item: {
   providerIds?: {
     tmdb?: number;
     anilist?: number;
+    anidb?: number;
     imdb?: string;
   };
   title?: string;
@@ -20,6 +22,7 @@ export function buildDedupeKey(item: {
   return {
     tmdb: item.providerIds?.tmdb,
     anilist: item.providerIds?.anilist,
+    anidb: item.providerIds?.anidb,
     imdb: item.providerIds?.imdb,
     titleYear:
       item.title && item.year
@@ -72,8 +75,9 @@ export function deduplicateContent(items: Content[]): Content[] {
       continue;
     }
 
-    const winner =
-      (item.popularity ?? 0) >= (existing.popularity ?? 0) ? item : existing;
+    const winner = Boolean(item.providerIds.anidb) !== Boolean(existing.providerIds.anidb)
+      ? item.providerIds.anidb ? item : existing
+      : (item.popularity ?? 0) >= (existing.popularity ?? 0) ? item : existing;
     const merged = mergeContent(existing, item, winner);
 
     // Remove old key entries for existing
@@ -119,6 +123,8 @@ function isProviderConflict(a: Content, b: Content): boolean {
   const aa = a.providerIds?.anilist;
   const ba = b.providerIds?.anilist;
   if (aa != null && ba != null && aa !== ba) return true;
+  if (a.providerIds.anidb && b.providerIds.anidb && a.providerIds.anidb !== b.providerIds.anidb) return true;
+  if (a.providerIds.mal && b.providerIds.mal && a.providerIds.mal !== b.providerIds.mal) return true;
 
   const ai = a.providerIds?.imdb;
   const bi = b.providerIds?.imdb;
@@ -139,6 +145,8 @@ function collectKeys(item: Content): string[] {
   if (item.providerIds?.anilist) {
     keys.push(`anilist:${item.providerIds.anilist}`);
   }
+  if (item.providerIds?.anidb) keys.push(`anidb:${item.providerIds.anidb}`);
+  if (item.providerIds?.mal) keys.push(`mal:${item.providerIds.mal}`);
   if (item.providerIds?.imdb) {
     keys.push(`imdb:${item.providerIds.imdb}`);
   }

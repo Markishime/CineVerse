@@ -229,14 +229,14 @@ export function ContentDetail({ slug }: { slug: string }) {
         <h1 className="font-display text-2xl">Title not found</h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">
           This title may have left the catalog, or the link was incomplete.
-          Adult titles are only available in the restricted Hentai library.
+          Some titles require adult content access.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link
-            href="/anime/hentai"
+            href="/anime/series"
             className="text-[var(--primary-light)] underline-offset-2 hover:underline"
           >
-            Back to Hentai
+            Anime Series
           </Link>
           <Link
             href="/discover"

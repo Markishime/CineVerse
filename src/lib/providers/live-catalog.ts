@@ -24,6 +24,7 @@ import type {
   WatchProvider,
 } from "@/types/content";
 import { ContentSchema, DRAMA_META, isDramaType } from "@/types/content";
+import { fetchAnidbCatalogPage, readAnidbCatalog, withAnidbMetadata } from "./anidb-client";
 
 const ANILIST = "https://graphql.anilist.co";
 const TVMAZE = "https://api.tvmaze.com";
@@ -1327,6 +1328,8 @@ export async function fetchWorldHentaiPage(
  * Prefer `fetchWorldHentaiPage` for the Hentai tab (paginated, larger total).
  */
 export async function fetchAdultAnimeCatalog(): Promise<Content[]> {
+  const anidb = (await readAnidbCatalog()).filter((c) => c.mature);
+  if (anidb.length) return anidb;
   // Batched AniList popularity (40 pages × 50 = ~2000) + multi-sort + formats
   const popularityPages = Array.from({ length: 40 }, (_, i) => i + 1);
   const extraSorts: Array<{ sort: string; pages: number }> = [
@@ -2509,7 +2512,7 @@ async function tmdbGet<T>(
   if (!token && !apiKey) return null;
   const url = new URL(`${TMDB}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  if (path.startsWith("/discover/")) {
+  if (path.startsWith("/discover/") && params.include_adult !== "true") {
     url.searchParams.set("include_adult", "false");
     url.searchParams.set("without_keywords", TMDB_ADULT_KEYWORD_IDS);
     url.searchParams.set("without_companies", TMDB_ADULT_COMPANY_IDS);
@@ -2665,7 +2668,7 @@ export async function fetchWorldMoviesPage(
     sort_by: tmdbSortParam(sort, "movie"),
     include_adult: includeAdult ? "true" : "false",
     language: "en-US",
-    region: "US",
+    region: country?.toUpperCase() || "US",
   };
   // Country-specific catalog: filter at TMDB discover level
   if (country) {
@@ -2846,6 +2849,8 @@ export async function fetchWorldAnimePage(
   formatCategory?: "movie" | "series",
   genre?: string,
 ): Promise<WorldCatalogPage> {
+  const anidb = await fetchAnidbCatalogPage(page, pageSize, sort, includeMature, formatCategory, genre);
+  if (anidb) return anidb;
   const isMovieOnly = formatCategory === "movie";
   const isSeriesOnly = formatCategory === "series";
   const perPage = Math.min(50, pageSize);
@@ -2912,8 +2917,9 @@ export async function fetchWorldAnimePage(
         if (!includeMature && c.mature) continue;
         // Guard: theatrical films only — never series / OVA / ONA.
         if (c.animeFormat !== "MOVIE") continue;
-        // Hentai never appears on public Anime Movies tab
+        // Blend adult titles into the ordinary catalog for authorized viewers.
         if (
+          !includeMature &&
           (c.tags ?? []).some((t) =>
             /^(anilist-adult|jikan-rx|hentai|adult-anime)$/i.test(t),
           )
@@ -2933,7 +2939,7 @@ export async function fetchWorldAnimePage(
     const anilistTotalM = allTotalsM.reduce((a, b) => a + b, 0);
     const totalPagesM = Math.max(1, Math.ceil(anilistLastM / pagesNeeded));
     return {
-      items: mergedM.slice(0, pageSize),
+      items: await Promise.all(mergedM.slice(0, pageSize).map((c) => withAnidbMetadata(c))),
       page: Math.min(Math.max(1, page), totalPagesM),
       totalPages: totalPagesM,
       total: anilistTotalM || mergedM.length,
@@ -2996,8 +3002,9 @@ export async function fetchWorldAnimePage(
         ) {
           continue;
         }
-        // Hentai never appears on public Anime Series tab
+        // Blend adult titles into the ordinary catalog for authorized viewers.
         if (
+          !includeMature &&
           (c.tags ?? []).some((t) =>
             /^(anilist-adult|jikan-rx|hentai|adult-anime)$/i.test(t),
           )
@@ -3008,11 +3015,19 @@ export async function fetchWorldAnimePage(
         mergedS.push(c);
       }
     };
-    for (const fmtPages of seriesPages) {
-      pushS(fmtPages.flatMap((p) => p.items));
+    // Round-robin format and safe/adult lanes before trimming the page. TV
+    // popularity must not crowd every OVA/ONA (including hentai) out of view.
+    const lanes = seriesPages.flat().map((p) => p.items);
+    for (let i = 0; i < Math.max(0, ...lanes.map((lane) => lane.length)); i++) {
+      for (const lane of lanes) if (lane[i]) pushS([lane[i]]);
     }
     // Popularity-first ordering for the series tab
-    mergedS.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+    if (sort === "popularity") {
+      // Keep the interleaved selection; rank only after selecting the page.
+      const selected = mergedS.splice(pageSize);
+      mergedS.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+      mergedS.push(...selected);
+    }
 
     const flatPages = seriesPages.flat();
     const allTotalPagesS = flatPages.map((p) => p.totalPages ?? 1);
@@ -3022,7 +3037,7 @@ export async function fetchWorldAnimePage(
     const totalPagesS = Math.max(1, Math.ceil(anilistLastS / pagesNeeded));
 
     return {
-      items: mergedS.slice(0, pageSize),
+      items: await Promise.all(mergedS.slice(0, pageSize).map((c) => withAnidbMetadata(c))),
       page: Math.min(Math.max(1, page), totalPagesS),
       totalPages: totalPagesS,
       total: anilistTotalS || mergedS.length,
@@ -3112,7 +3127,7 @@ export async function fetchWorldAnimePage(
   push(pages.flatMap((p) => p.items));
   if (page > 1) push(moviePageResult.items);
 
-  const items = merged.slice(0, pageSize);
+  const items = await Promise.all(merged.slice(0, pageSize).map((c) => withAnidbMetadata(c)));
 
   const allTotalPages = pages.map((p) => p.totalPages ?? 1);
   const allTotals = pages.map((p) => p.total ?? 0);
@@ -3244,7 +3259,10 @@ function mapTmdbMovie(
       : [];
 
   const overview = String(raw.overview ?? "");
-  const isAdult = tmdbLooksAdult(title, overview, Boolean(raw.adult));
+  const adultCompanies = new Set(TMDB_ADULT_COMPANY_IDS.split("|").map(Number));
+  const companyAdult = Array.isArray(raw.production_companies) &&
+    (raw.production_companies as Array<{ id: number }>).some((c) => adultCompanies.has(c.id));
+  const isAdult = tmdbLooksAdult(title, overview, Boolean(raw.adult)) || companyAdult;
   const baseTags: string[] = [];
   if (lang === "ja" && genreIds.includes(16)) baseTags.push("animation", "jp");
   if (countries.includes("PH") || lang === "tl") {

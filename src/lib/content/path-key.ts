@@ -13,6 +13,6 @@ export function contentPathKey(c: Pick<Content, "slug" | "id">): string {
  */
 export function canonicalPathKey(c: Pick<Content, "slug" | "id">): string {
   if (/^tmdb_[a-z]+_\d+$/.test(c.id)) return encodeURIComponent(c.id);
-  if (/^(anilist|tvmaze)_\d+$/.test(c.id)) return encodeURIComponent(c.id);
+  if (/^(anilist|anidb|tvmaze)_\d+$/.test(c.id)) return encodeURIComponent(c.id);
   return contentPathKey(c);
 }

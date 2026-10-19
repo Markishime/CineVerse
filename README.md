@@ -34,7 +34,7 @@ Open [http://localhost:3000](http://localhost:3000). Without Firebase/TMDB secre
 
 - **Frontend:** Next.js App Router, React, TypeScript strict, Tailwind, TanStack Query, Zustand, RHF + Zod, Framer Motion, GSAP, Lenis, R3F/Drei, Embla, Lucide
 - **Backend:** Next.js `/api/v1/*` + Firebase Cloud Functions v2, Firestore, Storage, Auth
-- **Providers (server only):** TMDB, AniList GraphQL, optional TVMaze
+- **Providers (server only):** AniDB for anime metadata, TMDB for movies (including Filipino/Vivamax), AniList discovery fallback, optional TVMaze
 
 ## Documentation
 

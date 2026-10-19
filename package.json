@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "sync:anidb": "tsx scripts/sync-anidb.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -24,6 +25,7 @@
     "date-fns": "^4.4.0",
     "embla-carousel-autoplay": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
+    "fast-xml-parser": "^5.11.2",
     "firebase": "^12.16.0",
     "firebase-admin": "^14.2.0",
     "framer-motion": "^12.42.2",
@@ -59,6 +61,7 @@
     "jsdom": "^29.1.1",
     "prettier": "^3.9.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^4.1.10"
   },

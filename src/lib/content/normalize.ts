@@ -442,6 +442,7 @@ export function primaryScore(content: Content): number | null {
   if (!content.scores?.length) return null;
   const preferred =
     content.scores.find((s) => s.source === "cineverse") ??
+    (content.contentType === "anime" ? content.scores.find((s) => s.source === "anidb") : undefined) ??
     content.scores.find((s) => s.source === "tmdb") ??
     content.scores.find((s) => s.source === "anilist") ??
     content.scores[0];

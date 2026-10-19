@@ -20,6 +20,9 @@
 # production
 /build
 
+# Optional persistent AniDB metadata cache (contains adult catalog metadata)
+/.cache/anidb/
+
 # misc
 .DS_Store
 *.pem

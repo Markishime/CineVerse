@@ -86,6 +86,7 @@ export const ProviderIdsSchema = z.object({
   tmdb: z.number().optional(),
   tmdbMediaType: z.enum(["movie", "tv"]).optional(),
   anilist: z.number().optional(),
+  anidb: z.number().int().positive().optional(),
   tvmaze: z.number().optional(),
   imdb: z.string().optional(),
   /** MyAnimeList id (official API or Jikan fallback) */
@@ -101,7 +102,7 @@ export const ImageAssetSchema = z.object({
   url: z.string().url().or(z.string().startsWith("/")),
   width: z.number().optional(),
   height: z.number().optional(),
-  source: z.enum(["tmdb", "anilist", "storage", "local"]).optional(),
+  source: z.enum(["tmdb", "anilist", "anidb", "storage", "local"]).optional(),
 });
 export type ImageAsset = z.infer<typeof ImageAssetSchema>;
 
@@ -112,7 +113,7 @@ export const GenreSchema = z.object({
 export type Genre = z.infer<typeof GenreSchema>;
 
 export const ProviderScoreSchema = z.object({
-  source: z.enum(["tmdb", "anilist", "cineverse", "trakt", "omdb", "imdb", "rotten_tomatoes", "metacritic"]),
+  source: z.enum(["tmdb", "anilist", "anidb", "cineverse", "trakt", "omdb", "imdb", "rotten_tomatoes", "metacritic"]),
   score: z.number(),
   count: z.number().optional(),
 });

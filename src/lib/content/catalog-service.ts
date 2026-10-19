@@ -1,5 +1,6 @@
 import type { SubtitleTrack } from "@/lib/playback/subtitles";
 import { latestReleased, latestRows } from "@/lib/content/latest";
+import { fetchAnidbById, readAnidbCatalog, withAnidbMetadata } from "@/lib/providers/anidb-client";
 import {
   SEED_CONTENT,
   SEED_GENRES,
@@ -192,6 +193,12 @@ export class CatalogService {
     const key = decodeURIComponent(identity).trim();
     const cached = this.getTransient(key);
     if (cached) return cached;
+
+    const anidb = key.match(/^anidb_(\d+)$/);
+    if (anidb) {
+      const record = await fetchAnidbById(Number(anidb[1]));
+      return record ? this.rememberTransient(record.content, key) : null;
+    }
 
     const tmdb = key.match(/^tmdb_(movie|tv|kdrama|cdrama|jdrama|thaidrama|anime)_(\d+)$/);
     if (tmdb) {
@@ -431,7 +438,7 @@ export class CatalogService {
     return this.mergeAndCacheLive(includeMature, raced.v);
   }
 
-  private mergeAndCacheLive(
+  private async mergeAndCacheLive(
     includeMature: boolean,
     buckets: [
       Content[],
@@ -456,7 +463,7 @@ export class CatalogService {
       Content[][],
       Content[][],
     ],
-  ): Content[] {
+  ): Promise<Content[]> {
     const [
       animeAll,
       adultAnime,
@@ -516,6 +523,8 @@ export class CatalogService {
       .map((c) => applyMatureFlag(c))
       .map((c) => tagPlayable(c));
 
+    merged = await Promise.all(merged.map((c) => withAnidbMetadata(c)));
+
     // Hard gate: 18+ off → zero mature movies/series/anime/kdrama
     if (!includeMature) {
       merged = filterByMatureFlag(merged, false);
@@ -564,7 +573,8 @@ export class CatalogService {
   }
 
   async byId(id: string, allowMature = false): Promise<Content | null> {
-    return this.publicOnly(await this.byIdRaw(id, allowMature), allowMature);
+    const content = await this.byIdRaw(id, allowMature);
+    return this.publicOnly(content ? await withAnidbMetadata(content, true).catch(() => content) : null, allowMature);
   }
 
   private async byIdRaw(
@@ -598,8 +608,9 @@ export class CatalogService {
   }
 
   async bySlug(slug: string, allowMature = false): Promise<Content | null> {
+    const base = await this.bySlugRaw(slug, allowMature);
     const content = this.publicOnly(
-      await this.bySlugRaw(slug, allowMature),
+      base ? await withAnidbMetadata(base, true).catch(() => base) : null,
       allowMature,
     );
     return content ? this.withEmbedIds(content) : null;
@@ -888,6 +899,8 @@ export class CatalogService {
       // keep base
     }
 
+    content = await withAnidbMetadata(content, true).catch(() => content);
+
     // Anime / series without TMDb cannot use the episode embed player.
     // Resolve once at hydrate so Watch Now matches Attack on Titan behavior.
     content = await this.ensureTmdbForEmbed(content);
@@ -1144,7 +1157,7 @@ export class CatalogService {
       if (world && world.items.length > 0) {
         // When a country filter was passed, TMDB already filtered via
         // with_origin_country — do NOT re-filter or valid results get dropped.
-        // Public catalogs never mix 18+ — adult titles live only on /mature.
+        // Adult titles blend into ordinary catalogs only with authorized access.
         let items = world.items
           .map((c) => applyMatureFlag(c))
           .map((c) => tagPlayable(c))
@@ -1957,8 +1970,11 @@ export class CatalogService {
     let results = deduplicateContent([
       ...local,
       ...remote,
+      ...(await readAnidbCatalog()),
       ...(await this.loadLive(includeMature)),
-    ]).map((c) => applyMatureFlag(c));
+    ]);
+    results = (await Promise.all(results.map((c) => withAnidbMetadata(c))))
+      .map((c) => applyMatureFlag(c));
 
     // Public search never surfaces 18+; the allowlisted account may see them.
     if (!includeMature) {
@@ -2305,7 +2321,15 @@ export class CatalogService {
         }));
     }
 
-    // 1) Anime episodes come from the complete MAL/Jikan sequence. This must
+    // 1) AniDB owns the regular episode sequence for anime and hentai.
+    if (c.contentType === "anime" && c.providerIds.anidb) {
+      const record = await fetchAnidbById(c.providerIds.anidb).catch(() => null);
+      if (record?.episodes.length && seasonNumber === 1) {
+        return record.episodes.map((e) => ({ ...e, id: `${c.id}_s1_e${e.episodeNumber}`, contentId: c.id, seasonId: `${c.id}_s1` }));
+      }
+    }
+
+    // 2) Fallback anime episodes come from the complete MAL/Jikan sequence. This must
     // run before TMDB so split or stale TMDB seasons cannot truncate a series.
     if (c.contentType === "anime") {
       let malId: number | null =
