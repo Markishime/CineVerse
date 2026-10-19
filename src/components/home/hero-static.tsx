@@ -16,7 +16,7 @@ export function HeroStatic({ featured }: { featured: Content | null }) {
   const score = featured ? primaryScore(featured) : null;
 
   return (
-    <section className="relative flex min-h-[88dvh] items-end overflow-hidden pb-16 pt-28 sm:items-center sm:pb-24">
+    <section className="relative flex min-h-dvh items-end overflow-hidden pb-16 pt-28 sm:items-center sm:pb-24">
       {featured?.backdrop?.url || featured?.poster?.url ? (
         <Image
           src={featured.backdrop?.url || featured.poster!.url}

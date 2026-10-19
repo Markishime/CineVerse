@@ -8,20 +8,15 @@ import YouTube, { type YouTubeEvent, type YouTubeProps } from "react-youtube";
 import { motion, useMotionValue } from "framer-motion";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clapperboard,
   Info,
   Pause,
   Play,
   Star,
-  Volume2,
-  VolumeX,
 } from "lucide-react";
 import type { Content } from "@/types/content";
-import { Button } from "@/components/ui/button";
-import { AddToListButton } from "@/components/content/add-to-list-button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import { formatRuntime, formatScore, cn } from "@/lib/utils";
 import { getDetailsHref, getWatchHref } from "@/lib/content/watch-href";
@@ -45,15 +40,12 @@ import {
   type YtPlayer,
 } from "@/lib/playback/youtube-controls";
 
-const SOUND_PREF_KEY = "cineverse_hero_trailer_sound";
-
 function HeroTrailerBg({
   trailerKey,
   alternateKeys = [],
   title,
   poster,
   active,
-  soundOn,
   playbackAllowed,
   reduceMotion,
   onPlayer,
@@ -64,7 +56,6 @@ function HeroTrailerBg({
   title: string;
   poster: string | null;
   active: boolean;
-  soundOn: boolean;
   /** False when hero is scrolled off-screen or tab is hidden */
   playbackAllowed: boolean;
   reduceMotion: boolean;
@@ -106,11 +97,9 @@ function HeroTrailerBg({
   const playerRef = useRef<YtPlayer | null>(null);
   const destroyedRef = useRef(false);
   const shouldPlayRef = useRef(shouldPlay);
-  const soundOnRef = useRef(soundOn);
   useEffect(() => {
     shouldPlayRef.current = shouldPlay;
-    soundOnRef.current = soundOn;
-  }, [shouldPlay, soundOn]);
+  }, [shouldPlay]);
 
   // Mount / unmount player with hard silence on every leave
   useEffect(() => {
@@ -133,13 +122,13 @@ function HeroTrailerBg({
     };
   }, [shouldPlay, activeKey, onPlayer]);
 
-  // Keep mute / play state in sync (sound toggle, re-show, etc.)
+  // Every visible preview plays with audio enabled.
   useEffect(() => {
     applyPlayback(playerRef.current, {
       play: shouldPlay,
-      soundOn: shouldPlay && soundOn,
+      soundOn: shouldPlay,
     });
-  }, [soundOn, shouldPlay, showPlayer]);
+  }, [shouldPlay, showPlayer]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -158,7 +147,7 @@ function HeroTrailerBg({
       host: "https://www.youtube-nocookie.com",
       playerVars: {
         autoplay: 1,
-        mute: 1,
+        mute: 0,
         controls: 0,
         rel: 0,
         modestbranding: 1,
@@ -182,10 +171,14 @@ function HeroTrailerBg({
       if (destroyedRef.current) return;
       const p = event.target as unknown as YtPlayer;
       playerRef.current = p;
+      p.getIframe?.()?.setAttribute(
+        "allow",
+        "autoplay; encrypted-media; picture-in-picture",
+      );
       onPlayer?.(p);
       applyPlayback(p, {
         play: shouldPlayRef.current,
-        soundOn: shouldPlayRef.current && soundOnRef.current,
+        soundOn: shouldPlayRef.current,
       });
     },
     [onPlayer],
@@ -201,13 +194,17 @@ function HeroTrailerBg({
       }
       // Keep the artwork visible until the trailer actually starts, rather than
       // replacing it with YouTube's blank loading screen or autoplay prompt.
-      if (event.data === 1) setPlayingKey(activeKey);
+      if (event.data === 1) {
+        p.unMute?.();
+        p.setVolume?.(72);
+        setPlayingKey(activeKey);
+      }
       if (event.data === 2) setPlayingKey(null);
       // Loop only when ended (0) or cued (5) — never fight mute on pause (2)
       if (event.data === 0 || event.data === 5) {
         applyPlayback(p, {
           play: true,
-          soundOn: soundOnRef.current,
+          soundOn: true,
         });
       }
     },
@@ -290,12 +287,7 @@ function HeroTrailerBg({
         ) : null}
       </div>
 
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-0 z-[2] transition-colors duration-500",
-          soundOn && shouldPlay ? "bg-black/20" : "bg-black/25",
-        )}
-      />
+      <div className="pointer-events-none absolute inset-0 z-[2] bg-black/10" />
     </div>
   );
 }
@@ -314,24 +306,14 @@ function runtimeOrSeasons(
 function HeroCopy({
   item,
   eyebrow,
-  soundOn,
-  isActive,
   animated,
-  onPlayTrailer,
 }: {
   item: Content;
   eyebrow?: string;
-  soundOn: boolean;
-  isActive: boolean;
   animated: boolean;
-  onPlayTrailer: () => void;
 }) {
   const title = displayTitle(item);
   const score = primaryScore(item);
-  const trailerKey =
-    item.trailer?.site === "youtube" && isPlayableTrailerKey(item.trailer.key)
-      ? item.trailer.key.trim()
-      : null;
   const watchHref = getWatchHref(item);
   const detailsHref = getDetailsHref(item);
   const genreNames = (item.genres ?? []).slice(0, 3).map((g) => g.name);
@@ -358,38 +340,14 @@ function HeroCopy({
       {...containerProps}
     >
       <P
-        className="mb-5 flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--primary-light)] sm:mb-6"
+        className="hero-feature-eyebrow mb-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/75 sm:mb-5 sm:text-xs"
         {...itemProps}
       >
-        <Clapperboard className="h-4 w-4" />
-        {eyebrow || "Popular & trending today"}
+        {eyebrow || "Featured today"}
       </P>
 
-      <Item
-        className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-medium text-white/75 sm:text-sm"
-        {...itemProps}
-      >
-        <span className="rounded border border-white/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/90">
-          {item.contentType}
-        </span>
-        {score != null && (
-          <span className="inline-flex items-center gap-1.5 text-[var(--primary-light)]">
-            <Star className="h-3.5 w-3.5 fill-current" />
-            {formatScore(score)}
-          </span>
-        )}
-        {item.year && <span>{item.year}</span>}
-        {runtimeLabel && <span>{runtimeLabel}</span>}
-        {trailerKey && (
-          <span className="hidden items-center gap-1.5 sm:inline-flex">
-            <Play className="h-3 w-3" />
-            {soundOn && isActive ? "Trailer with sound" : "Trailer available"}
-          </span>
-        )}
-      </Item>
-
       <Title
-        className="text-balance font-display text-[2.65rem] font-bold leading-[1.02] tracking-[-0.045em] text-[var(--text-primary)] sm:text-6xl lg:text-7xl"
+        className="hero-feature-title text-balance font-display font-bold leading-[1.02] tracking-[-0.045em] text-[var(--text-primary)]"
         {...itemProps}
       >
         <Link
@@ -400,9 +358,28 @@ function HeroCopy({
         </Link>
       </Title>
 
+      <Item
+        className="hero-feature-meta mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-white/80 sm:text-sm"
+        {...itemProps}
+      >
+        {score != null && (
+          <span className="inline-flex items-center gap-1 text-white">
+            <Star className="h-3.5 w-3.5 fill-current" />
+            {formatScore(score)}
+          </span>
+        )}
+        {item.year && <span>{item.year}</span>}
+        {item.ageRating && (
+          <span className="border border-white/40 px-1.5 py-0.5 text-[10px]">
+            {item.ageRating}
+          </span>
+        )}
+        {runtimeLabel && <span>{runtimeLabel}</span>}
+      </Item>
+
       {genreNames.length > 0 && (
         <P
-          className="mt-5 text-xs font-medium tracking-wide text-white/75 sm:text-sm"
+          className="hero-feature-genres mt-3 text-xs font-medium text-white/70 sm:text-sm"
           {...itemProps}
         >
           {genreNames.join(" · ")}
@@ -411,7 +388,7 @@ function HeroCopy({
 
       {item.overview && (
         <P
-          className="mt-4 line-clamp-3 max-w-[34rem] text-sm leading-7 text-white/75 sm:text-base"
+          className="hero-feature-description mt-4 line-clamp-3 max-w-[34rem] text-sm leading-relaxed text-white/90 sm:text-lg"
           {...itemProps}
         >
           {item.overview}
@@ -419,49 +396,30 @@ function HeroCopy({
       )}
 
       <Item
-        className="mt-7 flex flex-wrap items-center gap-2.5 sm:mt-8 sm:gap-3"
+        className="hero-feature-actions mt-7 flex flex-wrap items-center gap-2.5 sm:mt-8 sm:gap-3"
         {...itemProps}
       >
-        <Link href={watchHref} className="watch-now-cta">
-          <Button
-            size="lg"
-            variant="gold"
-            className="watch-now-cta h-11 px-4 text-xs !text-black transition-transform duration-200 motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[0.98] sm:h-12 sm:px-6 sm:text-base"
-          >
-            <Play className="h-4 w-4 fill-current !text-black" />
-            Watch now
-          </Button>
+        <Link
+          href={watchHref}
+          className={cn(
+            buttonVariants({ size: "lg", variant: "ghost" }),
+            "hero-play-button h-11 rounded px-6 font-semibold motion-safe:active:scale-[0.98] sm:h-12 sm:px-8",
+          )}
+        >
+          <Play className="h-5 w-5 fill-current" aria-hidden />
+          Play
         </Link>
-        {trailerKey && (
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={onPlayTrailer}
-            className="h-11 border-white/30 bg-white/5 px-4 text-xs text-white transition-transform duration-200 hover:bg-white/10 motion-safe:hover:-translate-y-0.5 sm:h-12 sm:px-6 sm:text-base"
-          >
-            <Play className="h-4 w-4" />
-            Watch trailer
-          </Button>
-        )}
         <Link
           href={detailsHref}
           aria-label={`More info about ${title}`}
-          className="hidden sm:inline-flex"
+          className={cn(
+            buttonVariants({ size: "lg", variant: "ghost" }),
+            "hero-info-button h-11 rounded px-5 font-semibold motion-safe:active:scale-[0.98] sm:h-12 sm:px-7",
+          )}
         >
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-12 w-12 rounded-full border border-white/25 text-white hover:bg-white/10"
-            aria-label={`More info about ${title}`}
-          >
-            <Info className="h-4 w-4" />
-          </Button>
+          <Info className="h-5 w-5" aria-hidden />
+          More info
         </Link>
-        <AddToListButton
-          content={item}
-          variant="icon"
-          className="!h-11 !w-11 sm:!h-12 sm:!w-12"
-        />
       </Item>
     </Wrap>
   );
@@ -588,7 +546,6 @@ export function HeroCarousel({
     return out.slice(0, 12);
   }, [items, hydratedTrailers]);
 
-  const [soundOn, setSoundOn] = useState(false);
   const [paused, setPaused] = useState(false);
   const [previewRequested, setPreviewRequested] = useState(false);
   const progress = useMotionValue(0);
@@ -628,21 +585,7 @@ export function HeroCarousel({
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(SOUND_PREF_KEY);
-      if (saved === "1") {
-        const t = window.setTimeout(() => {
-          setSoundOn(true);
-        }, 0);
-        return () => window.clearTimeout(t);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const autoplayDelay = soundOn && playbackAllowed ? 28_000 : 12_000;
+  const autoplayDelay = 28_000;
 
   const autoplayPlugin = useMemo(
     () =>
@@ -701,8 +644,26 @@ export function HeroCarousel({
       hardSilence(p);
       return;
     }
-    applyPlayback(p, { play: true, soundOn });
-  }, [playbackAllowed, soundOn, index]);
+    applyPlayback(p, { play: true, soundOn: true });
+  }, [playbackAllowed, index]);
+
+  // Some browsers require an interaction before unmuted autoplay. Retry on
+  // the first click or keypress, without adding a separate sound control.
+  useEffect(() => {
+    if (!playbackAllowed) return;
+    let activated = false;
+    const resume = () => {
+      if (activated || !activePlayerRef.current) return;
+      activated = true;
+      applyPlayback(activePlayerRef.current, { play: true, soundOn: true });
+    };
+    window.addEventListener("click", resume, true);
+    window.addEventListener("keydown", resume, true);
+    return () => {
+      window.removeEventListener("click", resume, true);
+      window.removeEventListener("keydown", resume, true);
+    };
+  }, [playbackAllowed, index]);
 
   useEffect(() => {
     if (!emblaApi) return;
@@ -745,38 +706,6 @@ export function HeroCarousel({
     activePlayerRef.current = player;
   }, []);
 
-  const toggleSound = useCallback(() => {
-    setSoundOn((prev) => {
-      const next = !prev;
-      try {
-        sessionStorage.setItem(SOUND_PREF_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      // Apply immediately so mute doesn't wait on a re-render race
-      const p = activePlayerRef.current;
-      if (p) {
-        applyPlayback(p, {
-          play: playbackAllowed,
-          soundOn: next,
-        });
-      }
-      return next;
-    });
-  }, [playbackAllowed]);
-
-  const playTrailer = useCallback(() => {
-    setPaused(false);
-    setPreviewRequested(true);
-    setSoundOn(true);
-    try {
-      sessionStorage.setItem(SOUND_PREF_KEY, "1");
-    } catch {
-      /* optional preference */
-    }
-    applyPlayback(activePlayerRef.current, { play: true, soundOn: true });
-  }, []);
-
   const togglePreview = useCallback(() => {
     if (!previewEnabled) {
       setPreviewRequested(true);
@@ -787,30 +716,10 @@ export function HeroCarousel({
     }
   }, [previewEnabled]);
 
-  const scrollToCatalog = useCallback(() => {
-    // Silence before scrolling away so audio doesn't linger mid-scroll
-    hardSilence(activePlayerRef.current);
-    setHeroInView(false);
-    const el = document.getElementById("home-catalog");
-    if (el) {
-      el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
-      return;
-    }
-    window.scrollTo({
-      top: window.innerHeight * 0.92,
-      behavior: reduceMotion ? "auto" : "smooth",
-    });
-  }, [reduceMotion]);
-
-  const activeHasTrailer = Boolean(
-    slides[index]?.trailer?.site === "youtube" &&
-    isPlayableTrailerKey(slides[index]?.trailer?.key),
-  );
-
   if (!slides.length) {
     return (
       <section
-        className="relative flex min-h-[70dvh] items-end bg-[var(--background)] px-4 pb-24 pt-28 sm:px-6"
+        className="hero-feature-viewport relative flex items-center bg-[var(--background)] px-5 sm:px-12"
         aria-busy="true"
         aria-label="Loading featured titles"
       >
@@ -879,7 +788,6 @@ export function HeroCarousel({
                   title={title}
                   poster={poster}
                   active={isActive}
-                  soundOn={soundOn && isActive}
                   playbackAllowed={playbackAllowed && isActive}
                   reduceMotion={reduceMotion}
                   onPlayer={isActive ? registerActivePlayer : undefined}
@@ -887,14 +795,11 @@ export function HeroCarousel({
 
                 <div className="hero-feature-shade pointer-events-none absolute inset-0 z-[3]" />
 
-                <div className="relative z-10 mx-auto flex h-full max-w-7xl items-end px-5 pb-60 pt-28 sm:px-6 sm:pb-64">
+                <div className="hero-feature-content relative z-10 mx-auto flex h-full w-full items-center">
                   <HeroCopy
                     item={item}
                     eyebrow={eyebrow}
-                    soundOn={soundOn && isActive}
-                    isActive={isActive}
                     animated={isActive && !reduceMotion}
-                    onPlayTrailer={playTrailer}
                   />
                 </div>
               </div>
@@ -903,167 +808,76 @@ export function HeroCarousel({
         </div>
       </div>
 
-      {!reduceMotion && slides.length > 1 && (
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 z-30 h-[2px] bg-white/5"
-          aria-hidden
-        >
-          <motion.div
-            className="h-full origin-left bg-[var(--primary-light)]"
-            style={{ scaleX: progress }}
-          />
-        </div>
-      )}
-
-      <div className="absolute inset-x-0 bottom-12 z-20 mx-auto max-w-7xl px-5 sm:bottom-14 sm:px-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="hidden text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60 sm:inline">
-              In the spotlight
-            </span>
-            <span className="whitespace-nowrap text-xs tabular-nums text-white/80">
-              {String(index + 1).padStart(2, "0")}{" "}
-              <span className="text-white/35">
-                / {String(slides.length).padStart(2, "0")}
-              </span>
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="icon"
-              aria-label="Previous featured title"
-              className="h-10 w-10 rounded-full border border-white/20 bg-[var(--background)]/60 motion-safe:active:scale-95"
-              disabled={slides.length < 2}
-              onClick={() => emblaApi?.scrollPrev(reduceMotion)}
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-            <Button
-              variant="secondary"
-              size="icon"
-              aria-label="Next featured title"
-              className="h-10 w-10 rounded-full border border-white/20 bg-[var(--background)]/60 motion-safe:active:scale-95"
-              disabled={slides.length < 2}
-              onClick={() => emblaApi?.scrollNext(reduceMotion)}
-            >
-              <ChevronRight className="h-5 w-5" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={togglePreview}
-              aria-label={previewEnabled ? "Pause preview" : "Play preview"}
-              aria-pressed={previewEnabled}
-              className="h-10 w-10 rounded-full border border-white/20 text-white/80 hover:bg-white/10"
-            >
-              {previewEnabled ? (
-                <Pause className="h-4 w-4" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
-            </Button>
-            {activeHasTrailer && (
-              <Button
-                variant={soundOn ? "gold" : "secondary"}
-                size="sm"
-                aria-pressed={soundOn}
-                aria-label={soundOn ? "Mute trailer" : "Unmute trailer"}
-                className={cn(
-                  "h-10 rounded-full border border-white/20 px-3 motion-safe:active:scale-95",
-                  !soundOn && "bg-[var(--background)]/60",
-                )}
-                onClick={toggleSound}
-              >
-                {soundOn ? (
-                  <Volume2 className="h-4 w-4" />
-                ) : (
-                  <VolumeX className="h-4 w-4" />
-                )}
-                <span className="hidden sm:inline">
-                  {soundOn ? "Sound on" : "Sound off"}
-                </span>
-              </Button>
+      <div className="hero-feature-controls absolute inset-x-0 bottom-6 z-20 mx-auto flex w-full items-center justify-between gap-4 sm:bottom-8">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Previous featured title"
+            className="h-10 w-10 rounded-full text-white/80 hover:bg-white/10"
+            disabled={slides.length < 2}
+            onClick={() => emblaApi?.scrollPrev(reduceMotion)}
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Next featured title"
+            className="h-10 w-10 rounded-full text-white/80 hover:bg-white/10"
+            disabled={slides.length < 2}
+            onClick={() => emblaApi?.scrollNext(reduceMotion)}
+          >
+            <ChevronRight className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={togglePreview}
+            aria-label={previewEnabled ? "Pause preview" : "Play preview"}
+            aria-pressed={previewEnabled}
+            className="ml-2 h-10 w-10 rounded-full border border-white/35 text-white/80 hover:bg-white/10"
+          >
+            {previewEnabled ? (
+              <Pause className="h-4 w-4" />
+            ) : (
+              <Play className="h-4 w-4" />
             )}
-          </div>
+          </Button>
         </div>
         <div
-          className="no-scrollbar flex gap-2.5 overflow-x-auto pb-1"
+          className="flex min-w-0 items-center"
+          role="group"
           aria-label="Choose a featured title"
         >
           {slides.map((s, i) => (
             <button
-              key={`dot-${s.id}-${i}`}
+              key={s.id}
               type="button"
               aria-label={`Show ${displayTitle(s)}`}
               aria-current={i === index ? "true" : undefined}
               onClick={() => emblaApi?.scrollTo(i, reduceMotion)}
-              className={cn(
-                "group relative flex w-[172px] shrink-0 items-center gap-2.5 overflow-hidden rounded-xl border p-2 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] sm:w-[210px]",
-                i === index
-                  ? "border-[var(--primary)]/65 bg-white/10"
-                  : "border-white/10 bg-[var(--background)]/45 hover:border-white/35 hover:bg-white/5",
-              )}
+              className="group relative flex h-10 w-4 items-center px-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:w-6"
             >
-              <span className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md bg-[var(--surface)]">
-                <Image
-                  src={resizeTmdbImage(
-                    normalizeImageUrl(s.backdrop?.url) ??
-                      normalizeImageUrl(s.poster?.url) ??
-                      cinematicBackdropUrl(s.id, displayTitle(s)),
-                    "w342",
-                  )}
-                  alt=""
-                  fill
-                  sizes="64px"
-                  loading="lazy"
-                  unoptimized
-                  className="object-cover transition-transform duration-300 motion-safe:group-hover:scale-105"
-                />
-                {s.trailer && (
-                  <Play className="absolute bottom-1 right-1 h-3 w-3 fill-white text-white" />
+              <span
+                className={cn(
+                  "relative h-0.5 w-full overflow-hidden transition-colors",
+                  i === index
+                    ? "bg-white/40"
+                    : "bg-white/20 group-hover:bg-white/60",
+                )}
+              >
+                {i === index && (
+                  <motion.span
+                    className="absolute inset-0 origin-left bg-white"
+                    style={{ scaleX: reduceMotion || paused ? 1 : progress }}
+                  />
                 )}
               </span>
-              <span className="min-w-0">
-                <span
-                  className={cn(
-                    "mb-1 block text-[9px] font-semibold uppercase tracking-[0.12em]",
-                    i === index
-                      ? "text-[var(--primary-light)]"
-                      : "text-white/45",
-                  )}
-                >
-                  {i === index ? "Now featured" : s.contentType}
-                </span>
-                <span className="line-clamp-2 text-xs font-medium leading-4 text-white/90">
-                  {displayTitle(s)}
-                </span>
-              </span>
-              {i === index && (
-                <motion.span
-                  className="absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[var(--primary-light)]"
-                  style={{
-                    scaleX: reduceMotion || paused ? 1 : progress,
-                  }}
-                />
-              )}
             </button>
           ))}
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={scrollToCatalog}
-        className="pointer-events-auto absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1 text-[var(--text-secondary)] transition-colors hover:text-white sm:bottom-4"
-        aria-label="Scroll to catalog"
-      >
-        <span className="text-[10px] font-medium uppercase tracking-[0.22em] opacity-80">
-          Browse
-        </span>
-        <ChevronDown className="h-4 w-4" />
-      </button>
     </section>
   );
 }

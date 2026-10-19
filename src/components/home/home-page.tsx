@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -11,7 +10,6 @@ import { ContentRow } from "@/components/content/content-row";
 import { ContinueWatchingRow } from "@/components/content/continue-watching-row";
 import { HeroCarousel } from "./hero-carousel";
 import { Reveal, RevealItem, RevealStagger } from "@/components/motion/reveal";
-import { usePerformanceStore } from "@/stores/performance-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { Badge } from "@/components/ui/badge";
 import { getDeviceRegion } from "@/lib/user/region";
@@ -20,11 +18,6 @@ import { filterPublicCatalog } from "@/lib/content/mature";
 import { isRestrictedContentUser } from "@/lib/content/mature";
 import { listContinueWatching } from "@/lib/content/watch-progress";
 import { buildCatalogPool, pickGenreRows } from "@/lib/content/home-rows";
-
-const HeroOrbits = dynamic(
-  () => import("./hero-orbits").then((m) => m.HeroOrbits),
-  { ssr: false, loading: () => null },
-);
 
 /** One recommendations request, seeded by the title the viewer watched last. */
 function BecauseYouWatchedRow() {
@@ -73,7 +66,6 @@ function BecauseYouWatchedRow() {
 }
 
 export function HomePage() {
-  const effective = usePerformanceStore((s) => s.effective);
   const reduce = useReducedMotion();
   const user = useAuthStore((s) => s.user);
 
@@ -153,29 +145,7 @@ export function HomePage() {
 
   return (
     <div className="overflow-x-hidden bg-[var(--background)]">
-      <div className="relative">
-        {effective === "cinematic" && (
-          <div className="pointer-events-none absolute inset-0 z-[1] opacity-35">
-            <HeroOrbits />
-          </div>
-        )}
-        <div className="hero-vignette relative z-10">
-          <HeroCarousel
-            items={carouselItems}
-            eyebrow={
-              home.catalogStatus === "live"
-                ? "Popular & new right now"
-                : "Discover your next watch"
-            }
-          />
-        </div>
-      </div>
-
-      {/* Cinematic fade from hero into catalog */}
-      <div
-        className="hero-cinematic-fade pointer-events-none relative z-[5] -mt-[7.5rem]"
-        aria-hidden
-      />
+      <HeroCarousel items={carouselItems} />
 
       <motion.div
         id="home-catalog"

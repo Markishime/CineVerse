@@ -7,6 +7,7 @@ declare global {
     __heroPlayers: Array<{
       frame: HTMLIFrameElement;
       muted: boolean;
+      requestedMute: number;
       fail: () => void;
     }>;
   }
@@ -23,7 +24,7 @@ const trailer = (key: string) => ({
   type: "Trailer",
 });
 
-async function prepareHero(page: Page) {
+async function prepareHero(page: Page, blockAutoplay = false) {
   const items = titles.map((title, i) =>
     ContentSchema.parse({
       id: `hero_${i}`,
@@ -65,7 +66,22 @@ async function prepareHero(page: Page) {
       body: "<html><body>Official trailer</body></html>",
     }),
   );
-  await page.addInitScript(() => {
+  await page.addInitScript((blockAutoplay) => {
+    let interacted = false;
+    window.addEventListener(
+      "click",
+      () => {
+        interacted = true;
+      },
+      true,
+    );
+    window.addEventListener(
+      "keydown",
+      () => {
+        interacted = true;
+      },
+      true,
+    );
     // Force the lightweight graphics mode. Trailers must still work without WebGL.
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
       value: () => null,
@@ -75,6 +91,7 @@ async function prepareHero(page: Page) {
       frame: HTMLIFrameElement;
       target: HTMLElement;
       muted = true;
+      requestedMute: number;
       events: Record<
         string,
         (event: { target: Player; data?: number }) => void
@@ -84,9 +101,11 @@ async function prepareHero(page: Page) {
         opts: {
           videoId: string;
           events: Player["events"];
+          playerVars: { mute: number };
         },
       ) {
         this.events = opts.events;
+        this.requestedMute = opts.playerVars.mute;
         this.target = target;
         this.frame = document.createElement("iframe");
         this.frame.src = `https://www.youtube-nocookie.com/embed/${opts.videoId}`;
@@ -98,6 +117,7 @@ async function prepareHero(page: Page) {
         return this.frame;
       }
       playVideo() {
+        if (blockAutoplay && !interacted) return;
         this.events.onStateChange?.({ target: this, data: 1 });
       }
       pauseVideo() {}
@@ -117,7 +137,7 @@ async function prepareHero(page: Page) {
       }
     }
     Object.assign(window, { YT: { Player } });
-  });
+  }, blockAutoplay);
 }
 
 test("each featured title plays its trailer without WebGL and releases inactive players", async ({
@@ -130,20 +150,28 @@ test("each featured title plays its trailer without WebGL and releases inactive 
   await expect(iframe).toHaveCount(1);
   await expect(iframe).toHaveAttribute("src", new RegExp(keys[0]!));
   await expect(hero.locator('[data-trailer-state="playing"]')).toHaveCount(1);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__heroPlayers.find((p) => p.frame.isConnected)?.muted,
+      ),
+    )
+    .toBe(false);
+  await expect(
+    hero.getByRole("button", { name: /mute trailer|sound on|sound off/i }),
+  ).toHaveCount(0);
   expect(
     await page.evaluate(
-      () => window.__heroPlayers.find((p) => p.frame.isConnected)?.muted,
+      () =>
+        window.__heroPlayers.find((p) => p.frame.isConnected)?.requestedMute,
     ),
-  ).toBe(true);
+  ).toBe(0);
 
   await hero
     .getByRole("button", { name: "Show Featured series", exact: true })
     .click();
   await expect(iframe).toHaveCount(1);
   await expect(iframe).toHaveAttribute("src", new RegExp(keys[1]!));
-  await hero
-    .getByRole("button", { name: "Unmute trailer", exact: true })
-    .click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -162,13 +190,16 @@ test("each featured title plays its trailer without WebGL and releases inactive 
   await expect(iframe).toHaveCount(0);
   await hero.getByRole("button", { name: "Play preview", exact: true }).click();
   await expect(iframe).toHaveCount(1);
-  await hero
-    .getByRole("button", { name: "Scroll to catalog", exact: true })
-    .click();
+  await page.locator("#home-catalog").scrollIntoViewIfNeeded();
   await expect(iframe).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      window.__heroPlayers.every((p) => !p.frame.isConnected || p.muted),
+    ),
+  ).toBe(true);
 });
 
-test("reduced motion keeps previews still until Watch trailer is selected", async ({
+test("reduced motion keeps previews still until Play preview is selected", async ({
   page,
 }) => {
   const pageErrors: string[] = [];
@@ -181,9 +212,7 @@ test("reduced motion keeps previews still until Watch trailer is selected", asyn
     hero.getByRole("button", { name: "Show Featured film", exact: true }),
   ).toBeVisible();
   await expect(hero.locator("iframe")).toHaveCount(0);
-  await hero
-    .getByRole("button", { name: "Watch trailer", exact: true })
-    .click();
+  await hero.getByRole("button", { name: "Play preview", exact: true }).click();
   await expect(hero.locator("iframe")).toHaveCount(1);
   await expect(hero.locator('[data-trailer-state="playing"]')).toHaveCount(1);
   await hero
@@ -191,6 +220,65 @@ test("reduced motion keeps previews still until Watch trailer is selected", asyn
     .click();
   await expect(hero.locator("iframe")).toHaveCount(0);
   expect(pageErrors).toEqual([]);
+});
+
+test("blocked unmuted autoplay keeps artwork visible and retries on interaction", async ({
+  page,
+}) => {
+  await prepareHero(page, true);
+  await page.goto("/");
+  const hero = page.getByRole("region", { name: "Featured titles" });
+  await expect(hero.locator("iframe")).toHaveCount(1);
+  await expect(hero.locator('[data-trailer-state="playing"]')).toHaveCount(0);
+  await expect(
+    hero.locator(
+      '[aria-roledescription="slide"]:not([aria-hidden="true"]) img',
+    ),
+  ).toBeVisible();
+  await hero.getByText("Featured today", { exact: true }).first().click();
+  await expect(hero.locator('[data-trailer-state="playing"]')).toHaveCount(1);
+  expect(
+    await page.evaluate(
+      () => window.__heroPlayers.find((p) => p.frame.isConnected)?.muted,
+    ),
+  ).toBe(false);
+});
+
+test("hero fills the viewport and keeps its main actions above mobile navigation", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareHero(page);
+  await page.goto("/");
+  const hero = page.getByRole("region", { name: "Featured titles" });
+  const viewport = page.viewportSize()!;
+  const box = await hero.boundingBox();
+  expect(box?.y).toBe(0);
+  expect(box?.height).toBeCloseTo(viewport.height, 0);
+  expect(box?.width).toBe(viewport.width);
+  const active = hero.locator(
+    '[aria-roledescription="slide"]:not([aria-hidden="true"])',
+  );
+  await expect(
+    active.getByRole("link", { name: "Play", exact: true }),
+  ).toBeVisible();
+  await expect(
+    active.getByRole("link", { name: "More info about Featured film" }),
+  ).toBeVisible();
+  const controls = await hero
+    .getByRole("button", { name: "Play preview", exact: true })
+    .boundingBox();
+  const mobileNav = page.getByRole("navigation", {
+    name: "Primary",
+    exact: true,
+  });
+  const bottom = (await mobileNav.isVisible())
+    ? (await mobileNav.boundingBox())!.y
+    : viewport.height;
+  expect(controls!.y + controls!.height).toBeLessThanOrEqual(bottom);
+  expect(
+    (await page.locator("#home-catalog").boundingBox())!.y,
+  ).toBeGreaterThanOrEqual(viewport.height);
 });
 
 test("blocked trailers try an alternative and fall back to artwork", async ({
@@ -217,4 +305,22 @@ test("blocked trailers try an alternative and fall back to artwork", async ({
       .locator('[aria-roledescription="slide"]:not([aria-hidden="true"]) img')
       .first(),
   ).toBeVisible();
+});
+
+test("short landscape screens keep actions clear of preview controls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 667, height: 375 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await prepareHero(page);
+  await page.goto("/");
+  const hero = page.getByRole("region", { name: "Featured titles" });
+  const actions = await hero
+    .locator(
+      '[aria-roledescription="slide"]:not([aria-hidden="true"]) .hero-feature-actions',
+    )
+    .boundingBox();
+  const controls = await hero.locator(".hero-feature-controls").boundingBox();
+  expect(actions!.y + actions!.height).toBeLessThan(controls!.y);
+  expect((await hero.boundingBox())!.height).toBe(375);
 });
