@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -263,15 +263,41 @@ export function CatalogPage({
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<CatalogSort>("popularity");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [genre, setGenre] = useState(() => {
-    if (typeof window === "undefined") return genreProp ?? "";
-    return (
-      new URLSearchParams(window.location.search).get("genre") ?? genreProp ?? ""
-    );
-  });
+  const [genre, setGenre] = useState(genreProp ?? "");
+  const [urlReady, setUrlReady] = useState(false);
   const matureGenreSelected = genre.trim().toLowerCase() === "mature";
   /** Default all popular/trending; free full via Watch Now toggle */
   const [watchNowOnly, setWatchNowOnly] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const rawPage = Number(params.get("page"));
+      if (Number.isInteger(rawPage) && rawPage > 0) setPage(rawPage);
+      const rawSort = params.get("sort");
+      if (SORT_OPTIONS.some((option) => option.id === rawSort)) {
+        setSort(rawSort as CatalogSort);
+      }
+      const rawGenre = params.get("genre") ?? genreProp ?? "";
+      if (rawGenre) setGenre(rawGenre);
+      setUrlReady(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [genreProp]);
+
+  useEffect(() => {
+    if (!urlReady) return;
+    const url = new URL(window.location.href);
+    if (page > 1) url.searchParams.set("page", String(page));
+    else url.searchParams.delete("page");
+    if (sort !== "popularity") url.searchParams.set("sort", sort);
+    else url.searchParams.delete("sort");
+    if (genre) url.searchParams.set("genre", genre);
+    else url.searchParams.delete("genre");
+    if (url.href !== window.location.href) {
+      window.history.replaceState(null, "", url);
+    }
+  }, [page, sort, genre, urlReady]);
 
   const { data, isLoading, isError, isFetching } = useQuery({
     queryKey: [
@@ -301,7 +327,7 @@ export function CatalogPage({
     staleTime: 20_000,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
-    enabled: !((matureOnly || matureGenreSelected) && !mature),
+    enabled: urlReady && !((matureOnly || matureGenreSelected) && !mature),
   });
 
   // 18+-only catalog (country movies): hidden entirely when the toggle is off.
@@ -502,7 +528,7 @@ export function CatalogPage({
           </div>
         </Reveal>
 
-        {isLoading && (
+        {(!urlReady || isLoading) && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {Array.from({ length: 20 }).map((_, i) => (
               <div key={i} className="aspect-[2/3] skeleton rounded-xl" />

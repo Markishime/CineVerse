@@ -1154,9 +1154,11 @@ export class CatalogService {
         animeFormat,
         genre,
       );
-      // Only use world result when it actually has items — empty AniList/TMDB
-      // responses must fall through to loadLive (seed + cached anime series).
-      if (world && world.items.length > 0) {
+      // Trust any world result with a known total, including empty pages past
+      // the end. Falling back to the small local catalog there showed unrelated
+      // seed titles instead of an empty out-of-range page. Provider failures
+      // report total 0 and still fall through to loadLive.
+      if (world && world.total > 0) {
         // When a country filter was passed, TMDB already filtered via
         // with_origin_country — do NOT re-filter or valid results get dropped.
         // Adult titles blend into ordinary catalogs only with authorized access.
@@ -1204,14 +1206,12 @@ export class CatalogService {
         }
 
         // Genre is already applied at the provider (TMDB/AniList); a name re-check drops keyword matches.
-        if (items.length > 0) {
-          return {
-            items,
-            page: world.page,
-            totalPages: world.totalPages,
-            total: world.total,
-          };
-        }
+        return {
+          items,
+          page: world.page,
+          totalPages: world.totalPages,
+          total: world.total,
+        };
       }
     }
 

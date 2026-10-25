@@ -50,18 +50,17 @@ for (const animeFormat of ["TV", "MOVIE"] as const) {
       animeFormat === "MOVIE"
         ? "https://player.autoembed.co/embed/movie/123"
         : "https://player.autoembed.co/embed/tv/123/2-3/",
-      `https://megaplay.buzz/stream/mal/1/${animeFormat === "MOVIE" ? 1 : 3}/sub`,
       `https://player.cinezo.live/embed/anime/1/${animeFormat === "MOVIE" ? 1 : 3}?dub=false&autoplay=true&poster=true`,
       anidbEmbedUrl,
     ];
     await expect(iframe).toHaveAttribute("src", urls[0]!);
-    for (const i of [1, 2, 3, 4, 5, 6, 7, 0]) {
+    for (const i of [1, 2, 3, 4, 5, 6, 0]) {
       await player
         .getByRole("button", { name: "Servers", exact: true })
         .click();
       await expect(
         player.getByRole("button", { name: /^Server \d/ }),
-      ).toHaveCount(8);
+      ).toHaveCount(7);
       await player
         .getByRole("button", { name: new RegExp(`^Server ${i + 1}(?:\\s|$)`) })
         .click();

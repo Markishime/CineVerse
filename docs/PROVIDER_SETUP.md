@@ -82,10 +82,13 @@ or env var. Chain position:
 
 - **Adults-only / hentai anime** — `anidb` leads the server list, then all eleven
   TMDB hosts (VidFast, VidRock, VidSrc SH, MultiEmbed, 2Embed CC, VidLink,
-  VidSrc, 2Embed, 2Embed Skin, VidSrc PM, AutoEmbed), then MegaPlay/Cinezo. TMDB
-  identity is resolved with `include_adult=true` so 18+ titles get the same
-  eleven servers as movies and series.
-- **Regular anime** — general hosts first, then MegaPlay/Cinezo, then `anidb`.
+  VidSrc, 2Embed, 2Embed Skin, VidSrc PM, AutoEmbed), then Cinezo. TMDB identity
+  is resolved with `include_adult=true` so 18+ titles get the same eleven servers
+  as movies and series.
+- **Regular anime** — general hosts first, then Cinezo, then `anidb`.
+- **MegaPlay is disabled** — it returned a 410 error shell (with HTTP 200) for
+  every tested title, so it is no longer in the automatic chain. See
+  `docs/KNOWN_LIMITATIONS.md`.
 - Titles that have an AniDB id but no AniList/MAL/TMDB id still get a server
   (`providerIds.anidb` counts as playable identity).
 

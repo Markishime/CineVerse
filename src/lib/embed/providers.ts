@@ -175,8 +175,8 @@ export const GENERAL_EMBED_PROVIDERS: EmbedProvider[] = [
  * Prefer AniList/MAL metadata pairing over a single hard-coded host.
  *
  * Definition order is not the play order — getProvidersForContentType builds
- * the live chain: all general movie/TV hosts first, then instant anime hosts
- * (MegaPlay → Cinezo).
+ * the live chain: all general movie/TV hosts first, then Cinezo, then AniDB.
+ * MegaPlay is currently excluded from the chain (see getProvidersForContentType).
  */
 export const ANIME_EMBED_PROVIDERS: EmbedProvider[] = [
   {
@@ -403,8 +403,14 @@ export function getProvidersForContentType(
     // Preserve the shared provider list for anime films and series,
     // with native hosts available after it.
     const generalChain = preferProviders(general, ANIME_PLAY_ORDER);
-    const liveNatives = ANIME_EMBED_PROVIDERS.filter((p) => !p.needsResolve);
-    const instantNatives = preferProviders(liveNatives, ["megaplay", "cinezo"]);
+    // MegaPlay currently serves a 410 error page (HTTP 200) for every title
+    // tested, including long-running series. An iframe `load` event cannot
+    // distinguish that error shell from a working player, so keeping it in the
+    // chain masks the remaining hosts. Re-add it if the backend recovers.
+    const liveNatives = ANIME_EMBED_PROVIDERS.filter(
+      (p) => !p.needsResolve && p.id !== "megaplay",
+    );
+    const instantNatives = preferProviders(liveNatives, ["cinezo"]);
     const anidbStreams = ANIME_EMBED_PROVIDERS.filter((p) => p.id === "anidb");
     // 18+ / hentai keeps parity with movie & series playback: the full eleven
     // TMDB servers (general + the extra live-action fallbacks) are available,

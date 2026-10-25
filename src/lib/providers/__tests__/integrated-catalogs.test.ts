@@ -56,32 +56,37 @@ describe("ordinary catalogs include authorized adult titles", () => {
 
   it("retains adult OVA/ONA titles on a full Anime Series page", async () => {
     vi.stubEnv("ANIDB_CACHE_DIR", "C:/cineverse-test-no-anidb-snapshot");
+    const queries: Array<Record<string, unknown>> = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: string, init?: RequestInit) => {
         const { variables: v } = JSON.parse(init!.body as string);
-        const formatIndex = ["TV", "OVA", "ONA", "SPECIAL"].indexOf(v.format);
+        queries.push(v);
+        const formats = (v.format_in as string[] | undefined) ?? [
+          v.format ?? "TV",
+        ];
         return new Response(
           JSON.stringify({
             data: {
               Page: {
                 pageInfo: { total: 200, lastPage: 4 },
-                media: Array.from({ length: v.perPage }, (_, i) => ({
-                  id:
-                    (v.isAdult ? 10000 : 1) +
-                    formatIndex * 1000 +
-                    (v.page - 1) * v.perPage +
-                    i,
-                  title: {
-                    english: `Sample ${v.format} ${v.isAdult} ${v.page} ${i}`,
-                  },
-                  format: v.format,
-                  isAdult: v.isAdult,
-                  episodes: 2,
-                  startDate: { year: 2024 },
-                  popularity: v.isAdult ? 1 : 9999,
-                  genres: v.isAdult ? ["Hentai"] : ["Adventure"],
-                })),
+                media: Array.from({ length: v.perPage }, (_, i) => {
+                  const absolute = (v.page - 1) * v.perPage + i;
+                  const format = formats[absolute % formats.length];
+                  const adult = format === "OVA" || format === "ONA";
+                  return {
+                    id: absolute + 1,
+                    title: {
+                      english: `Sample ${format} ${adult} ${v.page} ${i}`,
+                    },
+                    format,
+                    isAdult: adult,
+                    episodes: 2,
+                    startDate: { year: 2024 },
+                    popularity: 10000 - absolute,
+                    genres: adult ? ["Hentai"] : ["Adventure"],
+                  };
+                }),
               },
             },
           }),
@@ -103,6 +108,12 @@ describe("ordinary catalogs include authorized adult titles", () => {
       true,
     );
     expect(result.items.every((c) => c.animeFormat !== "MOVIE")).toBe(true);
+    expect(queries[0]).toMatchObject({
+      format_in: ["TV", "OVA", "ONA", "SPECIAL"],
+    });
+    expect(queries[0].isAdult).toBeUndefined();
+    expect(queries[0].genre_not_in).toBeUndefined();
+
     const safe = await fetchWorldAnimePage(
       1,
       60,
@@ -111,6 +122,241 @@ describe("ordinary catalogs include authorized adult titles", () => {
       "series",
     );
     expect(safe.items.every((c) => !c.mature)).toBe(true);
+    const safeQuery = queries.at(-1)!;
+    expect(safeQuery.isAdult).toBe(false);
+    expect(safeQuery.genre_not_in).toEqual(["Ecchi", "Erotica", "Hentai"]);
+  });
+
+  it("keeps anime that has no English title", async () => {
+    vi.stubEnv("ANIDB_CACHE_DIR", "C:/cineverse-test-no-anidb-snapshot");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              Page: {
+                pageInfo: { total: 1, lastPage: 1 },
+                media: [
+                  {
+                    id: 9001,
+                    title: {
+                      romaji: "Romaji Only",
+                      english: null,
+                      native: null,
+                    },
+                    format: "TV",
+                    isAdult: false,
+                    episodes: 12,
+                    startDate: { year: 2024 },
+                    popularity: 1,
+                    genres: ["Adventure"],
+                  },
+                ],
+              },
+            },
+          }),
+        ),
+      ),
+    );
+
+    const result = await fetchWorldAnimePage(1, 60, "popularity", false);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      title: "Romaji Only",
+      romajiTitle: "Romaji Only",
+    });
+    expect(result.items[0].englishTitle).toBeUndefined();
+  });
+
+  it("refills a catalog page when a filtered title shortens the window", async () => {
+    vi.stubEnv("ANIDB_CACHE_DIR", "C:/cineverse-test-no-anidb-snapshot");
+    const requestedPages: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string, init?: RequestInit) => {
+        const { variables: v } = JSON.parse(init!.body as string);
+        requestedPages.push(v.page);
+        return new Response(
+          JSON.stringify({
+            data: {
+              Page: {
+                pageInfo: { total: 5000, lastPage: 100 },
+                media: Array.from({ length: v.perPage }, (_, i) => {
+                  const absolute = (v.page - 1) * v.perPage + i;
+                  const adult = absolute === 3545;
+                  return {
+                    id: absolute + 1,
+                    title: { english: `Anime ${absolute + 1}` },
+                    format: "TV",
+                    isAdult: adult,
+                    episodes: 12,
+                    startDate: { year: 2024 },
+                    popularity: 5000 - absolute,
+                    genres: adult ? ["Hentai"] : ["Action"],
+                  };
+                }),
+              },
+            },
+          }),
+        );
+      }),
+    );
+
+    const result = await fetchWorldAnimePage(60, 60, "popularity", false);
+    expect(result.items).toHaveLength(60);
+    expect(result.items.some((c) => c.providerIds.anilist === 3546)).toBe(
+      false,
+    );
+    expect(requestedPages).toContain(73);
+  });
+
+  it("returns contiguous 60-item windows across AniList's 50-item pages", async () => {
+    vi.stubEnv("ANIDB_CACHE_DIR", "C:/cineverse-test-no-anidb-snapshot");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string, init?: RequestInit) => {
+        const { variables: v } = JSON.parse(init!.body as string);
+        return new Response(
+          JSON.stringify({
+            data: {
+              Page: {
+                pageInfo: { total: 5000, lastPage: 100 },
+                media: Array.from({ length: v.perPage }, (_, i) => ({
+                  id: (v.page - 1) * v.perPage + i + 1,
+                  title: { english: `Anime ${v.page}-${i}` },
+                  format: "TV",
+                  isAdult: false,
+                  episodes: 12,
+                  startDate: { year: 2024 },
+                  popularity: 100000 - ((v.page - 1) * v.perPage + i),
+                  genres: ["Action"],
+                })),
+              },
+            },
+          }),
+        );
+      }),
+    );
+
+    const page = async (n: number) =>
+      (
+        await fetchWorldAnimePage(n, 60, "popularity", false)
+      ).items.map((c) => c.providerIds.anilist);
+
+    expect(await page(1)).toEqual(
+      Array.from({ length: 60 }, (_, i) => i + 1),
+    );
+    expect(await page(2)).toEqual(
+      Array.from({ length: 60 }, (_, i) => i + 61),
+    );
+    expect(await page(51)).toEqual(
+      Array.from({ length: 60 }, (_, i) => i + 3001),
+    );
+    const last = await fetchWorldAnimePage(84, 60, "popularity", false);
+    expect(last.totalPages).toBe(84);
+    expect(last.items).toHaveLength(20);
+    expect(last.items[0].providerIds.anilist).toBe(4981);
+  });
+
+  it("uses the real AniList tail for movie pagination", async () => {
+    vi.stubEnv("ANIDB_CACHE_DIR", "C:/cineverse-test-no-anidb-snapshot");
+    const lastPage = 69;
+    const lastCount = 18;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string, init?: RequestInit) => {
+        const { variables: v } = JSON.parse(init!.body as string);
+        const start = (v.page - 1) * v.perPage;
+        const count =
+          v.page < lastPage
+            ? v.perPage
+            : v.page === lastPage
+              ? lastCount
+              : 0;
+        return new Response(
+          JSON.stringify({
+            data: {
+              Page: {
+                pageInfo: {
+                  total: v.page < lastPage ? 5000 : 3418,
+                  lastPage: v.page < lastPage ? 100 : v.page,
+                },
+                media: Array.from({ length: count }, (_, i) => ({
+                  id: start + i + 1,
+                  title: { english: `Movie ${start + i + 1}` },
+                  format: "MOVIE",
+                  isAdult: false,
+                  episodes: 1,
+                  startDate: { year: 2024 },
+                  popularity: 10000 - start - i,
+                  genres: ["Adventure"],
+                })),
+              },
+            },
+          }),
+        );
+      }),
+    );
+
+    const first = await fetchWorldAnimePage(
+      1,
+      60,
+      "popularity",
+      false,
+      "movie",
+      "Adventure",
+    );
+    expect(first.total).toBe(3418);
+    expect(first.totalPages).toBe(57);
+
+    const last = await fetchWorldAnimePage(
+      57,
+      60,
+      "popularity",
+      false,
+      "movie",
+      "Adventure",
+    );
+    expect(last.items).toHaveLength(58);
+    expect(last.items[0].providerIds.anilist).toBe(3361);
+    expect(last.items.at(-1)?.providerIds.anilist).toBe(3418);
+
+    const beyond = await fetchWorldAnimePage(
+      58,
+      60,
+      "popularity",
+      false,
+      "movie",
+      "Adventure",
+    );
+    expect(beyond.items).toHaveLength(0);
+    expect(beyond.page).toBe(57);
+  });
+
+  it("sorts oldest anime with AniList's valid START_DATE sort", async () => {
+    vi.stubEnv("ANIDB_CACHE_DIR", "C:/cineverse-test-no-anidb-snapshot");
+    const sorts: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string, init?: RequestInit) => {
+        const { variables: v } = JSON.parse(init!.body as string);
+        sorts.push(v.sort);
+        return new Response(
+          JSON.stringify({
+            data: {
+              Page: {
+                pageInfo: { total: 1, lastPage: 1 },
+                media: [],
+              },
+            },
+          }),
+        );
+      }),
+    );
+
+    await fetchWorldAnimePage(1, 60, "oldest", false);
+    expect(sorts[0]).toEqual(["START_DATE"]);
   });
 
   it("searches TMDB adult titles so hentai can use the shared servers", async () => {

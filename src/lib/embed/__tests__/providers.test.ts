@@ -69,7 +69,6 @@ describe("embed provider order", () => {
       );
       expect(animeProviders.map((p) => p.id)).toEqual([
         ...movieProviders.map((p) => p.id),
-        "megaplay",
         "cinezo",
         "anidb",
       ]);
@@ -87,7 +86,7 @@ describe("embed provider order", () => {
       mal: 1,
       animeFormat: "TV",
     });
-    expect(providers.map((p) => p.id)).toEqual(["megaplay", "cinezo", "anidb"]);
+    expect(providers.map((p) => p.id)).toEqual(["cinezo", "anidb"]);
   });
 
   it("leads the chain with the AniDB stream for adults-only anime", () => {
@@ -118,7 +117,6 @@ describe("embed provider order", () => {
       "2embedskin",
       "vidsrcpm",
       "autoembed",
-      "megaplay",
       "cinezo",
     ]);
   });
