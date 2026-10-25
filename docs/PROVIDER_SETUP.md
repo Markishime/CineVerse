@@ -80,11 +80,11 @@ CineVerse proxies this with `resolveAnidbEmbed()` behind
 `GET /api/v1/playback/anime-embed?provider=anidb&title=…&episode=…` — no API key
 or env var. Chain position:
 
-- **Adults-only / hentai anime** — `anidb` leads the server list, then all nine
-  TMDB hosts (VidFast, VidRock, VidSrc SH, MultiEmbed, 2Embed CC, 2Embed,
-  2Embed Skin, VidSrc PM, AutoEmbed), then MegaPlay/Cinezo. TMDB identity is
-  resolved with `include_adult=true` so 18+ titles get the same nine servers as
-  movies and series.
+- **Adults-only / hentai anime** — `anidb` leads the server list, then all eleven
+  TMDB hosts (VidFast, VidRock, VidSrc SH, MultiEmbed, 2Embed CC, VidLink,
+  VidSrc, 2Embed, 2Embed Skin, VidSrc PM, AutoEmbed), then MegaPlay/Cinezo. TMDB
+  identity is resolved with `include_adult=true` so 18+ titles get the same
+  eleven servers as movies and series.
 - **Regular anime** — general hosts first, then MegaPlay/Cinezo, then `anidb`.
 - Titles that have an AniDB id but no AniList/MAL/TMDB id still get a server
   (`providerIds.anidb` counts as playable identity).

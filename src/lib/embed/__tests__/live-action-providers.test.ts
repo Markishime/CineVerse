@@ -5,7 +5,14 @@ import {
   getProvidersForContentType,
 } from "../providers";
 
-const additions = ["vidrock", "vidsrcsh", "multiembed", "2embedcc"] as const;
+const additions = [
+  "vidrock",
+  "vidsrcsh",
+  "multiembed",
+  "2embedcc",
+  "vidlink",
+  "vidsrcto",
+] as const;
 
 describe("additional movie and TV providers", () => {
   it.each([
@@ -26,7 +33,7 @@ describe("additional movie and TV providers", () => {
         2,
         3,
       );
-      expect(providers.slice(0, 5).map((p) => p.id)).toEqual([
+      expect(providers.slice(0, 7).map((p) => p.id)).toEqual([
         "vidfast",
         ...additions,
       ]);
@@ -99,6 +106,18 @@ describe("additional movie and TV providers", () => {
     );
     expect(buildEmbedUrl("multiembed", 123, "tv", 2, 3)).toBe(
       "https://multiembed.mov/?video_id=123&tmdb=1&s=2&e=3",
+    );
+    expect(buildEmbedUrl("vidlink", 123, "movie")).toBe(
+      "https://vidlink.pro/movie/123",
+    );
+    expect(buildEmbedUrl("vidlink", 123, "tv", 2, 3)).toBe(
+      "https://vidlink.pro/tv/123/2/3",
+    );
+    expect(buildEmbedUrl("vidsrcto", 123, "movie")).toBe(
+      "https://vidsrc.to/embed/movie/123",
+    );
+    expect(buildEmbedUrl("vidsrcto", 123, "tv", 2, 3)).toBe(
+      "https://vidsrc.to/embed/tv/123/2/3",
     );
     for (const id of additions) {
       expect(buildEmbedUrl(id, 123, "tv")).toBeNull();

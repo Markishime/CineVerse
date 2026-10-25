@@ -284,7 +284,7 @@ export const GENERAL_PLAY_ORDER: EmbedProviderId[] = [
 export const ANIME_PLAY_ORDER: EmbedProviderId[] = [...GENERAL_PLAY_ORDER];
 
 /**
- * Adults-only / hentai anime uses the full nine TMDB servers — the same list
+ * Adults-only / hentai anime uses the full eleven TMDB servers — the same list
  * movies and series get — so 18+ titles have the same fallback coverage.
  * AniDB still leads the chain (see getProvidersForContentType).
  */
@@ -294,6 +294,8 @@ export const ADULT_PLAY_ORDER: EmbedProviderId[] = [
   "vidsrcsh",
   "multiembed",
   "2embedcc",
+  "vidlink",
+  "vidsrcto",
   ...GENERAL_PLAY_ORDER,
 ];
 
@@ -404,7 +406,7 @@ export function getProvidersForContentType(
     const liveNatives = ANIME_EMBED_PROVIDERS.filter((p) => !p.needsResolve);
     const instantNatives = preferProviders(liveNatives, ["megaplay", "cinezo"]);
     const anidbStreams = ANIME_EMBED_PROVIDERS.filter((p) => p.id === "anidb");
-    // 18+ / hentai keeps parity with movie & series playback: the full nine
+    // 18+ / hentai keeps parity with movie & series playback: the full eleven
     // TMDB servers (general + the extra live-action fallbacks) are available,
     // not just the five shared anime hosts. AniDB-backed embeds are resolved
     // from title + absolute episode and carry adult anime the TMDB hosts often
@@ -424,13 +426,23 @@ export function getProvidersForContentType(
     // VidFast can serve an unembeddable 403 without firing iframe.onerror.
     // Start Filipino titles on the host verified with real Philippine films.
     const preferred: EmbedProviderId[] = isFilipinoLocale(ids)
-      ? ["vidrock", "2embedcc", "vidsrcsh", "multiembed", ...GENERAL_PLAY_ORDER]
+      ? [
+          "vidrock",
+          "2embedcc",
+          "vidsrcsh",
+          "multiembed",
+          "vidlink",
+          "vidsrcto",
+          ...GENERAL_PLAY_ORDER,
+        ]
       : [
           "vidfast",
           "vidrock",
           "vidsrcsh",
           "multiembed",
           "2embedcc",
+          "vidlink",
+          "vidsrcto",
           ...GENERAL_PLAY_ORDER,
         ];
     chain = preferProviders(

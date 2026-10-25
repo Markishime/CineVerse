@@ -6,11 +6,13 @@ import {
   Check,
   ChevronDown,
   Clapperboard,
+  ExternalLink,
   Loader2,
   Maximize2,
   Minimize2,
   MonitorPlay,
   RefreshCw,
+  Search,
   Server,
   X,
 } from "lucide-react";
@@ -777,6 +779,11 @@ export function VideoPlayer({
   // autoPlay=true (camelCase) and junk params break Filipino / regional loads.
   const iframeSrc = embedUrl;
 
+  const tmdbWatchUrl = tmdbId
+    ? `https://www.themoviedb.org/${mediaType === "movie" ? "movie" : "tv"}/${tmdbId}/watch`
+    : null;
+  const justWatchUrl = `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`;
+
   const enterFullscreen = () => {
     const el = frameRef.current;
     if (!el) return;
@@ -832,9 +839,10 @@ export function VideoPlayer({
                   No playable source found
                 </p>
                 <p className="mt-1 max-w-sm text-sm text-[var(--text-secondary)]">
-                  None of the servers could start this title right now. This
-                  can happen with newer or regional releases, or when a host is
-                  blocked on your network.
+                  None of the servers could start this title right now. Some
+                  regional, gravure, and very obscure titles are not carried by
+                  any embed host. This can also happen when a host is blocked on
+                  your network.
                 </p>
                 <ul className="mx-auto mt-3 max-w-sm space-y-1 text-left text-xs text-[var(--text-muted)]">
                   {availableProviders.slice(0, 4).map((p, i) => (
@@ -857,6 +865,28 @@ export function VideoPlayer({
                 <Button variant="secondary" onClick={retry}>
                   Retry current
                 </Button>
+                {tmdbWatchUrl && (
+                  <a
+                    href={tmdbWatchUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    <Button variant="outline">
+                      <ExternalLink className="h-4 w-4" />
+                      Where to watch
+                    </Button>
+                  </a>
+                )}
+                <a
+                  href={justWatchUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  <Button variant="outline">
+                    <Search className="h-4 w-4" />
+                    Search JustWatch
+                  </Button>
+                </a>
               </div>
             </div>
           )}

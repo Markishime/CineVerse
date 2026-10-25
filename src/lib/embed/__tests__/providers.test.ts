@@ -14,7 +14,6 @@ describe("embed provider order", () => {
     expect(ids).not.toContain("vixsrc");
     expect(ids).not.toContain("moviesapi");
     expect(ids).not.toContain("screenscape");
-    expect(ids).not.toContain("vidlink");
     expect(ids).not.toContain("nontongo");
     expect(ids).not.toContain("superembed");
     expect(ids).not.toContain("kisskh");
@@ -104,8 +103,8 @@ describe("embed provider order", () => {
     expect(providers.filter((p) => p.needsResolve).map((p) => p.id)).toEqual([
       "anidb",
     ]);
-    // Hentai / 18+ keeps parity with movies and series: all nine TMDB servers
-    // are in the Servers menu, with the anime natives after them.
+    // Hentai / 18+ keeps parity with movies and series: all eleven TMDB
+    // servers are in the Servers menu, with the anime natives after them.
     expect(providers.map((p) => p.id)).toEqual([
       "anidb",
       "vidfast",
@@ -113,6 +112,8 @@ describe("embed provider order", () => {
       "vidsrcsh",
       "multiembed",
       "2embedcc",
+      "vidlink",
+      "vidsrcto",
       "2embed",
       "2embedskin",
       "vidsrcpm",
@@ -122,7 +123,7 @@ describe("embed provider order", () => {
     ]);
   });
 
-  it("keeps all nine TMDB servers in the hentai chain", () => {
+  it("keeps all eleven TMDB servers in the hentai chain", () => {
     const providers = getProvidersForContentType("anime", "tv", {
       tmdb: 123,
       anilist: 1,
@@ -139,12 +140,14 @@ describe("embed provider order", () => {
       "vidsrcsh",
       "multiembed",
       "2embedcc",
+      "vidlink",
+      "vidsrcto",
       "2embed",
       "2embedskin",
       "vidsrcpm",
       "autoembed",
     ]);
-    expect(tmdbServers).toHaveLength(9);
+    expect(tmdbServers).toHaveLength(11);
   });
 
   it("uses AutoEmbed episode paths even if a movie media type leaks into anime series", () => {
@@ -181,6 +184,18 @@ describe("embed provider order", () => {
     );
     expect(buildEmbedUrl("2embedskin", 550, "movie")).toBe(
       "https://www.2embed.skin/embed/movie/550",
+    );
+    expect(buildEmbedUrl("vidlink", 550, "movie")).toBe(
+      "https://vidlink.pro/movie/550",
+    );
+    expect(buildEmbedUrl("vidlink", 1399, "tv", 2, 3)).toBe(
+      "https://vidlink.pro/tv/1399/2/3",
+    );
+    expect(buildEmbedUrl("vidsrcto", 550, "movie")).toBe(
+      "https://vidsrc.to/embed/movie/550",
+    );
+    expect(buildEmbedUrl("vidsrcto", 1399, "tv", 2, 3)).toBe(
+      "https://vidsrc.to/embed/tv/1399/2/3",
     );
   });
 });
