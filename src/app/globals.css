@@ -343,34 +343,37 @@ body {
   line-height: 1.55;
 }
 
-/* Global readable text defaults */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  color: var(--text-primary);
-  text-wrap: balance;
-}
+/* Keep defaults in the base layer so component color utilities can win. */
+@layer base {
+  /* Global readable text defaults */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: var(--text-primary);
+    text-wrap: balance;
+  }
 
-p,
-li,
-label,
-dd,
-dt,
-span,
-small {
-  color: inherit;
-}
+  p,
+  li,
+  label,
+  dd,
+  dt,
+  span,
+  small {
+    color: inherit;
+  }
 
-a {
-  color: var(--primary-light);
-  text-underline-offset: 3px;
-}
+  a {
+    color: var(--primary-light);
+    text-underline-offset: 3px;
+  }
 
-a:hover {
-  color: #ffffff;
+  a:hover {
+    color: #ffffff;
+  }
 }
 
 /* Watch Now / gold CTAs: always black text (global `a` color must not win) */

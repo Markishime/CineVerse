@@ -37,23 +37,27 @@ export async function resolveAuth(request: NextRequest): Promise<AuthContext> {
 
   // 1) Admin SDK (service account or ADC on Cloud Functions)
   try {
-    const { getAdminAuth } = await import("@/lib/server/firebase-admin");
-    const authFactory = getAdminAuth();
-    if (authFactory) {
-      try {
-        const auth = authFactory();
-        const decoded = await auth.verifyIdToken(token);
-        return {
-          uid: decoded.uid,
-          email: decoded.email ?? null,
-          isAdmin: Boolean(decoded.admin),
-          token,
-        };
-      } catch (err) {
-        console.warn(
-          "[CineVerse] Admin verifyIdToken failed, trying API key fallback",
-          err instanceof Error ? err.message : err,
-        );
+    const { getAdminAuth, hasAdminCredentials } = await import(
+      "@/lib/server/firebase-admin"
+    );
+    if (hasAdminCredentials()) {
+      const authFactory = getAdminAuth();
+      if (authFactory) {
+        try {
+          const auth = authFactory();
+          const decoded = await auth.verifyIdToken(token);
+          return {
+            uid: decoded.uid,
+            email: decoded.email ?? null,
+            isAdmin: Boolean(decoded.admin),
+            token,
+          };
+        } catch (err) {
+          console.warn(
+            "[CineVerse] Admin verifyIdToken failed, trying API key fallback",
+            err instanceof Error ? err.message : err,
+          );
+        }
       }
     }
   } catch (err) {

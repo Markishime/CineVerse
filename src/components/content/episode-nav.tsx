@@ -69,7 +69,7 @@ export function EpisodeNav({
                 className={cn(
                   "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors",
                   s.season_number === season
-                    ? "bg-[var(--primary)] text-white shadow-[var(--glow-primary)]"
+                    ? "bg-[var(--primary)] text-black shadow-[var(--glow-primary)]"
                     : "bg-white/10 text-[var(--text-secondary)] hover:bg-white/15 hover:text-white",
                 )}
               >

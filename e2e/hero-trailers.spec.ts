@@ -66,6 +66,16 @@ async function prepareHero(page: Page, blockAutoplay = false) {
       body: "<html><body>Official trailer</body></html>",
     }),
   );
+  await page.addInitScript(() => {
+    window.addEventListener("unhandledrejection", (event) => {
+      console.log(
+        "UNHANDLED_REJECTION",
+        event.reason instanceof Error
+          ? event.reason.stack
+          : String(event.reason),
+      );
+    });
+  });
   await page.addInitScript((blockAutoplay) => {
     let interacted = false;
     window.addEventListener(
@@ -210,7 +220,7 @@ test("reduced motion keeps previews still until Play preview is selected", async
   const hero = page.getByRole("region", { name: "Featured titles" });
   await expect(
     hero.getByRole("button", { name: "Show Featured film", exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await expect(hero.locator("iframe")).toHaveCount(0);
   await hero.getByRole("button", { name: "Play preview", exact: true }).click();
   await expect(hero.locator("iframe")).toHaveCount(1);

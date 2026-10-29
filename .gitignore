@@ -44,6 +44,9 @@ dev-server.log
 *.tsbuildinfo
 next-env.d.ts
 
+# local agent tooling (skills, not part of the app)
+/.agents/
+
 # firebase
 .firebase/
 firebase-debug.log*
@@ -53,8 +56,11 @@ functions/lib/
 functions/node_modules/
 
 # playwright
+/.taste-skill/
 /test-results/
 /playwright-report/
 /blob-report/
 
 .vercel
+
+debug.log

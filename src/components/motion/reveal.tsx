@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  motion,
-  useReducedMotion,
-  type HTMLMotionProps,
-} from "framer-motion";
+import { motion, type HTMLMotionProps } from "framer-motion";
 import type { ReactNode } from "react";
 import {
   fadeUp,
@@ -41,11 +37,6 @@ export function Reveal({
   inView = true,
   ...rest
 }: RevealProps) {
-  const reduce = useReducedMotion();
-  if (reduce) {
-    return <div className={className}>{children}</div>;
-  }
-
   const v = variantsMap[variant];
 
   return (
@@ -74,10 +65,6 @@ export function RevealStagger({
   className?: string;
   inView?: boolean;
 }) {
-  const reduce = useReducedMotion();
-  if (reduce) {
-    return <div className={className}>{children}</div>;
-  }
   return (
     <motion.div
       className={className}
@@ -99,10 +86,6 @@ export function RevealItem({
   children: React.ReactNode;
   className?: string;
 }) {
-  const reduce = useReducedMotion();
-  if (reduce) {
-    return <div className={className}>{children}</div>;
-  }
   return (
     <motion.div className={cn(className)} variants={staggerItem}>
       {children}

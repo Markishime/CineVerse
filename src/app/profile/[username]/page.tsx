@@ -8,19 +8,16 @@ import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
 import {
   Activity,
   Bookmark,
-  Clapperboard,
   Heart,
   History,
   Pencil,
   RefreshCw,
   Settings,
   Sparkles,
-  Star,
   UserRound,
   Film,
   Tv,
   Compass,
-  CheckCircle2,
 } from "lucide-react";
 import {
   fetchFavorites,
@@ -31,6 +28,7 @@ import {
 import { fetchContentById } from "@/lib/api/content";
 import { useAuthStore } from "@/stores/auth-store";
 import { useGuestLibraryStore } from "@/stores/guest-library-store";
+import { ApiError } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -98,10 +96,15 @@ export default function ProfilePage({
   params: Promise<{ username: string }>;
 }) {
   const { username: rawUsername } = use(params);
-  const username = decodeURIComponent(rawUsername);
+  const username = rawUsername;
   const queryClient = useQueryClient();
   const reduce = useReducedMotion();
-  const { user, profile: myProfile, setProfile } = useAuthStore();
+  const {
+    user,
+    profile: myProfile,
+    setProfile,
+    loading: authLoading,
+  } = useAuthStore();
   const guestLibrary = useGuestLibraryStore((s) => s.library);
   const guestFavorites = useGuestLibraryStore((s) => s.favorites);
 
@@ -112,7 +115,6 @@ export default function ProfilePage({
   const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [syncPulse, setSyncPulse] = useState(0);
 
   // Refresh relative timestamps periodically.
   useEffect(() => {
@@ -143,10 +145,11 @@ export default function ProfilePage({
     refetch: refetchProfile,
     dataUpdatedAt,
     isFetching: profileFetching,
+    error: profileError,
   } = useQuery({
     queryKey: ["profile", username],
     queryFn: () => fetchProfile(username),
-    enabled: !isOwn,
+    enabled: !authLoading && !isOwn,
     retry: false,
     staleTime: 10_000,
     refetchInterval: isOwn ? false : REFETCH_MS,
@@ -155,7 +158,7 @@ export default function ProfilePage({
   });
 
   const libraryQuery = useQuery({
-    queryKey: ["library", user?.uid ?? "guest", syncPulse],
+    queryKey: ["library", user?.uid ?? "guest"],
     queryFn: async () => {
       if (user) {
         // Merge server + local so UI updates instantly after list changes
@@ -163,8 +166,13 @@ export default function ProfilePage({
         try {
           const res = await fetchLibrary();
           serverItems = res.items ?? [];
-        } catch {
-          serverItems = [];
+        } catch (error) {
+          if (!readLocalLibrary(user.uid).length) throw error;
+          serverItems =
+            queryClient.getQueryData<Awaited<ReturnType<typeof fetchLibrary>>>([
+              "library",
+              user.uid,
+            ])?.items ?? [];
         }
         const local = readLocalLibrary(user.uid);
         const byId = new Map<
@@ -241,16 +249,10 @@ export default function ProfilePage({
   });
 
   const favoritesQuery = useQuery({
-    queryKey: ["favorites", user?.uid ?? "guest", syncPulse],
+    queryKey: ["favorites", user?.uid ?? "guest"],
     queryFn: async () => {
       if (user) {
-        try {
-          return await fetchFavorites();
-        } catch {
-          return {
-            items: [] as Awaited<ReturnType<typeof fetchFavorites>>["items"],
-          };
-        }
+        return await fetchFavorites();
       }
       return {
         items: guestFavorites.map((contentId) => ({
@@ -278,13 +280,11 @@ export default function ProfilePage({
         e.key.includes("favorite") ||
         e.key.includes("profile")
       ) {
-        setSyncPulse((n) => n + 1);
         void queryClient.invalidateQueries({ queryKey: ["library"] });
         void queryClient.invalidateQueries({ queryKey: ["favorites"] });
       }
     };
     const onFocus = () => {
-      setSyncPulse((n) => n + 1);
       void libraryQuery.refetch();
       void favoritesQuery.refetch();
     };
@@ -301,13 +301,6 @@ export default function ProfilePage({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only wire listeners once per isOwn
   }, [isOwn, queryClient]);
-
-  // Guest list mutations update zustand — re-pulse when lengths change
-  useEffect(() => {
-    if (user) return;
-    const t = window.setTimeout(() => setSyncPulse((n) => n + 1), 0);
-    return () => window.clearTimeout(t);
-  }, [user, guestLibrary.length, guestFavorites.length]);
 
   const profile: UserProfile | null = useMemo(() => {
     if (isOwn && user) {
@@ -333,19 +326,23 @@ export default function ProfilePage({
     const ids = new Set<string>();
     for (const i of libraryQuery.data?.items ?? []) ids.add(i.contentId);
     for (const i of favoritesQuery.data?.items ?? []) ids.add(i.contentId);
-    return Array.from(ids).slice(0, 48);
+    return Array.from(ids);
   }, [libraryQuery.data, favoritesQuery.data]);
 
   const postersQuery = useQuery({
     queryKey: ["profile-posters", contentIds.join(",")],
     queryFn: async () => {
       const map: Record<string, Content | null> = {};
+      const remaining = [...contentIds];
       await Promise.all(
-        contentIds.map(async (id) => {
-          try {
-            map[id] = await fetchContentById(id);
-          } catch {
-            map[id] = null;
+        Array.from({ length: Math.min(6, remaining.length) }, async () => {
+          while (remaining.length) {
+            const id = remaining.shift()!;
+            try {
+              map[id] = await fetchContentById(id);
+            } catch {
+              map[id] = null;
+            }
           }
         }),
       );
@@ -357,16 +354,15 @@ export default function ProfilePage({
   });
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || editing) return;
     const t = window.setTimeout(() => {
       setDisplayName(profile.displayName);
       setBio(profile.bio ?? "");
     }, 0);
     return () => window.clearTimeout(t);
-  }, [profile]);
+  }, [profile, editing]);
 
   const refreshAll = useCallback(async () => {
-    setSyncPulse((n) => n + 1);
     await Promise.all([
       isOwn ? libraryQuery.refetch() : refetchProfile(),
       isOwn ? favoritesQuery.refetch() : Promise.resolve(),
@@ -386,7 +382,7 @@ export default function ProfilePage({
     return new Date(Math.max(...times)).toISOString();
   }, [dataUpdatedAt, libraryQuery.dataUpdatedAt, favoritesQuery.dataUpdatedAt]);
 
-  if (!isOwn && isLoading) {
+  if (authLoading || (!isOwn && isLoading)) {
     return (
       <div className="mx-auto max-w-5xl px-4 pb-24 pt-24">
         <div className="h-56 skeleton rounded-3xl" />
@@ -406,10 +402,16 @@ export default function ProfilePage({
           <UserRound className="h-8 w-8" />
         </div>
         <h1 className="mt-4 font-display text-2xl font-bold">
-          Profile not found
+          {profileError &&
+          (!(profileError instanceof ApiError) || profileError.status !== 404)
+            ? "Unable to load profile"
+            : "Profile not found"}
         </h1>
         <p className="mt-2 text-[var(--text-muted)]">
-          This profile is private or does not exist.
+          {profileError &&
+          (!(profileError instanceof ApiError) || profileError.status !== 404)
+            ? "Check your connection and try again."
+            : "This profile is private or does not exist."}
         </p>
         {user ? (
           <Link
@@ -437,8 +439,6 @@ export default function ProfilePage({
       bio: bio.slice(0, 280),
       updatedAt: new Date().toISOString(),
     };
-    setProfile(next);
-    writeLocalProfile(user.uid, next);
     try {
       await user.getIdToken(true);
       const res = await updateMe({
@@ -452,8 +452,7 @@ export default function ProfilePage({
       void queryClient.invalidateQueries({ queryKey: ["profile"] });
       if (!isOwn) await refetchProfile();
     } catch {
-      setEditing(false);
-      setError(null);
+      setError("Your changes could not be saved. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -463,37 +462,22 @@ export default function ProfilePage({
     {
       label: "Watched",
       value: profile.stats?.watched ?? 0,
-      icon: Clapperboard,
-      tone: "text-[var(--gold)]",
-      bar: "from-[var(--gold)]/80 to-[var(--gold)]/20",
     },
     {
       label: "Watching",
       value: profile.stats?.watching ?? 0,
-      icon: Sparkles,
-      tone: "text-[var(--secondary)]",
-      bar: "from-[var(--secondary)]/80 to-[var(--secondary)]/20",
     },
     {
       label: "Plan",
       value: profile.stats?.planToWatch ?? 0,
-      icon: Bookmark,
-      tone: "text-[var(--primary-light)]",
-      bar: "from-[var(--primary)]/80 to-[var(--primary)]/20",
     },
     {
       label: "Favorites",
       value: profile.stats?.favorites ?? 0,
-      icon: Heart,
-      tone: "text-[var(--accent)]",
-      bar: "from-[var(--accent)]/80 to-[var(--accent)]/20",
     },
     {
       label: "Reviews",
       value: profile.stats?.reviews ?? 0,
-      icon: Star,
-      tone: "text-[var(--gold)]",
-      bar: "from-[var(--gold)]/70 to-transparent",
     },
   ] as const;
 
@@ -502,26 +486,11 @@ export default function ProfilePage({
     libraryItems.filter((i) => i.status === status);
 
   const recentActivity = libraryItems.slice(0, 12);
-  const totalLib =
-    (profile.stats?.watched ?? 0) +
-    (profile.stats?.watching ?? 0) +
-    (profile.stats?.planToWatch ?? 0);
-  const mix = {
-    watched: totalLib
-      ? Math.round(((profile.stats?.watched ?? 0) / totalLib) * 100)
-      : 0,
-    watching: totalLib
-      ? Math.round(((profile.stats?.watching ?? 0) / totalLib) * 100)
-      : 0,
-    plan: totalLib
-      ? Math.round(((profile.stats?.planToWatch ?? 0) / totalLib) * 100)
-      : 0,
-  };
-
   const hour = new Date(now).getHours();
   const greeting = greetingForHour(hour);
   const initial = (profile.displayName || "?").slice(0, 1).toUpperCase();
-  const avatarUrl = profile.avatarUrl ?? user?.photoURL ?? null;
+  const avatarUrl =
+    profile.avatarUrl ?? (isOwn ? user?.photoURL : null) ?? null;
 
   const tabs: Array<{ id: TabId; label: string; icon: typeof Activity }> = [
     { id: "overview", label: "Overview", icon: Compass },
@@ -532,51 +501,38 @@ export default function ProfilePage({
 
   return (
     <div className="relative min-h-dvh overflow-hidden pb-28 pt-20">
-      {/* Atmospheric background */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[radial-gradient(ellipse_90%_70%_at_50%_-15%,rgba(139,124,255,0.32),transparent_58%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-20 h-72 bg-[radial-gradient(ellipse_45%_50%_at_85%_10%,rgba(92,228,255,0.14),transparent_55%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-40 h-64 bg-[radial-gradient(ellipse_40%_45%_at_12%_30%,rgba(255,122,175,0.1),transparent_50%)]" />
-
       <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6">
         {/* Hero card */}
         <motion.section
           variants={reduce ? undefined : fadeUp}
           initial={reduce ? false : "hidden"}
           animate={reduce ? undefined : "visible"}
-          className="overflow-hidden rounded-3xl border border-white/10 bg-[var(--surface)]/90 shadow-[0_28px_80px_-24px_rgba(0,0,0,0.65)] backdrop-blur-xl"
+          className="overflow-hidden rounded-2xl bg-[var(--surface)]"
         >
-          {/* Banner strip */}
-          <div className="relative h-28 bg-gradient-to-r from-[var(--primary)]/40 via-[var(--secondary)]/20 to-[var(--accent)]/30 sm:h-32">
-            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wOCkiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZykiLz48L3N2Zz4=')] opacity-60" />
+          <div className="flex min-h-16 items-center justify-between gap-4 px-5 py-4 sm:px-8">
+            <p className="text-sm text-[var(--text-secondary)]">
+              {isOwn ? "Your life in film" : "Life in film"}
+            </p>
             {isOwn && (
-              <div className="absolute right-4 top-4 flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--success)] backdrop-blur-md">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--success)] opacity-60" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
-                  </span>
-                  Synced
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void refreshAll()}
-                  disabled={isSyncing}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white/80 backdrop-blur-md transition hover:bg-black/55 hover:text-white disabled:opacity-50"
-                  aria-label="Refresh profile"
-                >
-                  <RefreshCw
-                    className={cn("h-3.5 w-3.5", isSyncing && "animate-spin")}
-                  />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => void refreshAll()}
+                disabled={isSyncing}
+                className="flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-[var(--text-secondary)] hover:bg-white/10 disabled:opacity-50"
+                aria-label="Refresh profile"
+              >
+                <RefreshCw
+                  className={cn("h-4 w-4", isSyncing && "animate-spin")}
+                />
+                {isSyncing ? "Refreshing" : "Refresh"}
+              </button>
             )}
           </div>
-
           <div className="relative px-5 pb-6 pt-0 sm:px-8 sm:pb-8">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:gap-6">
               {/* Avatar overlapping banner */}
-              <div className="relative -mt-12 mx-auto sm:mx-0 sm:-mt-14">
-                <div className="relative h-24 w-24 overflow-hidden rounded-full bg-[var(--primary)] shadow-[0_0_0_4px_var(--surface),0_12px_40px_-8px_rgba(139,124,255,0.55)] sm:h-28 sm:w-28">
+              <div className="relative mx-auto sm:mx-0">
+                <div className="relative h-24 w-24 overflow-hidden rounded-full bg-[var(--surface-elevated)] sm:h-28 sm:w-28">
                   {avatarUrl ? (
                     <Image
                       src={avatarUrl}
@@ -600,7 +556,7 @@ export default function ProfilePage({
                   </p>
                 )}
                 <div className="mt-0.5 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                  <h1 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                  <h1 className="break-words [overflow-wrap:anywhere] font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
                     {profile.displayName}
                   </h1>
                   {isOwn && <Badge tone="primary">You</Badge>}
@@ -609,11 +565,6 @@ export default function ProfilePage({
                   @{profile.username}
                 </p>
                 <p className="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-[var(--text-secondary)] sm:justify-start">
-                  <span className="inline-flex items-center gap-1 text-[var(--success)]">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Free unlimited member
-                  </span>
-                  <span className="text-[var(--text-muted)]">· US</span>
                   {isOwn && isSyncing && (
                     <span className="text-[var(--primary-light)]">
                       · syncing…
@@ -642,7 +593,13 @@ export default function ProfilePage({
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => setEditing((v) => !v)}
+                    disabled={saving}
+                    onClick={() => {
+                      setDisplayName(profile.displayName);
+                      setBio(profile.bio ?? "");
+                      setError(null);
+                      setEditing((v) => !v);
+                    }}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                     {editing ? "Cancel" : "Edit"}
@@ -669,6 +626,7 @@ export default function ProfilePage({
                     Display name
                     <Input
                       className="mt-1"
+                      maxLength={80}
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                     />
@@ -687,7 +645,9 @@ export default function ProfilePage({
                     </span>
                   </label>
                   {error && (
-                    <p className="text-sm text-[var(--danger)]">{error}</p>
+                    <p role="alert" className="text-sm text-[var(--danger)]">
+                      {error}
+                    </p>
                   )}
                   <Button onClick={save} disabled={saving}>
                     {saving ? "Saving…" : "Save profile"}
@@ -705,27 +665,21 @@ export default function ProfilePage({
           initial={reduce ? false : "hidden"}
           animate={reduce ? undefined : "visible"}
         >
-          {stats.map(({ label, value, icon: Icon, tone, bar }) => (
+          {stats.map(({ label, value }) => (
             <motion.div
               key={label}
               variants={reduce ? undefined : staggerItem}
-              className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center transition hover:border-[var(--primary)]/40 hover:bg-white/[0.07]"
+              className="px-4 py-3"
             >
-              <div
-                className={cn(
-                  "pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r opacity-70",
-                  bar,
-                )}
-                style={{
-                  width: `${Math.min(100, value === 0 ? 8 : 20 + Math.min(value, 40) * 2)}%`,
-                }}
-              />
-              <dt className="flex items-center justify-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
-                <Icon className={cn("h-3.5 w-3.5", tone)} />
-                {label}
-              </dt>
-              <dd className="mt-1 font-display text-2xl font-bold tabular-nums text-white sm:text-3xl">
-                {value}
+              <dt className="text-sm text-[var(--text-muted)]">{label}</dt>
+              <dd className="mt-1 font-display text-3xl font-semibold tabular-nums text-white">
+                {isOwn &&
+                label !== "Reviews" &&
+                (label === "Favorites"
+                  ? !favoritesQuery.data
+                  : !libraryQuery.data)
+                  ? "\u2014"
+                  : value}
               </dd>
             </motion.div>
           ))}
@@ -733,6 +687,15 @@ export default function ProfilePage({
 
         {isOwn && (
           <>
+            {(libraryQuery.isError || favoritesQuery.isError) && (
+              <p
+                role="alert"
+                className="mt-6 rounded-xl bg-[var(--surface)] p-4 text-sm"
+              >
+                Some library data could not be refreshed. Use Refresh to try
+                again.
+              </p>
+            )}
             {/* Tabs */}
             <div className="mt-8 flex flex-wrap gap-2">
               {tabs.map(({ id, label, icon: Icon }) => (
@@ -742,9 +705,9 @@ export default function ProfilePage({
                   onClick={() => setTab(id)}
                   aria-pressed={tab === id}
                   className={cn(
-                    "inline-flex min-h-9 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+                    "inline-flex min-h-11 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                     tab === id
-                      ? "bg-[var(--primary)] text-white shadow-[0_8px_24px_-8px_rgba(139,124,255,0.7)]"
+                      ? "bg-white text-black"
                       : "bg-white/5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white",
                   )}
                 >
@@ -775,55 +738,41 @@ export default function ProfilePage({
               >
                 {tab === "overview" && (
                   <div className="mt-6 space-y-6">
-                    {/* Library composition */}
-                    {totalLib > 0 && (
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+                    {libraryItems.length > 0 && (
+                      <section className="rounded-2xl bg-[var(--surface)] p-5">
                         <div className="flex items-center justify-between gap-3">
-                          <h2 className="font-display text-base font-semibold text-white">
-                            Library mix
+                          <h2 className="font-display text-lg font-semibold">
+                            Your library
                           </h2>
-                          <span className="text-xs text-[var(--text-muted)]">
-                            {totalLib} titles · synced
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setTab("library")}
+                            className="min-h-11 rounded-lg px-3 text-sm hover:bg-white/10"
+                          >
+                            View all {libraryItems.length} titles
+                          </button>
                         </div>
-                        <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-black/40">
-                          {mix.watched > 0 && (
-                            <div
-                              className="bg-[var(--gold)] transition-all duration-500"
-                              style={{ width: `${mix.watched}%` }}
-                              title={`Watched ${mix.watched}%`}
-                            />
-                          )}
-                          {mix.watching > 0 && (
-                            <div
-                              className="bg-[var(--secondary)] transition-all duration-500"
-                              style={{ width: `${mix.watching}%` }}
-                              title={`Watching ${mix.watching}%`}
-                            />
-                          )}
-                          {mix.plan > 0 && (
-                            <div
-                              className="bg-[var(--primary)] transition-all duration-500"
-                              style={{ width: `${mix.plan}%` }}
-                              title={`Plan ${mix.plan}%`}
-                            />
-                          )}
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-4 text-xs text-[var(--text-secondary)]">
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-[var(--gold)]" />
-                            Watched {mix.watched}%
-                          </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-[var(--secondary)]" />
-                            Watching {mix.watching}%
-                          </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="h-2 w-2 rounded-full bg-[var(--primary)]" />
-                            Plan {mix.plan}%
-                          </span>
-                        </div>
-                      </div>
+                        <dl className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-5">
+                          {(
+                            [
+                              "watching",
+                              "plan_to_watch",
+                              "completed",
+                              "on_hold",
+                              "dropped",
+                            ] as const
+                          ).map((status) => (
+                            <div key={status}>
+                              <dt className="text-sm text-[var(--text-muted)]">
+                                {statusLabel(status)}
+                              </dt>
+                              <dd className="mt-1 text-xl tabular-nums">
+                                {libraryByStatus(status).length}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
                     )}
 
                     {/* Recent watching strip */}
@@ -919,19 +868,33 @@ export default function ProfilePage({
                       items={libraryByStatus("on_hold")}
                       posters={postersQuery.data}
                     />
-                    {libraryItems.length === 0 && (
-                      <EmptyState
-                        title="Your library is empty"
-                        href="/movies"
-                        cta="Browse popular movies"
-                      />
+                    <LibrarySection
+                      title="Dropped"
+                      items={libraryByStatus("dropped")}
+                      posters={postersQuery.data}
+                    />
+                    {libraryQuery.isPending && (
+                      <p role="status">Loading your library...</p>
                     )}
+                    {libraryItems.length === 0 &&
+                      !libraryQuery.isPending &&
+                      !libraryQuery.isError && (
+                        <EmptyState
+                          title="Your library is empty"
+                          href="/movies"
+                          cta="Browse popular movies"
+                        />
+                      )}
                   </div>
                 )}
 
                 {tab === "favorites" && (
                   <div className="mt-6">
-                    {(favoritesQuery.data?.items.length ?? 0) === 0 ? (
+                    {favoritesQuery.isPending ? (
+                      <p role="status">Loading your favorites...</p>
+                    ) : favoritesQuery.isError ? (
+                      <p>Favorites are temporarily unavailable.</p>
+                    ) : (favoritesQuery.data?.items.length ?? 0) === 0 ? (
                       <EmptyState
                         title="No favorites yet"
                         href="/discover"
@@ -1044,7 +1007,7 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-5 transition hover:-translate-y-0.5 hover:border-[var(--primary)]/40 hover:bg-white/[0.07] hover:shadow-[0_16px_40px_-20px_rgba(139,124,255,0.45)]"
+      className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-5 transition hover:-translate-y-0.5 hover:border-[var(--primary)]/40 hover:bg-white/[0.07]"
     >
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)]/20 text-[var(--primary-light)] transition group-hover:bg-[var(--primary)]/30 group-hover:scale-105">
         <Icon className="h-5 w-5" />
@@ -1070,6 +1033,7 @@ function LibrarySection({
   items: Array<{ contentId: string; status: string }>;
   posters?: Record<string, Content | null>;
 }) {
+  const [visibleCount, setVisibleCount] = useState(15);
   if (!items.length) return null;
   return (
     <section>
@@ -1080,7 +1044,7 @@ function LibrarySection({
         </span>
       </h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {items.slice(0, 15).map((i) => (
+        {items.slice(0, visibleCount).map((i) => (
           <PosterCard
             key={i.contentId}
             contentId={i.contentId}
@@ -1088,6 +1052,15 @@ function LibrarySection({
           />
         ))}
       </div>
+      {items.length > visibleCount && (
+        <Button
+          variant="secondary"
+          className="mt-4"
+          onClick={() => setVisibleCount((count) => count + 15)}
+        >
+          Show more ({items.length - visibleCount} remaining)
+        </Button>
+      )}
     </section>
   );
 }
@@ -1110,7 +1083,8 @@ function PosterCard({
   return (
     <Link
       href={href}
-      className="group relative aspect-[2/3] overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] transition hover:-translate-y-1 hover:border-[var(--primary)]/45 hover:shadow-[0_16px_40px_-16px_rgba(139,124,255,0.5)]"
+      aria-label={title}
+      className="group relative aspect-[2/3] overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] transition hover:-translate-y-1 hover:border-[var(--primary)]/45"
     >
       {src ? (
         <Image

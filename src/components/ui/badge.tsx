@@ -11,11 +11,11 @@ export function Badge({
 }) {
   const tones = {
     default: "bg-white/12 text-white",
-    primary: "bg-[var(--primary)] text-white",
+    primary: "bg-[var(--primary)] text-black",
     // Solid gold + dark text so labels stay readable on any card
     gold: "bg-[var(--gold)] !text-black font-bold",
     cyan: "bg-[var(--secondary)] text-[#041218] font-semibold",
-    accent: "bg-[var(--accent)] text-white font-semibold",
+    accent: "bg-[var(--accent)] text-black font-semibold",
     muted: "bg-black/55 text-white",
   };
   return (

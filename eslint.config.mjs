@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     "functions/lib/**",
     ".firebase/**",
     "test-results/**",
+    ".agents/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

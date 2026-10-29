@@ -8,14 +8,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-[var(--primary)] text-white hover:bg-[var(--primary-light)] shadow-[var(--glow-primary)]",
+          "bg-[var(--primary)] text-black hover:bg-[var(--primary-light)]",
         secondary:
           "bg-[var(--surface-elevated)] text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--primary)]/40",
         ghost:
           "bg-transparent text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--text-primary)]",
         outline:
           "border border-[var(--border)] bg-transparent hover:bg-white/5 text-[var(--text-primary)]",
-        danger: "bg-[var(--danger)]/15 text-[var(--danger)] hover:bg-[var(--danger)]/25",
+        danger:
+          "bg-[var(--danger)]/15 text-[var(--danger)] hover:bg-[var(--danger)]/25",
         // Pure black label — wins over global `a { color }` when nested in Links
         gold: "bg-[var(--gold)] !text-black hover:brightness-110 hover:!text-black font-bold",
         cyan: "bg-[var(--secondary)]/15 text-[var(--secondary)] border border-[var(--secondary)]/30 hover:bg-[var(--secondary)]/25",
@@ -35,7 +36,8 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {}
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(

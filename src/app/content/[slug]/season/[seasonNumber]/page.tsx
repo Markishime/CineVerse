@@ -89,7 +89,7 @@ export default function SeasonPage({
               href={`/content/${canonicalPathKey(content)}/season/${s.seasonNumber}`}
               className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                 s.seasonNumber === seasonNum
-                  ? "bg-[var(--primary)] text-white"
+                  ? "bg-[var(--primary)] text-black"
                   : "bg-white/10 text-[var(--text-secondary)] hover:bg-white/15 hover:text-white"
               }`}
             >

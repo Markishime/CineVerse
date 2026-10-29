@@ -781,7 +781,7 @@ export function ContentDetail({ slug }: { slug: string }) {
                         unoptimized
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/35">
-                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--primary)] text-white shadow-lg">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--primary)] text-black shadow-lg">
                           <Play className="h-5 w-5 fill-current" />
                         </span>
                       </div>

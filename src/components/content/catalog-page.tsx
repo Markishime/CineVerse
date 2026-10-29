@@ -505,7 +505,7 @@ export function CatalogPage({
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                 view === "grid"
-                  ? "bg-[var(--primary)] text-white"
+                  ? "bg-[var(--primary)] text-black"
                   : "text-[var(--text-muted)] hover:text-white",
               )}
             >
@@ -519,7 +519,7 @@ export function CatalogPage({
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                 view === "list"
-                  ? "bg-[var(--primary)] text-white"
+                  ? "bg-[var(--primary)] text-black"
                   : "text-[var(--text-muted)] hover:text-white",
               )}
             >

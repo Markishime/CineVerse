@@ -389,7 +389,7 @@ export function Header() {
           ) : (
             <Link
               href="/login"
-              className="hidden rounded-full bg-[var(--primary)] px-4 py-1.5 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:inline-flex"
+              className="hidden rounded-full bg-[var(--primary)] px-4 py-1.5 text-sm font-semibold text-black transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:inline-flex"
             >
               Sign in
             </Link>

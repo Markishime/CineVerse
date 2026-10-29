@@ -654,7 +654,7 @@ export function WatchPage({
                         aria-pressed={s.seasonNumber === activeSeasonNum}
                         className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                           s.seasonNumber === activeSeasonNum
-                            ? "bg-[var(--primary)] text-white"
+                            ? "bg-[var(--primary)] text-black"
                             : "bg-white/10 text-[var(--text-secondary)] hover:bg-white/15"
                         }`}
                       >

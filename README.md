@@ -43,7 +43,6 @@ Open [http://localhost:3000](http://localhost:3000). Without Firebase/TMDB secre
 - [Provider setup](docs/PROVIDER_SETUP.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [PWA & Play Store](docs/PWA_PLAY_STORE.md)
-- [Security checklist](docs/SECURITY_CHECKLIST.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
 
 ## Legal playback

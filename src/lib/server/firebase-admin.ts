@@ -36,9 +36,30 @@ function hasServiceAccount(): boolean {
   );
 }
 
+/**
+ * The Admin SDK pulls in `jose` (ESM) through `jwks-rsa`. Some serverless
+ * runtimes disable `require(ESM)`, which makes `require("firebase-admin/auth")`
+ * throw. Only initialize it where credentials actually exist; everywhere else
+ * the Identity Toolkit lookup in `verifyIdTokenViaApiKey` is used.
+ */
+export function hasAdminCredentials(): boolean {
+  if (hasServiceAccount() || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    return true;
+  }
+  // Vercel has no Application Default Credentials for our project.
+  if (process.env.VERCEL) return false;
+  return Boolean(
+    process.env.K_SERVICE ||
+      process.env.FUNCTION_TARGET ||
+      process.env.GCLOUD_PROJECT,
+  );
+}
+
 function ensureAuth(): typeof authInstance {
   if (initAttempted) return authInstance;
   initAttempted = true;
+
+  if (!hasAdminCredentials()) return null;
 
   try {
     const { getApps, initializeApp, cert, applicationDefault } =
