@@ -11,6 +11,8 @@ import { getClientAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 import { updateMe, updateSettings } from "@/lib/api/user";
 import type { AnimeTitlePreference, ContentType } from "@/types/content";
 import {
+  defaultSettings,
+  GUEST_UID,
   writeLocalProfile,
   writeLocalSettings,
 } from "@/lib/user/local-profile";
@@ -60,35 +62,37 @@ export default function SettingsPage() {
     }
   }
 
-  if (!user) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 pb-24 pt-24 sm:px-6">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]">
-          Account
-        </p>
-        <h1 className="mt-1 font-display text-3xl font-bold text-white">
-          Settings
-        </h1>
-        <p className="mt-2 text-[var(--text-secondary)]">
-          Sign in free to manage profile, region, and preferences. CineVerse is
-          unlimited for every member.
-        </p>
-        <div className="mt-6 flex gap-3">
-          <Link href="/login">
-            <Button>Sign in</Button>
-          </Link>
-          <Link href="/signup">
-            <Button variant="secondary">Create free account</Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const refreshCatalog = () => {
+    for (const key of ["catalog", "home", "providers", "playback"]) {
+      void queryClient.invalidateQueries({ queryKey: [key], refetchType: "all" });
+    }
+  };
 
   const save = async () => {
     setSaving(true);
     setMessage(null);
     setError(null);
+
+    if (!user) {
+      // Visitors: preferences live on this device — no account needed
+      const guestSettings = {
+        ...(settings ?? defaultSettings(GUEST_UID)),
+        uid: GUEST_UID,
+        region: "US",
+        animeTitlePreference: animePref,
+        animeAudioLanguage: animeAudioLang,
+        kdramaAudioLanguage: kdramaAudioLang,
+        generalAudioLanguage: generalAudioLang,
+        updatedAt: new Date().toISOString(),
+      };
+      setSettings(guestSettings);
+      writeLocalSettings(GUEST_UID, guestSettings);
+      setDeviceRegion("US");
+      refreshCatalog();
+      setMessage("Saved on this device.");
+      setSaving(false);
+      return;
+    }
 
     const localProfile = {
       ...(profile ?? {
@@ -219,15 +223,17 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 pb-24 pt-24 sm:px-6">
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--primary-light)]">
-        Account
+        Preferences
       </p>
       <h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-white">
         Settings
       </h1>
       <p className="mt-2 text-[var(--text-secondary)]">
-        Free unlimited account. Cinematic presentation is always on.
+        Free for everyone, no account needed. Preferences are saved on this
+        device.
       </p>
 
+      {user && (
       <section className="mt-8 space-y-4 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
           Profile
@@ -273,6 +279,7 @@ export default function SettingsPage() {
           </Link>
         )}
       </section>
+      )}
 
       <section className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
@@ -304,6 +311,7 @@ export default function SettingsPage() {
         </label>
       </section>
 
+      {matureAccess && (
       <section className="mt-6 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
           Mature catalog
@@ -314,6 +322,7 @@ export default function SettingsPage() {
             : "Mature and adult titles are not available for this account."}
         </p>
       </section>
+      )}
 
       <section className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-[var(--surface)] p-5">
         <h2 className="font-display text-lg font-semibold text-white">
@@ -417,6 +426,7 @@ export default function SettingsPage() {
         <Button onClick={save} disabled={saving || signingOut}>
           {saving ? "Saving…" : "Save settings"}
         </Button>
+        {user && (
         <Button
           variant="danger"
           disabled={signingOut}
@@ -432,12 +442,13 @@ export default function SettingsPage() {
             } finally {
               reset();
               queryClient.clear();
-              router.replace("/login");
+              router.replace("/");
             }
           }}
         >
           {signingOut ? "Signing out…" : "Sign out"}
         </Button>
+        )}
       </div>
 
       <section className="mt-8 flex flex-wrap gap-4 text-sm">

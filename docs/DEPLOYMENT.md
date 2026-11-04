@@ -44,7 +44,7 @@ Framework preset: **Next.js**. No `output: "export"` — API routes are required
 
 - [ ] Open `/watch/movie/550` (or any catalog title) — player loads, **not** “Lost in the nebula”
 - [ ] Home rows show posters (confirms `TMDB_ACCESS_TOKEN`)
-- [ ] Auth sign-in works (Firebase client env)
+- [ ] Site works with no account (playback, My List, settings). Owner-only sign-in at the unlinked `/login` still works (Firebase client env) for 18+ access
 - [ ] Mobile: hard-refresh or “Update now” if an old service worker cached a 404
 - [ ] Privacy / terms pages live
 - [ ] Movies, series, dramas and anime films/episodes start with **VidFast**, followed by **VidRock**, **VidSrc SH**, **MultiEmbed**, **2Embed CC**, **VidLink**, **VidSrc**, **2Embed**, **2Embed Skin**, **VidSrc PM**, and **AutoEmbed**. Anime also retains **Cinezo** and **AniDB** as fallbacks; **MegaPlay is disabled** because it serves a 410 error shell for every tested title. Adults-only/hentai anime lead with **AniDB** and then carry all eleven movie/series servers. VidFast requires a matched TMDB ID; anime without one retains compatible native providers.

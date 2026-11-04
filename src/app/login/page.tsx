@@ -137,9 +137,9 @@ function LoginForm() {
   return (
     <AuthShell
       side="login"
-      badge="Free · Unlimited"
-      title="Welcome back"
-      subtitle="Sign in to track progress, build your list, and pick up where you left off."
+      badge="Owner access"
+      title="Owner sign-in"
+      subtitle="CineVerse is free for everyone with no account. This page is only for the site owner."
       footer={
         <>
           <Link
@@ -149,12 +149,11 @@ function LoginForm() {
             Forgot password
           </Link>
           <span className="mx-1.5 text-white/20">·</span>
-          New here?{" "}
           <Link
-            href="/signup"
+            href="/"
             className="font-medium text-[var(--primary-light)] underline-offset-2 transition-colors hover:text-white hover:underline"
           >
-            Create free account
+            Back to CineVerse
           </Link>
         </>
       }

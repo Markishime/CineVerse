@@ -22,11 +22,11 @@ export default function NotificationsPage() {
       <div className="page-shell max-w-lg text-center">
         <PageHeader
           title="Notifications"
-          description="Sign in to receive airing alerts and recommendations."
+          description="You're all caught up. New picks land on the home page every day."
           className="justify-center text-center [&>div]:mx-auto [&>div]:max-w-none"
         />
-        <Link href="/login" className="mt-8 inline-block">
-          <Button>Sign in</Button>
+        <Link href="/" className="mt-8 inline-block">
+          <Button>Back to home</Button>
         </Link>
       </div>
     );

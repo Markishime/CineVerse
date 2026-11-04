@@ -33,11 +33,12 @@ test.describe("CineVerse smoke", () => {
     ).toBeVisible();
   });
 
-  test("legal provider links require sign-in", async ({ page }) => {
+  test("content is free with no sign-in wall", async ({ page }) => {
     await page.goto("/content/inception-2010");
-    await expect(
-      page.getByRole("heading", { name: "Sign in for legal watch links" }),
-    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("link", { name: /Watch Now/i })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByText(/sign in/i)).toHaveCount(0);
   });
 
   test("offline page exists", async ({ page }) => {

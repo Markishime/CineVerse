@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Star, Trash2 } from "lucide-react";
 import type { Review } from "@/types/content";
 import {
@@ -156,17 +155,7 @@ export function ReviewsSection({ contentId }: { contentId: string }) {
             {busy ? "Posting…" : myReview ? "Update review" : "Post review"}
           </Button>
         </form>
-      ) : (
-        <p className="mb-6 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-[var(--text-secondary)]">
-          <Link
-            href="/login"
-            className="font-medium text-[var(--primary-light)]"
-          >
-            Sign in
-          </Link>{" "}
-          to write a review. Spoiler protection is on by default for readers.
-        </p>
-      )}
+      ) : null}
 
       <ul className="space-y-3">
         {reviews.length === 0 && (

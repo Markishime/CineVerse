@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { errorJson, json, resolveAuth } from "@/lib/server/auth";
+import { errorJson, json } from "@/lib/server/auth";
 import { resolvePlayback } from "@/lib/playback/resolve-playback";
 import { z } from "zod";
 
@@ -27,24 +27,10 @@ const BodySchema = z.object({
 
 /**
  * Resolve in-app legal playback for a title/episode.
- * Requires authentication. Never returns scraped or TMDB stream URLs.
- * Each episode is resolved individually — never a shared generic URL.
+ * Open to everyone — CineVerse needs no account. Never returns scraped or TMDB
+ * stream URLs. Each episode is resolved individually — never a shared generic URL.
  */
-function guestAllowed(result: {
-  playable: boolean;
-  sourceType?: string;
-}): boolean {
-  if (!result.playable) return true; // allow reading "not playable" without auth
-  return (
-    result.sourceType === "public_domain" ||
-    result.sourceType === "creative_commons" ||
-    result.sourceType === "youtube_embed"
-  );
-}
-
 export async function GET(request: NextRequest) {
-  const auth = await resolveAuth(request);
-
   const sp = request.nextUrl.searchParams;
   const parsed = QuerySchema.safeParse({
     titleId: sp.get("titleId") ?? "",
@@ -68,10 +54,6 @@ export async function GET(request: NextRequest) {
     preferFull: parsed.data.preferFull,
   });
 
-  if (!auth.uid && result.playable && !guestAllowed(result)) {
-    return errorJson("Sign in free to play this title", 401);
-  }
-
   return json({
     ...result,
     tmdbIsMetadataOnly: true,
@@ -83,8 +65,6 @@ export async function GET(request: NextRequest) {
 
 /** POST variant for episode resolve (preferred for series). */
 export async function POST(request: NextRequest) {
-  const auth = await resolveAuth(request);
-
   let body: unknown;
   try {
     body = await request.json();
@@ -106,10 +86,6 @@ export async function POST(request: NextRequest) {
     contentIdAliases: parsed.data.contentIdAliases,
     preferFull: parsed.data.preferFull !== false,
   });
-
-  if (!auth.uid && result.playable && !guestAllowed(result)) {
-    return errorJson("Sign in free to play this title", 401);
-  }
 
   return json({
     ...result,

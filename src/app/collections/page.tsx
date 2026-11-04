@@ -35,11 +35,11 @@ export default function CollectionsPage() {
       <div className="page-shell max-w-lg text-center">
         <PageHeader
           title="Collections"
-          description="Sign in to create custom collections."
+          description="Everything you save lives in My List on this device — no account needed."
           className="justify-center [&>div]:mx-auto"
         />
-        <Link href="/login" className="mt-8 inline-block">
-          <Button>Sign in</Button>
+        <Link href="/watchlist" className="mt-8 inline-block">
+          <Button>Open My List</Button>
         </Link>
       </div>
     );

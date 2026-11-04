@@ -15,6 +15,7 @@ import {
   mergeSettings,
   readLocalProfile,
   readLocalSettings,
+  GUEST_UID,
   writeLocalProfile,
   writeLocalSettings,
   setMatureFlagClient,
@@ -76,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isFirebaseConfigured()) {
+      setSettings(readLocalSettings(GUEST_UID) ?? defaultSettings(GUEST_UID));
       setLoading(false);
       return;
     }
@@ -88,6 +90,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!user) {
           clearMatureSessionUnlock();
           reset();
+          // Visitors get device-saved preferences — no account needed
+          setSettings(
+            readLocalSettings(GUEST_UID) ?? defaultSettings(GUEST_UID),
+          );
           setLoading(false);
           return;
         }

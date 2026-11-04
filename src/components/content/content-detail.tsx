@@ -29,7 +29,6 @@ import { MoreLikeThis } from "./more-like-this";
 import { MediaPlayer } from "./media-player";
 import { VideoPlayer } from "./video-player";
 import { ReviewsSection } from "./reviews-section";
-import { AuthGate } from "@/components/auth/auth-gate";
 import { PinGateModal } from "@/components/content/pin-gate";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import {
@@ -532,29 +531,16 @@ export function ContentDetail({ slug }: { slug: string }) {
             </p>
 
             <div className="flex flex-wrap gap-2 pt-1">
-              {user ? (
-                <Link href={getWatchHref(content)} className="watch-now-cta">
-                  <Button
-                    size="lg"
-                    variant="gold"
-                    className="watch-now-cta !text-black"
-                  >
-                    <Play className="h-4 w-4 !text-black" />
-                    Watch Now
-                  </Button>
-                </Link>
-              ) : (
-                <Link href="/login" className="watch-now-cta">
-                  <Button
-                    size="lg"
-                    variant="gold"
-                    className="watch-now-cta !text-black"
-                  >
-                    <Play className="h-4 w-4 !text-black" />
-                    Sign in to Watch
-                  </Button>
-                </Link>
-              )}
+              <Link href={getWatchHref(content)} className="watch-now-cta">
+                <Button
+                  size="lg"
+                  variant="gold"
+                  className="watch-now-cta !text-black"
+                >
+                  <Play className="h-4 w-4 !text-black" />
+                  Watch Now
+                </Button>
+              </Link>
               {trailer?.site === "youtube" && trailer.key ? (
                 <Link href={getTrailerHref(content)}>
                   <Button size="lg" variant="secondary">
@@ -618,8 +604,8 @@ export function ContentDetail({ slug }: { slug: string }) {
               </h2>
               {playback?.eligible ? (
                 <p className="mt-2 text-sm text-[var(--success)]">
-                  Verified rights allow full playback in your region after
-                  sign-in.
+                  Verified rights allow full playback in your region — free,
+                  no account needed.
                 </p>
               ) : (
                 <p className="mt-2 text-sm text-[var(--text-muted)]">
@@ -627,11 +613,7 @@ export function ContentDetail({ slug }: { slug: string }) {
                     "Subscription and rental services for this title."}
                 </p>
               )}
-              <AuthGate
-                className="mt-3"
-                title="Sign in for legal watch links"
-                description="Free unlimited account unlocks provider deep-links, trailers, and season guides for every title."
-              >
+              <div className="mt-3">
                 <ul className="flex flex-wrap gap-2">
                   {(providers?.providers ?? content.watchProviders).map((p) => (
                     <li key={`${p.id}-${p.type}`}>
@@ -677,7 +659,7 @@ export function ContentDetail({ slug }: { slug: string }) {
                     </li>
                   )}
                 </ul>
-              </AuthGate>
+              </div>
             </div>
           </div>
         </Reveal>
@@ -729,24 +711,18 @@ export function ContentDetail({ slug }: { slug: string }) {
             title={title}
             trailer={activeTrailer}
             legalFull={playback?.legalFull}
-            eligible={Boolean(user && playback?.eligible)}
+            eligible={Boolean(playback?.eligible)}
             autoOpenTrailer={playTrailer && !playFull}
             autoOpenFull={
-              (playFull || Boolean(playback?.eligible)) && Boolean(user)
+              playFull || Boolean(playback?.eligible)
             }
             providers={providers?.providers ?? content.watchProviders}
             keepInApp
           />
           {content.playable || playback?.eligible ? (
-            user ? (
-              <p className="mt-2 text-xs text-[var(--success)]">
-                Free full stream available in-app.
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-[var(--gold)]">
-                Sign in to watch the full stream in-app.
-              </p>
-            )
+            <p className="mt-2 text-xs text-[var(--success)]">
+              Free full stream available in-app.
+            </p>
           ) : null}
         </div>
 
@@ -755,7 +731,6 @@ export function ContentDetail({ slug }: { slug: string }) {
             <h2 className="mb-4 font-display text-xl font-semibold text-white">
               Official trailers
             </h2>
-            <AuthGate title="Sign in to browse trailers">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {allTrailers.map((t) => (
                   <button
@@ -799,7 +774,6 @@ export function ContentDetail({ slug }: { slug: string }) {
                   </button>
                 ))}
               </div>
-            </AuthGate>
           </section>
         )}
 

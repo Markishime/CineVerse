@@ -75,6 +75,9 @@ export function defaultProfileFromUser(user: User): UserProfile {
   };
 }
 
+/** Settings key for visitors — CineVerse needs no account. */
+export const GUEST_UID = "guest";
+
 export function defaultSettings(uid: string): UserSettings {
   return {
     uid,

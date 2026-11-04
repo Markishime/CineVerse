@@ -401,8 +401,8 @@ export function WatchPage({
           | "cloudflare",
       }
     : null;
-  // Full playback requires sign-in — non-auth users only see trailers
-  const canFull = Boolean(user && playback?.eligible && legalFull);
+  // Full playback is free for everyone — no account needed
+  const canFull = Boolean(playback?.eligible && legalFull);
   // Watch Now (play=full / default) never auto-opens the trailer — only
   // explicit ?play=trailer does. Full legal sources still autoplay when present.
   const autoFull = (play === "full" || play == null) && canFull;
@@ -510,19 +510,6 @@ export function WatchPage({
           />
         </div>
 
-        {/* Sign-in prompt for non-auth users when full playback is available */}
-        {!user && playback?.eligible && (
-          <div className="mt-3 flex items-center gap-3 rounded-xl border border-[var(--gold)]/30 bg-[var(--gold)]/10 px-4 py-3">
-            <p className="text-sm text-white">
-              <strong>Sign in</strong> to watch the full movie or series.
-            </p>
-            <Link href="/login">
-              <Button size="sm" variant="gold" className="!text-black">
-                Sign in
-              </Button>
-            </Link>
-          </div>
-        )}
         {/* Always show embed player when any stream id exists (hentai = AniList/MAL) */}
         {(content.providerIds?.anilist ||
           content.providerIds?.mal ||

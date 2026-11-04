@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bookmark, Trash2 } from "lucide-react";
 import { deleteLibrary, fetchLibrary } from "@/lib/api/user";
@@ -152,7 +151,7 @@ export default function WatchlistPage() {
         description={
           user
             ? "Saved on this device and synced when online."
-            : "Saved on this device. Sign in to sync across devices."
+            : "Saved on this device — no account needed."
         }
         actions={
           <>
@@ -171,11 +170,6 @@ export default function WatchlistPage() {
             >
               Refresh
             </Button>
-            {!user && (
-              <Link href="/login">
-                <Button size="sm">Sign in to sync</Button>
-              </Link>
-            )}
           </>
         }
       />

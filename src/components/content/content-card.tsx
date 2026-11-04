@@ -14,7 +14,6 @@ import {
 } from "@/lib/content/watch-href";
 import { AddToListButton } from "@/components/content/add-to-list-button";
 import { useContinueProgress } from "@/hooks/use-continue-progress";
-import { useAuthStore } from "@/stores/auth-store";
 import {
   posterFallbackLabel,
   resizeTmdbImage,
@@ -65,7 +64,6 @@ function ContentCardBase({
   const watchHref = getWatchHref(content);
   const detailsHref = getDetailsHref(content);
   const progress = useContinueProgress(content.id);
-  const user = useAuthStore((s) => s.user);
   const [imgFailed, setImgFailed] = useState(false);
   // Always resolve a displayable URL (real art or local SVG — never blank)
   const preferred = resolveCardImageUrl(content, { preferBackdrop: wide });
@@ -95,10 +93,10 @@ function ContentCardBase({
     >
       <div
         className={cn(
-          "relative overflow-hidden rounded-lg bg-[var(--surface)] ring-1 ring-white/10",
+          "card-sheen relative overflow-hidden rounded-lg bg-[var(--surface)] ring-1 ring-white/10",
           "transition-[transform,box-shadow] duration-300 ease-out",
           // hover: only applies on hover-capable devices (Tailwind v4)
-          "group-hover:z-10 group-hover:scale-[1.06] group-hover:shadow-[0_18px_44px_-14px_rgba(0,0,0,0.9)] group-hover:ring-white/30",
+          "group-hover:z-10 group-hover:-translate-y-1 group-hover:scale-[1.06] group-hover:shadow-[0_22px_50px_-14px_rgba(0,0,0,0.9),0_0_30px_-8px_rgba(34,211,238,0.45)] group-hover:ring-[var(--primary)]/50",
           "group-focus-within:ring-2 group-focus-within:ring-[var(--ring)]",
           wide ? "aspect-video" : "aspect-[2/3]",
         )}
@@ -158,8 +156,8 @@ function ContentCardBase({
         >
           <Link
             prefetch={false}
-            href={user ? watchHref : "/login"}
-            aria-label={user ? `Play ${title}` : `Sign in to watch ${title}`}
+            href={watchHref}
+            aria-label={`Play ${title}`}
             className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105 hover:bg-white/90 active:scale-95"
           >
             <Play className="h-4 w-4 fill-current" aria-hidden />

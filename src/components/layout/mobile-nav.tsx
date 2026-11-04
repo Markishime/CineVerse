@@ -12,7 +12,7 @@ const items = [
   { href: "/discover", label: "Discover", icon: Compass },
   { href: "/search", label: "Search", icon: Search },
   { href: "/watchlist", label: "My List", icon: Bookmark },
-  { href: "/profile", label: "Profile", icon: User },
+  { href: "/profile", label: "You", icon: User },
 ];
 
 export function MobileNav() {
@@ -31,17 +31,14 @@ export function MobileNav() {
             item.href === "/profile"
               ? user && profile?.username
                 ? `/profile/${profile.username}`
-                : user
-                  ? "/settings"
-                  : "/login"
+                : "/settings"
               : item.href;
           const active =
             item.href === "/"
               ? pathname === "/"
               : item.href === "/profile"
                 ? pathname.startsWith("/profile") ||
-                  pathname.startsWith("/settings") ||
-                  pathname.startsWith("/login")
+                  pathname.startsWith("/settings")
                 : pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
