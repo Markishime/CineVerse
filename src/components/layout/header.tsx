@@ -13,12 +13,19 @@ import {
   ListVideo,
   Menu,
   Search,
+  Settings,
   Sparkles,
   Tv,
   User,
   X,
 } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  useScroll,
+  useSpring,
+} from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 
@@ -106,6 +113,36 @@ const baseNav: NavItem[] = [
   { href: "/watchlist", label: "My List", icon: ListVideo },
 ];
 
+/** Active-route highlight that glides between nav items. */
+function NavPill() {
+  const reduce = useReducedMotion();
+  return (
+    <motion.span
+      layoutId={reduce ? undefined : "header-nav-pill"}
+      className="absolute inset-0 -z-10 rounded-lg border border-white/10 bg-white/10 shadow-[0_0_20px_-6px_rgba(34,211,238,0.6)]"
+      transition={{ type: "spring", stiffness: 380, damping: 32 }}
+      aria-hidden
+    />
+  );
+}
+
+/** Thin brand-coloured bar that tracks page scroll. */
+function ScrollProgress() {
+  const { scrollYProgress } = useScroll();
+  const scaleX = useSpring(scrollYProgress, {
+    stiffness: 140,
+    damping: 30,
+    mass: 0.3,
+  });
+  return (
+    <motion.div
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] origin-left bg-gradient-to-r from-[var(--primary)] via-[var(--primary-light)] to-violet-400"
+      style={{ scaleX }}
+      aria-hidden
+    />
+  );
+}
+
 function NavDropdown({
   item,
   active,
@@ -150,13 +187,14 @@ function NavDropdown({
       <Link
         href={item.href}
         className={cn(
-          "flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+          "relative flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
           active
-            ? "bg-white/10 text-white"
+            ? "text-white"
             : "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
         )}
         aria-current={active ? "page" : undefined}
       >
+        {active && <NavPill />}
         {item.label}
         <ChevronDown
           className={cn(
@@ -168,10 +206,11 @@ function NavDropdown({
       <AnimatePresence>
         {isOpen && item.children && (
           <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, y: -8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            style={{ transformOrigin: "top left" }}
             className={cn(
               "absolute left-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-[0_16px_48px_rgba(0,0,0,0.5)]",
               item.children.length > 8 ? "w-[34rem]" : "min-w-[190px]",
@@ -183,18 +222,28 @@ function NavDropdown({
                 item.children.length > 8 && "grid grid-cols-3 p-2",
               )}
             >
-              {item.children.map((child) => {
+              {item.children.map((child, ci) => {
                 return (
-                  <Link
+                  <motion.div
                     key={child.href}
-                    href={child.href}
-                    className={cn(
-                      "block px-4 py-2 text-sm transition-colors",
-                      "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
-                    )}
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      duration: 0.25,
+                      delay: 0.025 * ci,
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
                   >
-                    {child.label}
-                  </Link>
+                    <Link
+                      href={child.href}
+                      className={cn(
+                        "block px-4 py-2 text-sm transition-all duration-200 hover:translate-x-1",
+                        "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
+                      )}
+                    >
+                      {child.label}
+                    </Link>
+                  </motion.div>
                 );
               })}
             </div>
@@ -243,6 +292,7 @@ export function Header() {
           : "border-b border-transparent bg-gradient-to-b from-black/70 via-black/30 to-transparent",
       )}
     >
+      {solid && !reduce && <ScrollProgress />}
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-5">
           <Link
@@ -257,12 +307,14 @@ export function Header() {
               className="h-7 w-7 sm:h-8 sm:w-8"
               aria-hidden
             >
+              <g className="logo-orbit">
               <circle
                 cx="16"
                 cy="16"
                 r="15"
                 stroke="var(--primary-light)"
                 strokeWidth="1.5"
+                strokeDasharray="70 24"
                 opacity="0.6"
               />
               <circle cx="16" cy="16" r="5" fill="var(--primary-light)" />
@@ -308,6 +360,7 @@ export function Header() {
                 fill="var(--primary-light)"
                 opacity="0.5"
               />
+              </g>
             </svg>
             <span className="font-display text-lg font-bold tracking-tight text-[var(--primary-light)] transition-colors hover:text-white sm:text-xl">
               CineVerse
@@ -343,13 +396,14 @@ export function Header() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+                    "relative rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
                     active
-                      ? "bg-white/10 text-white"
+                      ? "text-white"
                       : "text-[var(--text-secondary)] hover:bg-white/5 hover:text-white",
                   )}
                   aria-current={active ? "page" : undefined}
                 >
+                  {active && <NavPill />}
                   {item.label}
                 </Link>
               );
@@ -388,10 +442,11 @@ export function Header() {
             </Link>
           ) : (
             <Link
-              href="/login"
-              className="hidden rounded-full bg-[var(--primary)] px-4 py-1.5 text-sm font-semibold text-black transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:inline-flex"
+              href="/settings"
+              className="hidden h-10 w-10 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:inline-flex"
+              aria-label="Settings"
             >
-              Sign in
+              <Settings className="h-5 w-5" />
             </Link>
           )}
           <button
@@ -500,12 +555,12 @@ export function Header() {
               })}
               <li>
                 <Link
-                  href={user ? "/settings" : "/login"}
+                  href="/settings"
                   onClick={closeMenu}
                   className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-white/5 hover:text-white"
                 >
                   <User className="h-4 w-4" aria-hidden />
-                  {user ? "Settings" : "Sign in"}
+                  Settings
                 </Link>
               </li>
             </ul>

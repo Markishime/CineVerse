@@ -170,18 +170,33 @@ function ContentRowInner({
   emblaApi: ReturnType<typeof useEmblaCarousel>[1];
   eager: boolean;
 }) {
+  // Cards are hidden only after hydration, so server HTML always shows them.
+  const [animate, setAnimate] = useState(false);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (reduce) return;
+    const t = window.setTimeout(() => setAnimate(true), 0);
+    return () => window.clearTimeout(t);
+  }, [reduce]);
+
   return (
     <motion.section
-      className="relative space-y-3"
+      className={cn(
+        "relative space-y-3",
+        animate ? "row-anim" : "row-static",
+        shown && "row-shown",
+      )}
       initial={false}
       whileInView={reduce ? undefined : rowEnter.animate}
       viewport={inViewOnce}
+      onViewportEnter={() => setShown(true)}
       transition={rowEnter.transition}
       aria-label={title}
     >
       <div className="flex items-end justify-between gap-4 px-1">
         <div className="min-w-0">
-          <h2 className="font-display text-xl font-semibold tracking-tight text-white sm:text-2xl">
+          <h2 className="flex items-center gap-2.5 font-display text-xl font-semibold tracking-tight text-white sm:text-2xl">
+            <span className="row-accent" aria-hidden />
             {title}
           </h2>
           {subtitle && (
@@ -193,7 +208,7 @@ function ContentRowInner({
             variant="ghost"
             size="icon"
             aria-label={`Scroll ${title} left`}
-            className="h-9 w-9 border border-white/10 bg-[var(--surface)] hover:bg-white/8"
+            className="h-9 w-9 border border-white/10 bg-[var(--surface)] transition-transform hover:-translate-x-0.5 hover:border-[var(--primary)]/50 hover:bg-white/8"
             onClick={() => emblaApi?.scrollPrev()}
           >
             <ChevronLeft className="h-5 w-5" />
@@ -202,7 +217,7 @@ function ContentRowInner({
             variant="ghost"
             size="icon"
             aria-label={`Scroll ${title} right`}
-            className="h-9 w-9 border border-white/10 bg-[var(--surface)] hover:bg-white/8"
+            className="h-9 w-9 border border-white/10 bg-[var(--surface)] transition-transform hover:translate-x-0.5 hover:border-[var(--primary)]/50 hover:bg-white/8"
             onClick={() => emblaApi?.scrollNext()}
           >
             <ChevronRight className="h-5 w-5" />
@@ -210,15 +225,20 @@ function ContentRowInner({
         </div>
       </div>
       <div className="-my-4 overflow-hidden py-4" ref={emblaRef}>
-        <div className="flex gap-3 pb-1">
+        <div className="row-track flex gap-3 pb-1">
           {items.map((item, i) => (
-            <ContentCard
+            <div
               key={`${title}-${item.id}`}
-              content={item}
-              wide={wide}
-              rank={showRank ? i + 1 : undefined}
-              priority={eager && i < 6}
-            />
+              className="flex-none"
+              style={{ "--i": i } as React.CSSProperties}
+            >
+              <ContentCard
+                content={item}
+                wide={wide}
+                rank={showRank ? i + 1 : undefined}
+                priority={eager && i < 6}
+              />
+            </div>
           ))}
         </div>
       </div>

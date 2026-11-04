@@ -5,7 +5,7 @@ import { Header } from "@/components/layout/header";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { PageTransition } from "@/components/motion/page-transition";
 
-const AUTH_PATHS = new Set(["/login", "/signup", "/forgot-password"]);
+const AUTH_PATHS = new Set(["/login", "/forgot-password"]);
 
 export function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -26,6 +26,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <div className="ambient-aurora" aria-hidden />
       <Header />
       <main
         className={

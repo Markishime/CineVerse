@@ -28,6 +28,7 @@ import { ContentCard } from "./content-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Reveal } from "@/components/motion/reveal";
+import { SplitWords } from "@/components/motion/split-words";
 import { displayTitle, primaryScore } from "@/lib/content/normalize";
 import { cn, formatRuntime, formatScore } from "@/lib/utils";
 import {
@@ -367,13 +368,13 @@ export function CatalogPage({
         <Reveal
           inView={false}
           className={cn(
-            "mb-6 space-y-2 rounded-2xl p-6 surface-card",
+            "glow-border mb-6 space-y-2 rounded-2xl p-6 surface-card",
             m.className,
           )}
         >
           <header>
             <h1 className="font-display text-3xl font-bold text-white sm:text-4xl">
-              {title ?? m.title}
+              <SplitWords text={title ?? m.title} />
             </h1>
             <p className="max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
               {subtitle ?? m.subtitle}

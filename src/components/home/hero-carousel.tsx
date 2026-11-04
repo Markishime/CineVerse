@@ -5,7 +5,15 @@ import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import YouTube, { type YouTubeEvent, type YouTubeProps } from "react-youtube";
-import { motion, useMotionValue } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useScroll,
+  useSpring,
+  useTransform,
+} from "framer-motion";
+import { SplitWords } from "@/components/motion/split-words";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import {
   ChevronLeft,
@@ -303,6 +311,39 @@ function runtimeOrSeasons(
   return null;
 }
 
+/** Pointer-follow "magnetic" wrapper for the primary hero action. */
+function Magnetic({
+  children,
+  disabled,
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const sx = useSpring(x, { stiffness: 260, damping: 18, mass: 0.4 });
+  const sy = useSpring(y, { stiffness: 260, damping: 18, mass: 0.4 });
+  if (disabled) return <>{children}</>;
+  return (
+    <motion.span
+      className="inline-flex"
+      style={{ x: sx, y: sy }}
+      onPointerMove={(e) => {
+        if (e.pointerType !== "mouse") return;
+        const r = e.currentTarget.getBoundingClientRect();
+        x.set((e.clientX - (r.left + r.width / 2)) * 0.28);
+        y.set((e.clientY - (r.top + r.height / 2)) * 0.35);
+      }}
+      onPointerLeave={() => {
+        x.set(0);
+        y.set(0);
+      }}
+    >
+      {children}
+    </motion.span>
+  );
+}
+
 function HeroCopy({
   item,
   eyebrow,
@@ -321,7 +362,6 @@ function HeroCopy({
 
   const Wrap = animated ? motion.div : "div";
   const Item = animated ? motion.div : "div";
-  const Title = animated ? motion.h1 : "h1";
   const P = animated ? motion.p : "p";
 
   const itemProps = animated ? { variants: heroCopyItem } : {};
@@ -336,59 +376,60 @@ function HeroCopy({
 
   return (
     <Wrap
-      className="hero-feature-copy w-full max-w-[44rem]"
+      className="hero-feature-copy w-full max-w-[52rem]"
       {...containerProps}
     >
-      <P
-        className="hero-feature-eyebrow mb-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/75 sm:mb-5 sm:text-xs"
+      <Item
+        className="hero-feature-eyebrow mb-5 flex flex-wrap items-center gap-2 sm:mb-6"
         {...itemProps}
       >
-        {eyebrow || "Featured today"}
-      </P>
+        <span className="hero-chip">
+          <span className="hero-live-dot" aria-hidden />
+          <span>{eyebrow || "Featured today"}</span>
+        </span>
+        <span className="hero-chip hero-chip--free">Free · No sign-up</span>
+      </Item>
 
-      <Title
-        className="hero-feature-title text-balance font-display font-bold leading-[1.02] tracking-[-0.045em] text-[var(--text-primary)]"
-        {...itemProps}
-      >
+      <h1 className="hero-feature-title text-balance font-display font-bold leading-[0.98] tracking-[-0.05em] text-[var(--text-primary)]">
         <Link
           href={detailsHref}
           className="rounded-sm !text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
         >
-          {title}
+          {animated ? <SplitWords text={title} delay={2} /> : title}
         </Link>
-      </Title>
+      </h1>
 
       <Item
-        className="hero-feature-meta mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-white/80 sm:text-sm"
+        className="hero-feature-meta mt-5 flex flex-wrap items-center gap-2 text-xs font-medium text-white/85 sm:text-sm"
         {...itemProps}
       >
         {score != null && (
-          <span className="inline-flex items-center gap-1 text-white">
-            <Star className="h-3.5 w-3.5 fill-current" />
+          <span className="hero-meta-pill text-white">
+            <Star className="h-3.5 w-3.5 fill-[var(--primary-light)] text-[var(--primary-light)]" />
             {formatScore(score)}
           </span>
         )}
-        {item.year && <span>{item.year}</span>}
+        {item.year && <span className="hero-meta-pill">{item.year}</span>}
         {item.ageRating && (
-          <span className="border border-white/40 px-1.5 py-0.5 text-[10px]">
+          <span className="hero-meta-pill hero-meta-pill--outline">
             {item.ageRating}
           </span>
         )}
-        {runtimeLabel && <span>{runtimeLabel}</span>}
+        {runtimeLabel && <span className="hero-meta-pill">{runtimeLabel}</span>}
       </Item>
 
       {genreNames.length > 0 && (
         <P
-          className="hero-feature-genres mt-3 text-xs font-medium text-white/70 sm:text-sm"
+          className="hero-feature-genres mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--primary-light)]/85 sm:text-[13px]"
           {...itemProps}
         >
-          {genreNames.join(" · ")}
+          {genreNames.join("  ·  ")}
         </P>
       )}
 
       {item.overview && (
         <P
-          className="hero-feature-description mt-4 line-clamp-3 max-w-[34rem] text-sm leading-relaxed text-white/90 sm:text-lg"
+          className="hero-feature-description mt-4 line-clamp-3 max-w-[36rem] text-sm leading-relaxed text-white/85 sm:text-lg"
           {...itemProps}
         >
           {item.overview}
@@ -396,25 +437,27 @@ function HeroCopy({
       )}
 
       <Item
-        className="hero-feature-actions mt-7 flex flex-wrap items-center gap-2.5 sm:mt-8 sm:gap-3"
+        className="hero-feature-actions mt-7 flex flex-wrap items-center gap-2.5 sm:mt-9 sm:gap-3"
         {...itemProps}
       >
-        <Link
-          href={watchHref}
-          className={cn(
-            buttonVariants({ size: "lg", variant: "ghost" }),
-            "hero-play-button h-11 rounded px-6 font-semibold motion-safe:active:scale-[0.98] sm:h-12 sm:px-8",
-          )}
-        >
-          <Play className="h-5 w-5 fill-current" aria-hidden />
-          Play
-        </Link>
+        <Magnetic disabled={!animated}>
+          <Link
+            href={watchHref}
+            className={cn(
+              buttonVariants({ size: "lg", variant: "ghost" }),
+              "hero-play-button h-12 rounded-full px-7 font-semibold motion-safe:active:scale-[0.97] sm:h-14 sm:px-9 sm:text-[17px]",
+            )}
+          >
+            <Play className="h-5 w-5 fill-current" aria-hidden />
+            Play
+          </Link>
+        </Magnetic>
         <Link
           href={detailsHref}
           aria-label={`More info about ${title}`}
           className={cn(
             buttonVariants({ size: "lg", variant: "ghost" }),
-            "hero-info-button h-11 rounded px-5 font-semibold motion-safe:active:scale-[0.98] sm:h-12 sm:px-7",
+            "hero-info-button h-12 rounded-full px-6 font-semibold motion-safe:active:scale-[0.97] sm:h-14 sm:px-8 sm:text-[17px]",
           )}
         >
           <Info className="h-5 w-5" aria-hidden />
@@ -716,6 +759,42 @@ export function HeroCarousel({
     }
   }, [previewEnabled]);
 
+  // Scroll parallax: backdrop drifts slower than the page, copy lifts away.
+  const { scrollY } = useScroll();
+  const bgScrollY = useTransform(scrollY, [0, 900], [0, 170]);
+  const bgScale = useTransform(scrollY, [0, 900], [1, 1.12]);
+  const copyY = useTransform(scrollY, [0, 700], [0, -110]);
+  const copyOpacity = useTransform(scrollY, [0, 560], [1, 0]);
+  // Pointer parallax (mouse only): backdrop and copy move in opposite planes.
+  const pointerX = useMotionValue(0);
+  const pointerY = useMotionValue(0);
+  const springX = useSpring(pointerX, { stiffness: 50, damping: 16 });
+  const springY = useSpring(pointerY, { stiffness: 50, damping: 16 });
+  const bgPx = useTransform(springX, (v) => v * -18);
+  const bgPy = useTransform(springY, (v) => v * -12);
+  const copyPx = useTransform(springX, (v) => v * 8);
+  const motionOn = !reduceMotion;
+
+  const onHeroPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLElement>) => {
+      if (reduceMotion || e.pointerType !== "mouse") return;
+      const r = e.currentTarget.getBoundingClientRect();
+      pointerX.set(((e.clientX - r.left) / r.width) * 2 - 1);
+      pointerY.set(((e.clientY - r.top) / r.height) * 2 - 1);
+    },
+    [reduceMotion, pointerX, pointerY],
+  );
+
+  const upNext = useMemo(() => {
+    if (slides.length < 2) return [];
+    const out: { item: Content; i: number }[] = [];
+    for (let step = 1; step <= Math.min(3, slides.length - 1); step++) {
+      const i = (index + step) % slides.length;
+      out.push({ item: slides[i]!, i });
+    }
+    return out;
+  }, [slides, index]);
+
   if (!slides.length) {
     return (
       <section
@@ -743,6 +822,11 @@ export function HeroCarousel({
       aria-label="Featured titles"
       aria-roledescription="carousel"
       data-featured-index={index}
+      onPointerMove={onHeroPointerMove}
+      onPointerLeave={() => {
+        pointerX.set(0);
+        pointerY.set(0);
+      }}
     >
       <div
         className="hero-feature-viewport w-full overflow-hidden"
@@ -782,25 +866,57 @@ export function HeroCarousel({
                 aria-hidden={!isActive}
                 inert={!isActive}
               >
-                <HeroTrailerBg
-                  trailerKey={trailerKey}
-                  alternateKeys={altKeys}
-                  title={title}
-                  poster={poster}
-                  active={isActive}
-                  playbackAllowed={playbackAllowed && isActive}
-                  reduceMotion={reduceMotion}
-                  onPlayer={isActive ? registerActivePlayer : undefined}
-                />
+                <motion.div
+                  className="absolute inset-0"
+                  style={
+                    motionOn && isActive
+                      ? { y: bgScrollY, scale: bgScale }
+                      : undefined
+                  }
+                >
+                  <motion.div
+                    className="absolute -inset-[3%]"
+                    style={motionOn && isActive ? { x: bgPx, y: bgPy } : undefined}
+                  >
+                    <HeroTrailerBg
+                      trailerKey={trailerKey}
+                      alternateKeys={altKeys}
+                      title={title}
+                      poster={poster}
+                      active={isActive}
+                      playbackAllowed={playbackAllowed && isActive}
+                      reduceMotion={reduceMotion}
+                      onPlayer={isActive ? registerActivePlayer : undefined}
+                    />
+                  </motion.div>
+                </motion.div>
 
                 <div className="hero-feature-shade pointer-events-none absolute inset-0 z-[3]" />
+                {isActive && motionOn ? (
+                  <div
+                    className="pointer-events-none absolute inset-0 z-[4] overflow-hidden"
+                    aria-hidden
+                  >
+                    <div className="hero-aurora" />
+                    <div key={`sweep-${index}`} className="hero-sweep" />
+                  </div>
+                ) : null}
 
                 <div className="hero-feature-content relative z-10 mx-auto flex h-full w-full items-center">
-                  <HeroCopy
-                    item={item}
-                    eyebrow={eyebrow}
-                    animated={isActive && !reduceMotion}
-                  />
+                  <motion.div
+                    className="w-full"
+                    style={
+                      motionOn && isActive
+                        ? { y: copyY, opacity: copyOpacity, x: copyPx }
+                        : undefined
+                    }
+                  >
+                    <HeroCopy
+                      item={item}
+                      eyebrow={eyebrow}
+                      animated={isActive && motionOn}
+                    />
+                  </motion.div>
                 </div>
               </div>
             );
@@ -844,6 +960,30 @@ export function HeroCarousel({
               <Play className="h-4 w-4" />
             )}
           </Button>
+          {slides.length > 1 && (
+            <p
+              className="hero-counter ml-3 hidden items-baseline gap-1.5 font-display tabular-nums text-white/60 sm:flex"
+              aria-hidden
+            >
+              <span className="relative inline-block h-[1.4em] w-[2ch] overflow-hidden text-lg font-semibold text-white">
+                <AnimatePresence mode="popLayout" initial={false}>
+                  <motion.span
+                    key={index}
+                    className="absolute inset-0"
+                    initial={motionOn ? { y: "100%", opacity: 0 } : false}
+                    animate={{ y: "0%", opacity: 1 }}
+                    exit={motionOn ? { y: "-100%", opacity: 0 } : undefined}
+                    transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    {String(index + 1).padStart(2, "0")}
+                  </motion.span>
+                </AnimatePresence>
+              </span>
+              <span className="text-xs">
+                / {String(slides.length).padStart(2, "0")}
+              </span>
+            </p>
+          )}
         </div>
         <div
           className="flex min-w-0 items-center"
@@ -878,6 +1018,88 @@ export function HeroCarousel({
           ))}
         </div>
       </div>
+
+      {upNext.length > 0 && (
+        <div className="hero-upnext absolute z-20" role="group" aria-label="Up next">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/60">
+            Up next
+          </p>
+          <ul className="flex flex-col gap-2">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {upNext.map(({ item, i }, n) => {
+                const t = displayTitle(item);
+                const art =
+                  normalizeImageUrl(item.backdrop?.url) ??
+                  normalizeImageUrl(item.poster?.url);
+                return (
+                  <motion.li
+                    key={item.id}
+                    layout={motionOn}
+                    initial={motionOn ? { opacity: 0, x: 40 } : false}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={motionOn ? { opacity: 0, x: -24, scale: 0.96 } : undefined}
+                    transition={{
+                      duration: 0.5,
+                      ease: [0.16, 1, 0.3, 1],
+                      delay: motionOn ? n * 0.06 : 0,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => emblaApi?.scrollTo(i, reduceMotion)}
+                      aria-label={`Up next: ${t}`}
+                      className="hero-upnext-card group"
+                    >
+                      <span className="relative block aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-white/5">
+                        {art ? (
+                          <Image
+                            src={resizeTmdbImage(art, "w342")}
+                            alt=""
+                            fill
+                            sizes="112px"
+                            loading="lazy"
+                            unoptimized
+                            className="object-cover transition-transform duration-500 group-hover:scale-110"
+                          />
+                        ) : null}
+                      </span>
+                      <span className="min-w-0 text-left">
+                        <span className="block truncate text-sm font-semibold text-white">
+                          {t}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-white/55">
+                          {[item.year, item.genres?.[0]?.name]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </span>
+                    </button>
+                  </motion.li>
+                );
+              })}
+            </AnimatePresence>
+          </ul>
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="hero-scroll-cue-wrap absolute z-[21]"
+        onClick={() =>
+          document
+            .getElementById("home-catalog")
+            ?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" })
+        }
+        aria-label="Scroll to the catalog"
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60">
+          Scroll
+        </span>
+        <span className="hero-scroll-line" aria-hidden />
+      </button>
+
+      {/* CSS-only intro fade: runs before hydration, never blocks first paint */}
+      <div className="hero-curtain" aria-hidden />
     </section>
   );
 }

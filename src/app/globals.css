@@ -178,27 +178,168 @@ body.cineverse-cinema-mode header {
 }
 
 .hero-feature-title {
-  font-size: clamp(2.5rem, 5.5vw, 5.75rem);
+  font-size: clamp(2.4rem, 7vw, 7.25rem);
+  text-shadow: 0 6px 40px rgba(5, 11, 24, 0.45);
 }
 
+/* Primary hero action: bright pill with a light sheen that sweeps on hover */
 .hero-play-button,
 .hero-play-button:hover {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   color: var(--background);
   background: var(--text-primary);
+  box-shadow:
+    0 10px 40px -10px rgba(165, 243, 252, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
 }
-
+.hero-play-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    110deg,
+    transparent 30%,
+    rgba(34, 211, 238, 0.35) 50%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hero-play-button:hover::after {
+  transform: translateX(120%);
+}
 .hero-play-button:hover {
-  background: #dfe2e7;
+  background: #eafcff;
 }
 
 .hero-info-button,
 .hero-info-button:hover {
   color: var(--text-primary);
-  background: rgb(109 109 110 / 65%);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.hero-info-button:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(165, 243, 252, 0.55);
 }
 
-.hero-info-button:hover {
-  background: rgb(109 109 110 / 45%);
+/* Eyebrow chips + meta pills */
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(5, 11, 24, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 0.35rem 0.85rem;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+.hero-chip--free {
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.14);
+  color: var(--primary-light);
+}
+.hero-live-dot {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 12px var(--primary);
+}
+.hero-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.2rem 0.65rem;
+}
+.hero-meta-pill--outline {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Up-next rail: only on large, tall screens where the right side is free */
+.hero-upnext {
+  display: none;
+  right: clamp(1.25rem, 4vw, 4rem);
+  bottom: 7.5rem;
+  width: 19rem;
+}
+@media (min-width: 1280px) and (min-height: 760px) {
+  .hero-upnext {
+    display: block;
+  }
+}
+.hero-upnext-card {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(5, 11, 24, 0.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 0.4rem;
+  transition:
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s,
+    background-color 0.25s;
+}
+.hero-upnext-card:hover,
+.hero-upnext-card:focus-visible {
+  transform: translateX(-6px);
+  border-color: rgba(165, 243, 252, 0.5);
+  background: rgba(13, 28, 49, 0.7);
+  outline: none;
+}
+
+/* Scroll cue: centered at the bottom on desktop-sized screens */
+.hero-scroll-cue-wrap {
+  display: none;
+  left: 50%;
+  bottom: 1.75rem;
+  transform: translateX(-50%);
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+}
+@media (min-width: 768px) and (min-height: 640px) {
+  .hero-scroll-cue-wrap {
+    display: flex;
+  }
+}
+.hero-scroll-line {
+  position: relative;
+  display: block;
+  width: 1px;
+  height: 2.75rem;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.2);
+}
+.hero-scroll-line::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 45%;
+  background: linear-gradient(transparent, var(--primary-light));
 }
 
 .hero-feature-shade {
@@ -315,10 +456,275 @@ body.cineverse-cinema-mode header {
     }
   }
 
-  .landing-row-enter {
-    /* will-change removed for perf — 20+ rows with will-change is expensive */
+  .hero-scroll-line::after {
+    animation: hero-scroll-drop 1.8s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+  @keyframes hero-scroll-drop {
+    from {
+      transform: translateY(-100%);
+    }
+    to {
+      transform: translateY(230%);
+    }
+  }
+
+  .hero-live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--primary);
+    animation: hero-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  @keyframes hero-ping {
+    75%,
+    100% {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+
+  .hero-curtain {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    background: var(--background);
+    animation: hero-curtain-out 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes hero-curtain-out {
+    from {
+      opacity: 0.85;
+    }
+    to {
+      opacity: 0;
+      visibility: hidden;
+    }
+  }
+
+  /* Slow-drifting light that tints the backdrop in brand colours */
+  .hero-aurora {
+    position: absolute;
+    inset: -25%;
+    opacity: 0.55;
+    mix-blend-mode: screen;
+    background:
+      radial-gradient(
+        38% 32% at 18% 78%,
+        rgba(34, 211, 238, 0.22),
+        transparent 70%
+      ),
+      radial-gradient(
+        30% 26% at 78% 22%,
+        rgba(139, 92, 246, 0.2),
+        transparent 70%
+      ),
+      radial-gradient(
+        26% 22% at 60% 85%,
+        rgba(165, 243, 252, 0.1),
+        transparent 70%
+      );
+    animation: hero-aurora-drift 16s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  @keyframes hero-aurora-drift {
+    from {
+      transform: translate3d(-4%, 3%, 0) rotate(0deg) scale(1);
+    }
+    to {
+      transform: translate3d(5%, -4%, 0) rotate(10deg) scale(1.08);
+    }
+  }
+
+  /* One light sweep across the frame each time a slide becomes active */
+  .hero-sweep {
+    position: absolute;
+    inset: 0;
+    mix-blend-mode: screen;
+    background: linear-gradient(
+      105deg,
+      transparent 38%,
+      rgba(165, 243, 252, 0.08) 46%,
+      rgba(255, 255, 255, 0.14) 50%,
+      rgba(165, 243, 252, 0.06) 54%,
+      transparent 62%
+    );
+    transform: translateX(-110%);
+    animation: hero-sweep 1.8s 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes hero-sweep {
+    to {
+      transform: translateX(110%);
+    }
+  }
+
+  /* Ambient brand glow behind every page */
+  .ambient-aurora::before,
+  .ambient-aurora::after {
+    animation: ambient-drift 26s ease-in-out infinite alternate;
+  }
+  .ambient-aurora::after {
+    animation-duration: 32s;
+    animation-direction: alternate-reverse;
+  }
+  @keyframes ambient-drift {
+    from {
+      transform: translate3d(-6vw, -4vh, 0) scale(1);
+    }
+    to {
+      transform: translate3d(6vw, 5vh, 0) scale(1.15);
+    }
+  }
+
+  /* Catalog rows: cards rise in with a short stagger once the row is seen */
+  .row-anim .row-track > * {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0) scale(0.96);
+  }
+  .row-anim.row-shown .row-track > * {
+    animation: card-rise 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation-delay: min(calc(var(--i, 0) * 45ms), 540ms);
+  }
+  @keyframes card-rise {
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Row title accent grows in */
+  .row-accent {
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s;
+  }
+  .row-shown .row-accent,
+  .row-static .row-accent {
+    transform: scaleY(1);
+  }
+
+  /* Header logo: the orbit slowly turns */
+  .logo-orbit {
+    transform-origin: 16px 16px;
+    animation: logo-orbit 14s linear infinite;
+  }
+  @keyframes logo-orbit {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Animated gradient border for feature panels */
+  .glow-border::before {
+    animation: glow-border-spin 8s linear infinite;
+  }
+  @keyframes glow-border-spin {
+    to {
+      --glow-angle: 360deg;
+    }
   }
 }
+
+@property --glow-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.ambient-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.ambient-aurora::before,
+.ambient-aurora::after {
+  content: "";
+  position: absolute;
+  width: 60vw;
+  height: 60vw;
+  max-width: 900px;
+  max-height: 900px;
+  border-radius: 999px;
+  opacity: 0.5;
+  will-change: transform;
+}
+.ambient-aurora::before {
+  top: 30%;
+  left: -20vw;
+  background: radial-gradient(
+    closest-side,
+    rgba(34, 211, 238, 0.09),
+    transparent
+  );
+}
+.ambient-aurora::after {
+  bottom: -20vh;
+  right: -15vw;
+  background: radial-gradient(
+    closest-side,
+    rgba(139, 92, 246, 0.08),
+    transparent
+  );
+}
+
+.row-accent {
+  display: inline-block;
+  width: 3px;
+  height: 1.1em;
+  border-radius: 999px;
+  background: linear-gradient(var(--primary-light), var(--primary));
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.6);
+}
+
+/* Poster cards: a soft light sheen crosses the art on hover */
+.card-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.18) 50%,
+    transparent 65%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) {
+  .group:hover .card-sheen::after {
+    transform: translateX(120%);
+  }
+}
+
+/* Rotating conic border for feature panels */
+.glow-border {
+  position: relative;
+  isolation: isolate;
+}
+.glow-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--glow-angle),
+    rgba(34, 211, 238, 0.05),
+    rgba(34, 211, 238, 0.6),
+    rgba(139, 92, 246, 0.45),
+    rgba(34, 211, 238, 0.05) 70%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   html {

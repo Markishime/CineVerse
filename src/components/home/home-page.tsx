@@ -18,6 +18,32 @@ import { filterPublicCatalog } from "@/lib/content/mature";
 import { isRestrictedContentUser } from "@/lib/content/mature";
 import { listContinueWatching } from "@/lib/content/watch-progress";
 import { buildCatalogPool, pickGenreRows } from "@/lib/content/home-rows";
+import { SplitWords } from "@/components/motion/split-words";
+import {
+  ArrowRight,
+  Clapperboard,
+  Drama,
+  Film,
+  Flower2,
+  Landmark,
+  Sparkles,
+  Tv,
+} from "lucide-react";
+
+const BROWSE_TILES = [
+  { label: "Movies", note: "Global cinema", href: "/movies", icon: Film },
+  { label: "Series", note: "Binge-worthy TV", href: "/series", icon: Tv },
+  { label: "Anime", note: "Series & films", href: "/anime", icon: Sparkles },
+  { label: "K-dramas", note: "Korean stories", href: "/kdrama", icon: Drama },
+  { label: "J-dramas", note: "Japanese drama", href: "/jdrama", icon: Flower2 },
+  { label: "C-dramas", note: "Chinese drama", href: "/cdrama", icon: Landmark },
+  {
+    label: "Thai dramas",
+    note: "Thai favorites",
+    href: "/thaidrama",
+    icon: Clapperboard,
+  },
+];
 
 /** One recommendations request, seeded by the title the viewer watched last. */
 function BecauseYouWatchedRow() {
@@ -185,33 +211,53 @@ export function HomePage() {
 
         <BecauseYouWatchedRow />
 
-        <nav
+        <motion.nav
           aria-label="Browse catalogs"
-          className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-[var(--surface)]/80 p-2 sm:grid-cols-4 lg:grid-cols-7"
+          className="glow-border grid grid-cols-2 gap-2 rounded-2xl bg-[var(--surface)]/80 p-2 sm:grid-cols-4 lg:grid-cols-7"
+          initial={reduce ? false : "hidden"}
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.3 }}
+          variants={{
+            hidden: {},
+            visible: { transition: { staggerChildren: 0.06 } },
+          }}
         >
-          {[
-            ["Movies", "Global cinema", "/movies"],
-            ["Series", "Binge-worthy TV", "/series"],
-            ["Anime", "Series & films", "/anime"],
-            ["K-dramas", "Korean stories", "/kdrama"],
-            ["J-dramas", "Japanese drama", "/jdrama"],
-            ["C-dramas", "Chinese drama", "/cdrama"],
-            ["Thai dramas", "Thai favorites", "/thaidrama"],
-          ].map(([label, note, href]) => (
-            <Link
+          {BROWSE_TILES.map(({ label, note, href, icon: Icon }) => (
+            <motion.div
               key={href}
-              href={href}
-              className="group rounded-xl px-3 py-3 transition-colors hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-[var(--primary)]"
+              variants={{
+                hidden: { opacity: 0, y: 18, scale: 0.94 },
+                visible: {
+                  opacity: 1,
+                  y: 0,
+                  scale: 1,
+                  transition: { duration: 0.55, ease: [0.16, 1, 0.3, 1] },
+                },
+              }}
+              whileHover={reduce ? undefined : { y: -4 }}
+              whileTap={reduce ? undefined : { scale: 0.97 }}
             >
-              <span className="block text-sm font-semibold text-white group-hover:text-[var(--primary-light)]">
-                {label}
-              </span>
-              <span className="mt-0.5 block text-[11px] text-[var(--text-muted)]">
-                {note}
-              </span>
-            </Link>
+              <Link
+                href={href}
+                className="browse-tile group relative flex h-full flex-col overflow-hidden rounded-xl px-3 py-3 transition-colors hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-[var(--primary)]"
+              >
+                <span className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--primary)]/12 text-[var(--primary-light)] transition-transform duration-500 group-hover:rotate-[-8deg] group-hover:scale-110">
+                  <Icon className="h-4 w-4" aria-hidden />
+                </span>
+                <span className="flex items-center gap-1 text-sm font-semibold text-white group-hover:text-[var(--primary-light)]">
+                  {label}
+                  <ArrowRight
+                    className="h-3.5 w-3.5 -translate-x-1 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100"
+                    aria-hidden
+                  />
+                </span>
+                <span className="mt-0.5 block text-[11px] text-[var(--text-muted)]">
+                  {note}
+                </span>
+              </Link>
+            </motion.div>
           ))}
-        </nav>
+        </motion.nav>
         {(home.becauseYouWatched?.length ?? 0) > 0 && (
           <ContentRow
             title="Recommended for you"
@@ -469,7 +515,7 @@ export function HomePage() {
         <div className="cinematic-divider" />
         <Reveal className="space-y-4">
           <h2 className="font-display text-xl font-semibold text-white sm:text-2xl">
-            Explore by mood
+            <SplitWords text="Explore by mood" inView />
           </h2>
           <RevealStagger className="flex flex-wrap gap-2">
             {home.moods.map((m) => (
@@ -492,7 +538,7 @@ export function HomePage() {
 
         <Reveal className="space-y-4 pb-8">
           <h2 className="font-display text-xl font-semibold text-white sm:text-2xl">
-            Explore by genre
+            <SplitWords text="Explore by genre" inView />
           </h2>
           <RevealStagger className="flex flex-wrap gap-2">
             {home.genres.map((g) => (
