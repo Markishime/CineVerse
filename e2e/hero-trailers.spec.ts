@@ -325,6 +325,10 @@ test("short landscape screens keep actions clear of preview controls", async ({
   await prepareHero(page);
   await page.goto("/");
   const hero = page.getByRole("region", { name: "Featured titles" });
+  // Wait until the mocked slides replace the instant seed slides
+  await expect(
+    hero.getByRole("heading", { name: "Featured film", exact: true }),
+  ).toBeVisible();
   const actions = await hero
     .locator(
       '[aria-roledescription="slide"]:not([aria-hidden="true"]) .hero-feature-actions',
