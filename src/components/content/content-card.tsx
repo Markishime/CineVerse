@@ -102,7 +102,6 @@ function ContentCardBase({
         )}
       >
         <Link
-          prefetch={false}
           href={watchHref}
           className="absolute inset-0 block focus-visible:outline-none"
           aria-label={`Play ${title}`}
@@ -155,7 +154,6 @@ function ContentCardBase({
           )}
         >
           <Link
-            prefetch={false}
             href={watchHref}
             aria-label={`Play ${title}`}
             className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105 hover:bg-white/90 active:scale-95"

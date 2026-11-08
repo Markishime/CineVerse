@@ -41,6 +41,26 @@ test.describe("CineVerse smoke", () => {
     await expect(page.getByText(/sign in/i)).toHaveCount(0);
   });
 
+  test("movie navigation survives refresh and browser back", async ({ page }) => {
+    await page.goto("/movies");
+    await expect(page.getByRole("heading", { name: "Movies" })).toBeVisible();
+
+    const detailsLink = page.locator('article a[href^="/content/"]').last().first();
+    await expect(detailsLink).toBeVisible({ timeout: 20_000 });
+    await detailsLink.click();
+    await expect(page).toHaveURL(/\/content\//);
+    await expect(page.locator("h1")).toBeVisible({ timeout: 20_000 });
+
+    await page.reload();
+    await expect(page.locator("h1")).toBeVisible({ timeout: 20_000 });
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/movies$/);
+    await expect(page.getByRole("heading", { name: "Movies" })).toBeVisible({
+      timeout: 20_000,
+    });
+  });
+
   test("offline page exists", async ({ page }) => {
     await page.goto("/offline");
     await expect(page.getByRole("heading", { name: /offline/i })).toBeVisible();

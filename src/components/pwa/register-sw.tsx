@@ -45,7 +45,13 @@ export function RegisterServiceWorker() {
         className="mt-3"
         onClick={() => {
           waiting?.postMessage("SKIP_WAITING");
-          window.location.reload();
+          // Reload only after the new worker controls this tab. Reloading
+          // immediately can bring the old app shell back on slower browsers.
+          navigator.serviceWorker.addEventListener(
+            "controllerchange",
+            () => window.location.reload(),
+            { once: true },
+          );
         }}
       >
         Update now

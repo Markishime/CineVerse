@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -15,19 +15,17 @@ export function PageTransition({ children }: { children: ReactNode }) {
   const reduce = usePrefersReducedMotion();
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={pathname}
-        variants={reduce ? undefined : pageTransition}
-        initial={reduce ? false : "initial"}
-        animate={reduce ? undefined : "animate"}
-        exit={reduce ? undefined : "exit"}
-        // Transform/opacity only — keeps route changes at 60fps
-        className="min-h-[inherit] will-change-[opacity,transform]"
-        style={{ backfaceVisibility: "hidden" }}
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
+    <motion.div
+      key={pathname}
+      variants={reduce ? undefined : pageTransition}
+      initial={reduce ? false : "initial"}
+      animate={reduce ? undefined : "animate"}
+      // Do not hold the previous route while Next commits the next one. This
+      // keeps browser Back/Forward and slower TV browsers responsive.
+      className="min-h-[inherit]"
+      style={{ backfaceVisibility: "hidden" }}
+    >
+      {children}
+    </motion.div>
   );
 }
